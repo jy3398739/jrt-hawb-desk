@@ -195,6 +195,15 @@ UPLOAD_MAX_MB = int(os.getenv("UPLOAD_MAX_MB", "30"))
 SITE_URL = os.getenv("SITE_URL", "").strip().rstrip("/")
 WORKER_TOKEN = os.getenv("WORKER_TOKEN", "").strip()
 
+# === 公司系统接口（主分单审核台·录入员检索 / 提交回传）===
+# 契约待公司 IT 给（见 company_api.py）：现在一律 mock，绝不外发任何请求。
+# 真接口到位后只改 company_api 里的实现 + 在这里配 COMPANY_API_MODE=live 与端点/密钥，
+# 上层 /submit、/company/mawb 与各角色守卫都不动。
+COMPANY_API_MODE = (os.getenv("COMPANY_API_MODE", "mock") or "mock").strip().lower()
+COMPANY_API_URL = os.getenv("COMPANY_API_URL", "").strip().rstrip("/")
+COMPANY_API_KEY_ENV = os.getenv("COMPANY_API_KEY_ENV", "").strip()   # 密钥从该环境变量读，绝不写死
+
+
 # 支持的输入类型
 IMG_EXTS = {".png", ".bmp", ".jpg", ".jpeg", ".tif", ".tiff", ".pdf"}
 XLS_EXTS = {".xlsx", ".xlsm", ".xls"}

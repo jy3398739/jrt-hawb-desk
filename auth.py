@@ -5,7 +5,10 @@
   - 登录是审核台全站唯一的门槛：除 / 、/health、/models 外，所有接口都要有效会话（任意角色），
     切模型与管账号要管理员会话。原先的 X-API-Key 接口密钥已随内部部署定案删除。
   - 管理员 admin 可切换模型、管理子账号；制单员（子账号）除这两项外全部可用。
-  - 子账号口令由管理员随时下发/重置，首登不强制改。种子账号里 8 位制单员口令为空。
+  - 录入员（第三种角色，2026-09-23）不上传、不碰提取管道：按主单号从公司系统取回主单+分单 JSON，
+    打开本机已归档的分单原件对票面核对。取数口子公司接口契约（待 IT），当前只有本地 mock。
+    管理员与录入员都能用 /company/mawb；制单员不能（角色守卫 require_inputter）。
+  - 子账号口令由管理员随时下发/重置，首登不强制改。种子账号里 8 位制单员与 3 位录入员口令为空。
   - 口令只存 pbkdf2_sha256 哈希，绝不明文；users.json 里另存一枚随机 secret 用来签会话，
     会话不落在服务端内存，重启不掉线、也不依赖额外配置。
 """
@@ -32,12 +35,17 @@ USERS_FILE = Path(os.getenv("AUTH_USERS_FILE", str(config.BASE_DIR / "users.json
 
 # 制单员种子账号（用户名即姓名）。管理员可增删、可随时重置口令。
 REVIEWERS = ["马殿齐", "宛平", "陈新", "叶庭伸", "赵文宇", "杨皓荃", "隗一航", "董文志"]
+# 录入员种子账号（主分单审核台，2026-09-23）。同样口令为空，待管理员下发。
+INPUTTERS = ["刘明", "郭健康", "郭旭"]
 SEED_ADMIN_NAME = "admin"
 SEED_ADMIN_PASSWORD = "admin123"          # 生产首登后应尽快在「账号管理」里改掉
 
 # 账号名允许的字符：中文、字母数字与空格 . _ -（挡掉路径分隔、竖线、控制符与换行——
 # 竖线是会话 payload 的分隔符，混进用户名就能伪造别的身份段）。
 _NAME_OK = re.compile(r"^[^|\\/:\x00-\x1f]{1,40}$")
+
+# 三种角色：管理员管账号/切模型，制单员上传核对提交，录入员按主单号检索并核对主↔分单。
+ROLES = ("admin", "reviewer", "inputter")
 
 
 def valid_username(name: str) -> bool:
@@ -71,6 +79,8 @@ def seed_data() -> dict:
                                "pw": hash_password(SEED_ADMIN_PASSWORD)}}
     for n in REVIEWERS:
         users[n] = {"name": n, "role": "reviewer", "pw": None}
+    for n in INPUTTERS:
+        users[n] = {"name": n, "role": "inputter", "pw": None}
     return {"secret": secrets.token_hex(32), "users": users}
 
 
@@ -112,11 +122,12 @@ def ensure_seed() -> bool:
 
 
 def list_users() -> list:
-    """给「账号管理」用：只报名字/角色/有没有口令，绝不回哈希。管理员排在前。"""
+    """给「账号管理」用：只报名字/角色/有没有口令，绝不回哈希。按 admin→reviewer→inputter 排。"""
     users = load()["users"]
     rows = [{"name": k, "role": v.get("role"), "has_password": bool(v.get("pw"))}
             for k, v in users.items()]
-    return sorted(rows, key=lambda r: (r["role"] != "admin", r["name"]))
+    order = {r: i for i, r in enumerate(ROLES)}
+    return sorted(rows, key=lambda r: (order.get(r["role"], len(ROLES)), r["name"]))
 
 
 def set_password(name: str, password: str = "", role: str = "", create: bool = True):
@@ -129,9 +140,9 @@ def set_password(name: str, password: str = "", role: str = "", create: bool = T
     if u is None:
         if not create:
             return None, f"账号不存在：{name}"
-        u = {"name": name, "role": role if role in ("admin", "reviewer") else "reviewer", "pw": None}
+        u = {"name": name, "role": role if role in ROLES else "reviewer", "pw": None}
         data["users"][name] = u
-    if role in ("admin", "reviewer"):
+    if role in ROLES:
         u["role"] = role
     if password:
         u["pw"] = hash_password(password)

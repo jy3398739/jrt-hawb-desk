@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>主分单审核台 · 录入员检索</title>
+<style>
+:root{--bg:#f5f6f8;--card:#fff;--ink:#1f2329;--ink3:#8a9099;--line:#e3e6ea;--edit:#2f6fed;--ok:#1a9e5b;--bad:#d93025}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
+.bar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--card);border-bottom:1px solid var(--line)}
+.bar h1{font-size:15px;margin:0;font-weight:600}
+.spacer{flex:1}
+.who{font-size:12px;color:var(--ink3)}
+.card{max-width:820px;margin:22px auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px}
+.f{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.f label{font-size:13px;color:var(--ink3)}
+input[type=text]{padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px}
+button{padding:7px 14px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-size:13px}
+button.primary{background:var(--edit);color:#fff;border-color:var(--edit)}
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--ink3);font-weight:500}
+a{color:var(--edit);text-decoration:none}
+a:hover{text-decoration:underline}
+.mask{position:fixed;inset:0;background:rgba(255,255,255,.96);display:flex;align-items:center;justify-content:center;z-index:10}
+.login{width:320px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:22px}
+.login h2{font-size:15px;margin:0 0 14px}
+.login .f{flex-direction:column;align-items:stretch;margin-bottom:10px}
+.login input{width:100%}
+.err{color:var(--bad);font-size:12px;min-height:16px}
+.hint{color:var(--ink3);font-size:12px;margin-top:10px}
+.bad{color:var(--bad)} .ok{color:var(--ok)}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>主分单审核台 · 录入员检索</h1>
+  <span class="spacer"></span>
+  <span class="who" id="who" hidden></span>
+  <button id="btnDesk" hidden>返回制单台</button>
+  <button id="btnLogout" hidden>退出</button>
+</div>
+
+<div class="mask" id="mask">
+  <form class="login" id="loginForm">
+    <h2>登录</h2>
+    <div class="f"><label>账号</label><input id="lgName" type="text" autocomplete="username" placeholder="录入员姓名 / 管理员"></div>
+    <div class="f"><label>密码</label><input id="lgPass" type="password" autocomplete="current-password"></div>
+    <button class="primary" id="lgBtn" type="submit">登录</button>
+    <div class="err" id="lgErr" hidden></div>
+    <div class="hint">录入员按主单号检索本机已归档的分单并打开原件对票面核对；主单业务字段待公司接口（现为 mock）。</div>
+  </form>
+</div>
+
+<div class="card" id="panel" hidden>
+  <div class="f">
+    <label>主单号</label>
+    <input id="mawb" type="text" placeholder="如 235-96146363（连字符/空格会自动忽略）" size="26">
+    <button class="primary" id="btnSearch">检索</button>
+    <span class="hint" id="status"></span>
+  </div>
+  <div id="result"></div>
+</div>
+
+<div class="card" id="denied" hidden>
+  <p class="bad">当前账号不是录入员，无法使用检索工作台。<a href="/?role=reviewer">返回制单台</a></p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const BASE = location.pathname.replace(/\/inputter\/?$/, "");   // 反代前缀下也成立
+
+function isInputter(u){ return !!u && (u.role === "inputter" || u.role === "admin"); }
+function show(me){
+  $("#mask").hidden = !!me;
+  $("#btnLogout").hidden = !me;
+  $("#who").hidden = !me;
+  if (me){
+    $("#who").textContent = me.name + (me.role === "admin" ? "（管理员）" : "（录入员）");
+    const ok = isInputter(me);
+    $("#panel").hidden = !ok;
+    $("#denied").hidden = ok;
+  } else {
+    $("#panel").hidden = true; $("#denied").hidden = true;
+  }
+}
+async function me(){
+  try{ const j = await fetch(BASE + "/api/me").then(x => x.json()); return j.authenticated ? j.user : null; }
+  catch(e){ return null; }
+}
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+async function search(){
+  const m = $("#mawb").value.trim();
+  const st = $("#status");
+  if (!m){ st.textContent = "请先填主单号"; st.className = "hint bad"; return; }
+  st.textContent = "检索中…"; st.className = "hint";
+  try{
+    const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m));
+    if (r.status === 401){ show(null); $("#mask").hidden = false; throw new Error("登录已过期，请重新登录"); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    render(j, m);
+  }catch(e){ st.textContent = "检索失败：" + (e.message || e); st.className = "hint bad"; $("#result").innerHTML = ""; }
+}
+function render(j, m){
+  const list = j.hawb_orders || [];
+  const tag = j.mode === "mock" ? '<span class="hint">（mock：主单业务字段待公司接口，分单来自本机提交台账）</span>' : "";
+  $("#status").textContent = "主单 " + m + " 下检索到 " + list.length + " 张分单 " + (list.length ? "" : "（本机暂无该主单号下已提交的分单）");
+  $("#status").className = "hint";
+  if (!list.length){ $("#result").innerHTML = tag; return; }
+  const rows = list.map(o => "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
+    "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") + "</td><td>" +
+    (o.stem ? '<a href="' + BASE + "/source/" + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
+            : '<span class="bad">本机无归档</span>') + "</td></tr>").join("");
+  $("#result").innerHTML = tag + "<table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th></tr></thead><tbody>" + rows + "</tbody></table>";
+}
+
+$("#loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const name = $("#lgName").value.trim(), pw = $("#lgPass").value, err = $("#lgErr");
+  err.hidden = true;
+  $("#lgBtn").disabled = true;
+  try{
+    const r = await fetch(BASE + "/login", {method:"POST", headers:{"Content-Type":"application/json"},
+                                           body:JSON.stringify({name, password:pw})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    show(j.user); $("#lgPass").value = "";
+  }catch(e2){ err.textContent = "登录失败：" + (e2.message || e2); err.hidden = false; }
+  finally{ $("#lgBtn").disabled = false; }
+});
+$("#btnLogout").addEventListener("click", async () => {
+  try{ await fetch(BASE + "/logout", {method:"POST"}); }catch(e){}
+  location.reload();
+});
+$("#btnSearch").addEventListener("click", search);
+$("#mawb").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+$("#btnDesk").addEventListener("click", () => { location.href = BASE + "/"; });
+
+(async () => { const u = await me(); show(u); $("#btnDesk").hidden = !(u && u.role === "admin"); })();
+</script>
+</body>
+</html>

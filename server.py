@@ -18,6 +18,7 @@
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；?save=true 同时按原名落盘
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
+  GET  /company/mawb       需录入员(或管理员)会话；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)，现走 mock
   GET  /results            已落盘条数（需登录会话）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
@@ -33,6 +34,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 import auth
+import company_api
 import config
 import store
 import xlsx2pdf
@@ -66,6 +68,17 @@ def require_admin(request: Request) -> None:
     if user:
         raise HTTPException(403, "此操作需要管理员权限")
     raise HTTPException(401, "请先以管理员登录")
+
+
+def require_inputter(request: Request) -> None:
+    """录入员专属（按主单号检索主单/分单）：认录入员或管理员会话（管理员可代为排查）。
+    已登录但角色不对 → 403；无会话 → 401。制单员没有此权限——检索是录入员一侧的活。"""
+    user = auth.session_user(request)
+    if user and user.get("role") in ("inputter", "admin"):
+        return
+    if user:
+        raise HTTPException(403, "此操作需要录入员权限")
+    raise HTTPException(401, "请先以录入员登录")
 
 
 class LoginBody(BaseModel):
@@ -170,6 +183,16 @@ def desk():
     return FileResponse(page, media_type="text/html; charset=utf-8")
 
 
+@app.get("/inputter")
+def inputter_desk():
+    """录入员检索台（按主单号取回主单+分单→打开本机分单原件对票面核对）。
+    页面本身是静态壳，是否录入员由前端按 /api/me 判断，取数据仍走登录会话 + require_inputter。"""
+    page = WEB_DIR / "inputter.html"
+    if not page.is_file():
+        raise HTTPException(404, f"录入员检索台页面缺失: {page}")
+    return FileResponse(page, media_type="text/html; charset=utf-8")
+
+
 def _stale_files() -> list:
     """比进程还新的源码文件。uvicorn 不带 --reload 时改动只落在磁盘上，跑的还是启动时那份——
     审核台看到 /health 里的这个字段就该提示重启，否则新功能（比如票面浏览）看着像坏了，其实只是进程旧。"""
@@ -198,12 +221,23 @@ class ModelChoice(BaseModel):
 def _company_submit(payload: dict) -> dict:
     """把一张已核对的分单 JSON 回传公司系统，回执写进提交台账。
 
-    公司回传接口契约待 IT 给（config 里还没有对应端点/密钥）——现在**一律走 mock**：
-    不外发任何请求，只回一个带 mode='mock' 的回执，把"提交态 + 索引"这条本地链路先跑通。
-    真接口到位后，只换这一个函数体（读 config 的端点/密钥、POST 出去、把 HTTP 结果转成回执），
-    上面 mark_submitted 与 /submit 的门禁都不用再动。"""
-    return {"mode": "mock", "accepted": True,
-            "mawb": payload.get("mawb", ""), "hawb": payload.get("hawb", "")}
+    真实现收敛在 company_api.submit_order：契约待 IT，现在一律 mock、不外发任何请求，
+    只回带 mode='mock' 的回执，把"提交态 + 索引"这条本地链路先跑通。真接口到位后改
+    company_api 一处即可，这里的调用与上面 /submit 的门禁都不动。"""
+    return company_api.submit_order(payload)
+
+
+@app.get("/company/mawb")
+def company_mawb(mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
+                 _: None = Depends(require_inputter)):
+    """录入员按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对）。
+
+    数据来自 company_api.search_mawb——当前是 mock：主单业务字段空壳，分单来自本机提交台账里
+    该主单号下已提交的票。这一步只回我们自己拥有的连接数据（哪些分单挂在这个主单下、原件在
+    哪），不伪造公司的主单字段口径；真接口到位后同结构换成 HTTP 结果。"""
+    if not store.norm_no(mawb):
+        raise HTTPException(400, "主单号不能为空")
+    return company_api.search_mawb(mawb)
 
 
 class SubmitBody(BaseModel):

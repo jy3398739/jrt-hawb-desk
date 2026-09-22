@@ -193,3 +193,13 @@ def number_index() -> dict:
 def lookup_stem(mawb: str, hawb: str):
     """录入员检索用：给主单号+分单号 → 本机已归档原件的 stem（打不开原件时返回 None）。"""
     return (number_index().get(number_key(mawb, hawb)) or {}).get("stem")
+
+
+def submitted_by_mawb(mawb: str) -> list:
+    """按主单号列出本机已提交（=号齐全过了门、原件在 ARCHIVE）的分单条目。
+    录入员检索的本地数据源：真实的公司"该主单下全部分单"接口待 IT 契约，先用这个把链路跑通。
+    归一化后比对，挡 235-96146363 / 23596146363 这类格式差异。"""
+    want = norm_no(mawb)
+    if not want:
+        return []
+    return [e for e in _load_ledger().values() if norm_no(e.get("mawb", "")) == want]
