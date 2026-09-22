@@ -24,6 +24,8 @@ input,textarea{font:inherit;color:inherit}
 .svc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
 .svc b{color:var(--ink);font-weight:600}
 .f{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+/* .f 的 display:flex 会盖过 UA 的 [hidden]{display:none}，不补这条则 applyRole 收起模型下拉/身份条形同虚设 */
+.f[hidden]{display:none}
 .f input[type=text],.f input[type=password],.f select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:#fbfcfe}
 .f input:focus,.f select:focus{outline:2px solid #cfe0f7;border-color:#9cc3ee}
 /* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排 */
