@@ -1,15 +1,14 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
 if not exist .env (
-  echo [æç¤º] æœªæ‰¾åˆ° .envï¼Œè¯·å…ˆå¤åˆ¶ .env.example ä¸º .env å¹¶å¡«å…¥é­”æ­ä»¤ç‰Œã€‚
+  echo [ÌáÊ¾] Î´ÕÒµ½ .env£¬ÇëÏÈ¸´ÖÆ .env.example Îª .env ²¢ÌîÈëÄ§´îÁîÅÆ¡£
   pause
   exit /b
 )
 if not exist input mkdir input
-echo æŠŠåˆ†å•æ–‡ä»¶ï¼ˆå›¾ç‰‡/PDF/XLSXï¼‰æ”¾è¿› input æ–‡ä»¶å¤¹ï¼Œç„¶åç»§ç»­ã€‚
+echo °Ñ·Öµ¥ÎÄ¼ş£¨Í¼Æ¬/PDF/XLSX£©·Å½ø input ÎÄ¼ş¼Ğ£¬È»ºó¼ÌĞø¡£
 pause
 python run_batch.py input
 echo.
-echo å¤„ç†ç»“æŸï¼Œç»“æœåœ¨ output\raw å’Œ output\airã€‚
+echo ´¦Àí½áÊø£¬½á¹ûÔÚ output\raw ºÍ output\air¡£
 pause

@@ -1,0 +1,4 @@
+# .bat 是 Windows 启动器，必须按 GBK(936) 字节 + CRLF 原样保存，
+# 否则中文 Windows 上 cmd 会解析乱码（见 4_启动HTTP服务.bat 的教训）。关掉 EOL 自动转换。
+*.bat  -text
+*.cmd  -text

@@ -1,7 +1,6 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
 python export_excel.py
 echo.
-echo Excel å·²ç”Ÿæˆåœ¨ output æ–‡ä»¶å¤¹ï¼ˆhawb_raw.xlsx / hawb_air.xlsxï¼‰ã€‚
+echo Excel ÒÑÉú³ÉÔÚ output ÎÄ¼ş¼Ğ£¨hawb_raw.xlsx / hawb_air.xlsx£©¡£
 pause

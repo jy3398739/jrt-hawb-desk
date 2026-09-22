@@ -1,8 +1,7 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
 if not exist input mkdir input
-echo Г⌡▒Ф▌╖Е╥╡Е░╞Е┼╗О╪ Ф┼┼Е┬├Е█∙Ф√┤Д╩╤Ф▀√Х©⌡ input Ф√┤Д╩╤Е╓╧Е█ЁХ┤╙Е┼╗Х╞├Е┬╚О╪▄Е┘ЁФ▌┴Ф°╛Г╙≈Е▐ёЕ│°Ф╜╒Ц─┌
+echo ╪Ю©ьряфТ╤╞ё╨╟я╥ж╣╔нд╪Чмо╫Ь input нд╪Ч╪п╪╢вт╤╞й╤╠Пё╛╧ь╣Т╠╬╢╟©змёж╧║ё
 echo.
 python watch_folder.py input
 pause

@@ -1,11 +1,10 @@
 @echo off
-chcp 65001 >nul
 cd /d %~dp0
-echo ç¦»çº¿å›å½’æµ‹è¯•ï¼šä¸è”ç½‘ã€ä¸è°ƒç”¨é­”æ­ APIï¼Œå‡ ç§’é’Ÿè·‘å®Œã€‚
-echo æ”¹åŠ¨ to_air.py / hawb2json.py ç è¡¨ / fidelity.py / validator.py ä¹‹åéƒ½åº”è¯¥å…ˆè·‘ä¸€éã€‚
+echo ÀëÏß»Ø¹é²âÊÔ£º²»ÁªÍø¡¢²»µ÷ÓÃÄ§´î API£¬¼¸ÃëÖÓÅÜÍê¡£
+echo ¸Ä¶¯ to_air.py / hawb2json.py Âë±í / fidelity.py / validator.py Ö®ºó¶¼Ó¦¸ÃÏÈÅÜÒ»±é¡£
 echo.
 python tests\run_tests.py %*
 echo.
-echo é€€å‡ºç  0 = å…¨éƒ¨ç»¿ç¯ï¼›é 0 = æœ‰å›å½’ï¼Œçœ‹ä¸Šé¢çš„ FAILã€‚
-echo æœ‰æ„æ”¹äº† L3 å½’ä¸€åŒ–è¡Œä¸ºåï¼špython tests\run_tests.py --update-baseline å¤æ ¸å·®å¼‚å¹¶æ›´æ–°æœŸæœ›å€¼ã€‚
+echo ÍË³öÂë 0 = È«²¿ÂÌµÆ£»·Ç 0 = ÓĞ»Ø¹é£¬¿´ÉÏÃæµÄ FAIL¡£
+echo ÓĞÒâ¸ÄÁË L3 ¹éÒ»»¯ĞĞÎªºó£ºpython tests\run_tests.py --update-baseline ¸´ºË²îÒì²¢¸üĞÂÆÚÍûÖµ¡£
 pause
