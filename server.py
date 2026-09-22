@@ -17,6 +17,7 @@
   DELETE /admin/users/{name}  删除账号（管理员；不能删自己或唯一管理员）
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；?save=true 同时按原名落盘
+  POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   GET  /results            已落盘条数（需登录会话）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
@@ -192,6 +193,51 @@ _MODEL_ID_OK = re.compile(r"^[A-Za-z0-9._:/-]{1,120}$")
 
 class ModelChoice(BaseModel):
     model: str = ""
+
+
+def _company_submit(payload: dict) -> dict:
+    """把一张已核对的分单 JSON 回传公司系统，回执写进提交台账。
+
+    公司回传接口契约待 IT 给（config 里还没有对应端点/密钥）——现在**一律走 mock**：
+    不外发任何请求，只回一个带 mode='mock' 的回执，把"提交态 + 索引"这条本地链路先跑通。
+    真接口到位后，只换这一个函数体（读 config 的端点/密钥、POST 出去、把 HTTP 结果转成回执），
+    上面 mark_submitted 与 /submit 的门禁都不用再动。"""
+    return {"mode": "mock", "accepted": True,
+            "mawb": payload.get("mawb", ""), "hawb": payload.get("hawb", "")}
+
+
+class SubmitBody(BaseModel):
+    tickets: list = []
+    submitted_at: str = ""
+    client: str = ""
+
+
+@app.post("/submit")
+def submit(body: SubmitBody, _: None = Depends(require_web)):
+    """制单员提交：这是"回传公司 + 进索引"的唯一出口。
+
+    门禁以服务端为准、不信前端（前端那道门只是体验）：一张分单必须有可归一化的主单号与分单号，
+    否则拒绝——因为 (主单号|分单号) 复合键是"录入员日后能否按号打开本机原件"的唯一连接键，
+    缺号的票进了台账就等于往索引里塞坏数据。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，
+    制单员补号后重新提交即可。机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。"""
+    tickets = body.tickets if isinstance(body.tickets, list) else []
+    if not tickets:
+        raise HTTPException(400, "没有待提交的票据")
+    results = []
+    for tk in tickets:
+        if not isinstance(tk, dict):
+            raise HTTPException(400, "票据格式不正确：tickets 里每一项都应是对象")
+        rec = tk.get("air_reviewed") if isinstance(tk.get("air_reviewed"), dict) else {}
+        mawb = str(rec.get("MAWB_NO", "") or "").strip()
+        hawb = str(rec.get("HAWB_NO", "") or "").strip()
+        stem = str(tk.get("stem") or tk.get("filename") or "").strip()
+        if not store.norm_no(mawb) or not store.norm_no(hawb):
+            raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
+        receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem})
+        entry = store.mark_submitted(stem, mawb, hawb,
+                                     str(tk.get("reviewer", "") or ""), receipt)
+        results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
+    return {"ok": True, "results": results}
 
 
 @app.get("/models")

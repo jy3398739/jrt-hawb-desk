@@ -160,6 +160,9 @@ OUTPUT_RAW_DIR = Path(os.getenv("OUTPUT_RAW_DIR", str(BASE_DIR / "output" / "raw
 OUTPUT_AIR_DIR = Path(os.getenv("OUTPUT_AIR_DIR", str(BASE_DIR / "output" / "air")))  # L3 航空口径 39 字段
 OUTPUT_QC_DIR = Path(os.getenv("OUTPUT_QC_DIR", str(BASE_DIR / "output" / "qc")))     # 质检红旗，Excel/DB 按名联结
 PREVIEW_DIR = Path(os.getenv("PREVIEW_DIR", str(BASE_DIR / "output" / "preview")))    # 电子单转出的 PDF，审核台回看票面用
+# 提交台账：制单员点提交、回传公司成功后逐张记一笔（stem→{主单号,分单号,复合键,复核人,时间,回执}）。
+# "仅人工提交才回传"，机批/监控/站点都只落盘不进这里；(主单号|分单号)↔原件 的索引也只从这张表构建。
+SUBMIT_LEDGER = Path(os.getenv("SUBMIT_LEDGER", str(BASE_DIR / "output" / "submitted.json")))
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))

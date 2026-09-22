@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """结果落盘、L0 原件归档与汇总。"""
-import json, hashlib, shutil, datetime
+import json, hashlib, os, shutil, datetime, threading, re
 from pathlib import Path
 
 import config
@@ -118,3 +118,78 @@ def list_inputs(inp: Path):
         return [inp]
     return sorted(f for f in inp.iterdir()
                   if f.suffix.lower() in config.ALL_EXTS and not f.name.startswith("~$"))
+
+
+# === 提交台账 + (主单号|分单号)→原件 索引 ===
+# 仅制单员人工点提交、回传公司成功后写这里；机批/监控/站点只落盘、绝不进台账。
+# 因此"进了台账"就等于"号齐全、过了门"——索引直接从台账派生，不必再防脏数据/冲突。
+_LEDGER_LOCK = threading.Lock()        # 同进程内多制单员并发提交（handle_file 走线程池）时串行化读改写
+
+
+def norm_no(value: str) -> str:
+    """单号归一化：大写、去掉空格与连字符等非字母数字。挡的是格式差异（235-96146363 vs
+    23596146363），挡不了语义差异（公司若不发主单前三位是另一回事，那要接真接口时对齐）。"""
+    return re.sub(r"[^0-9A-Z]", "", str(value or "").upper())
+
+
+def number_key(mawb: str, hawb: str) -> str:
+    """复合索引键。主单号不重复 → (主单|分单) 天然唯一，不需要按分单号单独去重。"""
+    return f"{norm_no(mawb)}|{norm_no(hawb)}"
+
+
+def _load_ledger() -> dict:
+    if not config.SUBMIT_LEDGER.is_file():
+        return {}
+    try:
+        data = json.loads(config.SUBMIT_LEDGER.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}          # 台账读坏宁可当空表重来，也别让一次提交把服务打挂
+
+
+def _write_ledger(data: dict) -> None:
+    """原子写并收紧权限：内容含复核人姓名与回执，posix 上收进 600（同 auth._write 的套路，
+    否则 tmp 按 umask 建、os.replace 会把原文件 600 放宽成 664）。"""
+    config.SUBMIT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    tmp = config.SUBMIT_LEDGER.with_name(config.SUBMIT_LEDGER.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    mode = (config.SUBMIT_LEDGER.stat().st_mode & 0o7777) if config.SUBMIT_LEDGER.exists() else 0o600
+    try:
+        os.chmod(tmp, mode)
+    except OSError:
+        pass                                  # Windows 的 chmod 只管只读位，失败不拦写入
+    os.replace(tmp, config.SUBMIT_LEDGER)
+
+
+def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None) -> dict:
+    """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。"""
+    with _LEDGER_LOCK:
+        data = _load_ledger()
+        entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
+                 "key": number_key(mawb, hawb), "reviewer": reviewer,
+                 "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "receipt": receipt or {}}
+        data[stem] = entry
+        _write_ledger(data)
+    return entry
+
+
+def ledger() -> dict:
+    """stem → 提交条目。给 /results 之类展示与索引用；纯读不加锁。"""
+    return _load_ledger()
+
+
+def number_index() -> dict:
+    """派生：复合键 → {stem, mawb, hawb}。只含已提交集，号天然齐全。
+    每次从台账现算（台账是本地小 JSON，几十~几千条，读一遍毫秒级）；量大再上内存缓存。"""
+    out = {}
+    for e in _load_ledger().values():
+        k = e.get("key") or number_key(e.get("mawb", ""), e.get("hawb", ""))
+        if k and k != "|":                    # 两个号都空的坏条目直接跳过，不进索引
+            out[k] = {"stem": e.get("stem"), "mawb": e.get("mawb", ""), "hawb": e.get("hawb", "")}
+    return out
+
+
+def lookup_stem(mawb: str, hawb: str):
+    """录入员检索用：给主单号+分单号 → 本机已归档原件的 stem（打不开原件时返回 None）。"""
+    return (number_index().get(number_key(mawb, hawb)) or {}).get("stem")

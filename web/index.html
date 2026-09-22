@@ -792,6 +792,16 @@ function addFiles(files){
 async function submitTicket(t){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
+  // 提交门（前端体验层，服务端另有一道只认主/分单号的硬门）：
+  //   1) 主/分单号是"录入员日后按号打开本机原件"的唯一连接键，空号一律不许提交；
+  //   2) 还挂着红旗（含缺号那条）也不许提交——补全/清完再走。
+  const _air = reviewed(t);
+  if (!String(_air.MAWB_NO || "").trim() || !String(_air.HAWB_NO || "").trim()){
+    toast("主单号、分单号都得填上才能提交回传公司", "bad"); return;
+  }
+  if (t.qc && t.qc.needs_review){
+    toast("还有未清的红旗：先逐条处理完才能提交", "bad"); return;
+  }
   const body = {tickets:[payloadFor(t, who)], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
   t.state = "submitting"; render();
   let pending = false;
