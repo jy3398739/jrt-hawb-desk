@@ -1,0 +1,186 @@
+# -*- coding: utf-8 -*-
+"""登录 / 账号 / 门禁回归：口令哈希、users.json 种子、会话 Cookie、角色边界。
+全本地：TestClient 在本进程跑，users.json 指到临时目录，绝不碰真实落盘，也不产生 API 调用。
+2026-09-22 起 HTTP_API_KEY / X-API-Key 已从服务端删除：登录是唯一门槛，鉴权只看会话 Cookie。
+"""
+import contextlib
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+import auth
+import config
+import server
+
+
+@contextlib.contextmanager
+def _accounts():
+    """把账号表指到临时目录，返回一个共享 Cookie 的 TestClient（首次登录时 users.json 会自动种子）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_users_test_"))
+    old_file = auth.USERS_FILE
+    auth.USERS_FILE = tmp / "users.json"
+    try:
+        yield TestClient(server.app)
+    finally:
+        auth.USERS_FILE = old_file
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _login(client, name, password):
+    return client.post("/login", json={"name": name, "password": password})
+
+
+# === 口令哈希 ===
+def test_hash_verify_roundtrip_and_rejects():
+    h = auth.hash_password("s3cret-pass")
+    assert h.startswith("pbkdf2_sha256$") and "s3cret-pass" not in h
+    assert auth.verify_password("s3cret-pass", h)
+    assert not auth.verify_password("wrong", h)
+    assert not auth.verify_password("s3cret-pass", None)        # 未设口令永远进不去
+    assert not auth.verify_password("s3cret-pass", "garbage")   # 结构不对也不炸
+
+
+# === users.json 种子 ===
+def test_seed_has_admin_and_reviewers_without_plaintext():
+    with _accounts() as client:
+        users = {u["name"]: u for u in auth.list_users()}
+        assert users["admin"]["role"] == "admin" and users["admin"]["has_password"]
+        for n in auth.REVIEWERS:
+            assert users[n]["role"] == "reviewer" and not users[n]["has_password"], n
+        raw = auth.USERS_FILE.read_text(encoding="utf-8")
+        assert "admin123" not in raw, "默认口令绝不能明文落盘"
+        assert "pbkdf2_sha256$" in raw
+
+
+def test_ensure_seed_creates_once_and_is_idempotent():
+    with _accounts():
+        assert auth.ensure_seed() is True and auth.USERS_FILE.is_file()
+        first = auth.USERS_FILE.read_bytes()
+        assert auth.ensure_seed() is False            # 已存在就不再动（不会重置管理员改过的口令）
+        assert auth.USERS_FILE.read_bytes() == first
+
+
+# === 会话 Cookie 与角色边界 ===
+def test_admin_login_unlocks_web_and_admin():
+    with _accounts() as client:
+        assert client.get("/api/me").json()["authenticated"] is False
+        r = _login(client, "admin", "admin123")
+        assert r.status_code == 200 and r.json()["user"]["role"] == "admin", r.text
+        assert client.get("/api/me").json()["user"]["name"] == "admin"
+        assert client.get("/results").status_code == 200, "管理员会话应能用审核台数据接口"
+        assert client.get("/admin/users").status_code == 200
+        assert client.post("/model", json={"model": "intern-s2-official"}).status_code == 200, \
+            "管理员不必再带密钥也能切模型"
+
+
+def test_login_rejects_bad_password_and_unknown_user():
+    with _accounts() as client:
+        assert _login(client, "admin", "wrong").status_code == 401
+        assert _login(client, "ghost", "x").status_code == 401
+        assert _login(client, "admin", "").status_code == 400, "空口令应报 400 而不是试着比"
+        assert client.get("/api/me").json()["authenticated"] is False, "失败的登录不该发会话"
+
+
+def test_reviewer_blocked_until_admin_sets_password_then_web_yes_admin_no():
+    with _accounts() as client:
+        assert _login(client, "马殿齐", "anything").status_code == 401, "没口令的制单员不能进"
+        _login(client, "admin", "admin123")
+        r = client.post("/admin/users", json={"name": "马殿齐", "password": "pd-123456", "role": "reviewer"})
+        assert r.status_code == 200 and r.json()["user"]["has_password"], r.text
+        assert _login(client, "马殿齐", "pd-123456").status_code == 200
+        me = client.get("/api/me").json()
+        assert me["user"] == {"name": "马殿齐", "role": "reviewer"}
+        assert client.get("/results").status_code == 200, "制单员要能上传/核对/落盘"
+        assert client.post("/extract").status_code != 401, "制单员对 /extract 有权限（缺文件是 422，不是未授权）"
+        assert client.get("/admin/users").status_code == 403, "制单员不得管账号"
+        assert client.post("/model", json={"model": "intern-s2-official"}).status_code == 403, "制单员不得切模型"
+
+
+# === 未登录一律 401（不再有 X-API-Key 这条路） ===
+def test_unauthenticated_requests_get_401():
+    with _accounts() as client:                 # 全新客户端：没有任何会话
+        assert client.get("/results").status_code == 401
+        assert client.post("/model", json={"model": "intern-s2-official"}).status_code == 401
+        assert client.get("/admin/users").status_code == 401
+        assert client.get("/health").status_code == 200, "健康检查始终免鉴权"
+        assert client.get("/models").status_code == 200, "模型清单免鉴权（下拉在登录页也要能填出来）"
+
+
+# === 会话防伪与失效 ===
+def test_forged_cookie_is_rejected():
+    with _accounts() as client:
+        client.cookies.set(auth.COOKIE, auth.make_token("admin", "admin", "attacker-secret"), path="/")
+        assert client.get("/api/me").json()["authenticated"] is False, "用别的 secret 签的 token 不能认"
+        assert client.get("/results").status_code == 401, "伪造会话又被拒了"
+
+
+def test_deleting_a_user_voids_their_live_session():
+    with _accounts() as client:                 # client 全程是管理员
+        _login(client, "admin", "admin123")
+        client.post("/admin/users", json={"name": "宛平", "password": "pw-123456", "role": "reviewer"})
+        peer = TestClient(server.app)           # 另开一个：宛平登录后持续持有自己的会话 Cookie
+        assert _login(peer, "宛平", "pw-123456").status_code == 200
+        assert peer.get("/results").status_code == 200
+        assert client.delete("/admin/users/宛平").status_code == 200
+        assert peer.get("/api/me").json()["authenticated"] is False, "删除后老会话必须即刻失效"
+        assert peer.get("/results").status_code == 401, "失效会话不能还能取数据"
+
+
+# === 账号管理护栏 ===
+def test_delete_guards_self_and_last_admin():
+    with _accounts() as client:
+        _login(client, "admin", "admin123")
+        assert client.delete("/admin/users/admin").status_code == 400, "不能删唯一管理员/自己"
+        assert client.delete("/admin/users/nope").status_code == 400
+        client.post("/admin/users", json={"name": "陈新", "password": "pw-123456"})
+        assert client.delete("/admin/users/陈新").status_code == 200
+
+
+def test_admin_can_change_own_password_and_relogin():
+    with _accounts() as client:
+        _login(client, "admin", "admin123")
+        r = client.post("/admin/users", json={"name": "admin", "password": "brand-new-pw", "role": "admin"})
+        assert r.status_code == 200, r.text
+        _login(client, "admin", "brand-new-pw")
+        assert client.get("/api/me").json()["user"]["role"] == "admin"
+        assert _login(client, "admin", "admin123").status_code == 401, "旧口令应即刻失效"
+
+
+def test_short_password_rejected_and_role_must_be_known():
+    with _accounts() as client:
+        _login(client, "admin", "admin123")
+        assert client.post("/admin/users", json={"name": "赵文宇", "password": "123"}).status_code == 400
+        # 非管理员名 + 合法口令：新建为制单员
+        assert client.post("/admin/users", json={"name": "赵文宇", "password": "pw-123456"}).status_code == 200
+        assert {u["name"] for u in client.get("/admin/users").json()["users"]} >= {"赵文宇"}
+
+
+def test_users_json_posix_permissions_600():
+    if os.name == "nt":
+        return                                  # Windows 的 chmod 只管只读位，断言无意义（由 VM 回归覆盖）
+    with _accounts() as client:
+        _login(client, "admin", "admin123")
+        client.post("/admin/users", json={"name": "叶庭伸", "password": "pw-123456"})
+        assert auth.USERS_FILE.stat().st_mode & 0o777 == 0o600, "账号表含哈希与签名 secret，必须 600"
+
+
+# === 前端接线（静态检查，同其它 desk 用例口径） ===
+def test_desk_has_login_gate_and_role_scoped_controls():
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="gate"' in html and 'id="loginForm"' in html, "没有登录遮罩/表单"
+    assert '"/login"' in html and '"/logout"' in html and '"/api/me"' in html, "登录/登出/自检接口没接上"
+    assert '"/admin/users"' in html and "账号管理" in html, "管理员账号管理面板没了"
+    gate = "function applyRole(){"
+    i = html.find(gate)
+    assert i > -1, "applyRole 没了：角色门控整体失效"
+    body = html[i:html.find("\n}", i)]
+    assert '$("#fModel").hidden = !admin' in body, "模型下拉没按角色收起"
+    assert '$("#btnAcct").hidden = !admin' in body, "账号管理入口没限定管理员"
+    assert "checkAuth()" in html, "启动没先做登录自检"
+    assert "rv.readOnly = true" in body, "复核人没锁成登录身份，提交留痕可被冒名"
+    assert 'id="fKey"' not in html, "接口密钥输入框已随 HTTP_API_KEY 一并删除"
+    assert "apiKey" not in html and "X-API-Key" not in html, "前端还留着 X-API-Key 送密钥的路径"

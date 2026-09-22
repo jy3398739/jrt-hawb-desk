@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>分单审核台 · 票面浏览 / 航空口径</title>
+<style>
+:root{
+  --bg:#f4f6f9; --panel:#fff; --line:#e2e7ee; --ink:#1c2430; --ink2:#5b6879; --ink3:#8d99a9;
+  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7; --hdh:54px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+button{font:inherit;cursor:pointer}
+input,textarea{font:inherit;color:inherit}
+.hdr{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.hdr h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
+.sp{flex:1}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--ink3);flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}
+.dot.busy{background:var(--edit);animation:pulse 1s infinite alternate}
+@keyframes pulse{to{opacity:.25}}
+.svc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.svc b{color:var(--ink);font-weight:600}
+.f{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.f input[type=text],.f input[type=password],.f select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;background:#fbfcfe}
+.f input:focus,.f select:focus{outline:2px solid #cfe0f7;border-color:#9cc3ee}
+/* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排 */
+.wrap{display:grid;gap:14px;padding:14px 16px;align-items:start;
+  grid-template-columns:264px minmax(420px,1.18fr) minmax(360px,1fr);
+  grid-template-areas:"side view form"}
+#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.card .t{padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700;font-size:13px;
+  display:flex;align-items:center;gap:8px}
+.card .t .n{font-weight:400;color:var(--ink3);font-size:12px}
+.drop{margin:12px;padding:16px 10px;border:1.5px dashed #c6d2e2;border-radius:8px;text-align:center;
+  color:var(--ink2);background:#fafcfe;transition:.12s}
+.drop.hot{border-color:var(--edit);background:#eef5ff;color:var(--edit)}
+.drop b{display:block;color:var(--ink);margin-bottom:2px}
+.drop .btns{margin-top:9px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 11px;font-size:13px}
+.btn:hover:not(:disabled){border-color:#a9bdd8;background:#f7faff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.pri{background:var(--edit);border-color:var(--edit);color:#fff}
+.btn.pri:hover:not(:disabled){background:#18519f}
+.btn.sm{padding:2px 8px;font-size:12px}
+.btn.gh{border-style:dashed;color:var(--ink2);background:transparent}
+.list{max-height:calc(100vh - 250px);overflow:auto}
+.row{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid #eff3f7;cursor:pointer}
+.row:hover{background:#f7faff}
+.row.sel{background:#eef5ff;box-shadow:inset 3px 0 0 var(--edit)}
+.row .nm{flex:1;min-width:0;font-size:12.5px;line-height:1.35;word-break:break-all}
+.row .nm .m{color:var(--ink3);font-size:11px}
+.row .st{font-size:11px;color:var(--ink2);white-space:nowrap;text-align:right}
+.empty{padding:20px 14px;color:var(--ink3);font-size:12.5px}
+.hd{padding:12px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.hd .nm{font-weight:700;font-size:15px;word-break:break-all}
+.hd .meta{color:var(--ink3);font-size:12px;margin-top:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#fff8f1;border-bottom:1px solid #f3e3d3}
+.chip{font-size:12px;background:var(--chip);border:1px solid var(--line);border-radius:99px;padding:2px 9px;
+  color:var(--ink2);cursor:pointer;max-width:100%}
+.chip:hover{border-color:#c8b39a}
+.chip.warn{background:#fdf1e6;border-color:#eccdb0;color:#8c4a17}
+.chip.bad{background:#fdeceb;border-color:#eec7c3;color:#9c2b20}
+.tools{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);
+  background:#fbfcfe;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.tools label{display:flex;gap:5px;align-items:center}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{position:sticky;top:var(--hdh);z-index:5;background:#fbfcfe;text-align:left;font-size:11.5px;color:var(--ink3);
+  font-weight:600;padding:7px 10px;border-bottom:1px solid var(--line);letter-spacing:.3px}
+th.g{background:#f3f6fa;color:var(--ink2)}
+td{border-bottom:1px solid #f0f3f7;vertical-align:top;padding:0}
+td.k{padding:8px 10px;width:206px;background:#fdfefe}
+td.k .kk{font-weight:600;font-size:13px}
+td.k .ky{color:var(--ink3);font-size:11px;font-family:Consolas,monospace}
+td.c{padding:6px 8px}
+td.c.edited{background:#f4f9ff}
+tr.flag td.k{box-shadow:inset 3px 0 0 var(--warn)}
+tr.grp td{background:#eef2f7;padding:6px 12px;font-weight:700;font-size:12px;color:var(--ink2);letter-spacing:1px}
+td.v textarea,td.v input{width:100%;border:1px solid transparent;background:transparent;border-radius:6px;
+  padding:6px 7px;resize:vertical;font-size:13px;line-height:1.45;min-height:32px}
+td.v textarea{max-height:320px;overflow-y:auto}
+td.v textarea:hover,td.v input:hover{border-color:#dfe6ee;background:#fff}
+td.v textarea:focus,td.v input:focus{outline:none;border-color:#9cc3ee;background:#fff;box-shadow:0 0 0 3px #e6f0fb}
+td.s{width:120px;padding:8px 10px;text-align:right}
+.note{font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.note .q{color:var(--warn)}.note .b{color:var(--bad)}.note .e{color:var(--edit)}
+.note .rs{color:var(--ink3);cursor:pointer;text-decoration:underline dotted}
+.badge{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--chip);color:var(--ink2);white-space:nowrap}
+.badge.miss{background:#fdeceb;color:#9c2b20}.badge.warn{background:#fdf1e6;color:#8c4a17}
+.badge.same{background:#eef7f0;color:#1f8b4d}
+.ft{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ft.top{border-top:0;border-bottom:1px solid var(--line);background:#fbfcfe}
+.hint{font-size:12px;color:var(--ink2)}
+/* 票面浏览：粘住不滚，核对下面字段时票面一直在视野里。
+   .wrap 是 align-items:start，网格不会把这一格拉高，靠内容撑就只有半屏（票面只看到一半、下面空着）——
+   直接给死高度，让 PDF/图片铺满整个可视高度。 */
+#view{position:sticky;top:64px;overflow:hidden;display:flex;flex-direction:column;height:calc(100vh - 78px)}
+/* 三栏时字段列自己滚：以前滚字段会带着左边上传/排队列表一起动，制单员核到一半列表就跑出视野。
+   #main 变成滚动容器后表头吸顶的参照也从页面变成了卡片，th 的 top 要归零。 */
+@media (min-width:1461px){
+  #main{position:sticky;top:64px;align-self:start;height:calc(100vh - 78px);overflow:auto}
+  #main th{top:0}
+}
+#view .t .pvname{margin-left:auto;font-weight:400;color:var(--ink3);font-size:11.5px;max-width:58%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pvtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 10px;
+  border-bottom:1px solid var(--line);background:#fbfcfe}
+.pvtools #pvZoom{display:flex;gap:6px;align-items:center}
+/* 类选择器的 display 会盖过 UA 的 [hidden]{display:none}，不补这条 hidden 就形同虚设 */
+.pvtools[hidden],.pvtools #pvZoom[hidden]{display:none}
+.pv{flex:1;min-height:200px;overflow:auto;background:#eef1f6;padding:10px;text-align:center}
+.pv img{display:inline-block;height:auto;background:#fff;box-shadow:0 1px 8px rgba(20,32,48,.16)}
+.pv iframe{width:100%;height:100%;min-height:440px;border:0;background:#fff}
+.pv .empty{padding:26px 14px;color:var(--ink3);font-size:12.5px;text-align:left}
+/* 字段→票面定位：点右边字段名，把 L1 转录 bbox 叠在按页渲染的票面图上并自动放大。
+   浏览器内嵌 PDF 阅读器做不到按区域高亮/缩放，所以定位模式换页图打底。 */
+td.k.loc{cursor:pointer}
+td.k.loc:hover .kk{color:var(--edit)}
+.pvtools #pvLoc{display:flex;gap:6px;align-items:center}
+.pvtools #pvLoc[hidden]{display:none}
+.pv .page{position:relative;display:inline-block;text-align:left}
+.pv .page img{display:block;width:100%}
+.pv .lyr{position:absolute;left:0;top:0;width:100%;height:100%}
+.pv .bbox{position:absolute;border:2px solid rgba(28,95,191,.9);background:rgba(255,196,0,.30);
+  border-radius:2px;animation:flashb 1.2s ease 2}
+@keyframes flashb{50%{background:rgba(255,196,0,.62)}}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#22303f;color:#fff;
+  padding:9px 16px;border-radius:8px;font-size:13px;z-index:60;box-shadow:0 6px 24px rgba(0,0,0,.22);
+  opacity:0;transition:.18s;pointer-events:none;max-width:80vw}
+.toast.on{opacity:1}.toast.bad{background:#8f2b21}.toast.ok{background:#186b3d}
+@media (max-width:1460px){
+  .wrap{grid-template-columns:248px 1fr;grid-template-areas:"side view" "side form"}
+}
+@media (max-width:1020px){
+  .wrap{grid-template-columns:1fr;grid-template-areas:"side" "view" "form"}
+  .list{max-height:240px}
+  #view{position:static;height:auto;max-height:none}
+  .pv{min-height:0}
+  .pv iframe{height:70vh}
+}
+/* ── 登录与角色 ─────────────────────────────────────────────────────
+   制单员只需账号密码即可使用；管理员额外能切模型、管账号。
+   门禁靠后端会话，这里只是把不该给制单员看的控件收起来。 */
+.gate{position:fixed;inset:0;z-index:80;background:rgba(20,28,40,.5);display:flex;
+  align-items:center;justify-content:center;padding:20px}
+.gate[hidden]{display:none}
+.login{width:340px;max-width:100%;padding:0}
+.login .t{font-size:15px;justify-content:center}
+.login .body{padding:16px 18px 18px}
+.lf{display:block;margin:0 0 12px;font-size:12.5px;color:var(--ink2)}
+.lf input{display:block;width:100%;margin-top:5px;border:1px solid var(--line);border-radius:6px;
+  padding:8px 10px;background:#fbfcfe;font-size:14px;color:var(--ink)}
+.lf input:focus{outline:2px solid #cfe0f7;border-color:#9cc3ee}
+.lgbtn{width:100%;margin-top:2px}
+.lgerr{font-size:12.5px;color:var(--bad);background:#fdeceb;border:1px solid #eec7c3;border-radius:6px;
+  padding:7px 10px;margin-bottom:12px}
+.lgerr[hidden]{display:none}
+.lghint{font-size:11.5px;color:var(--ink3);margin-top:12px;line-height:1.5}
+.who{font-size:12.5px;color:var(--ink);font-weight:600}
+.role{font-size:11px;color:var(--ink3);border:1px solid var(--line);border-radius:99px;padding:0 7px;margin-left:4px}
+.acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
+.acctbox .t{font-size:14px}
+.acctlist{overflow:auto;padding:4px 0}
+.arow{display:flex;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid #eff3f7;font-size:13px}
+.arow .an{flex:1;min-width:0;font-weight:600;word-break:break-all}
+.arow .tag{font-size:11px;border-radius:4px;padding:1px 6px;background:var(--chip);color:var(--ink2)}
+.arow .tag.admin{background:#eaf1fb;color:var(--edit)}
+.arow .nopw{font-size:11.5px;color:var(--warn)}
+.acctadd{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--line);background:#fbfcfe;flex-wrap:wrap}
+.acctadd input{flex:1;min-width:140px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px}
+.acctadd input:focus{outline:2px solid #cfe0f7;border-color:#9cc3ee}
+</style>
+</head>
+<body>
+
+<header class="hdr">
+  <h1>分单审核台</h1>
+  <span class="svc"><span class="dot" id="svcDot"></span><span id="svcTxt">正在连接提取服务…</span></span>
+  <span class="sp"></span>
+  <label class="f" id="fModel" title="提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
+    模型<select id="modelSel"></select></label>
+  <label class="f">复核人<input id="reviewer" type="text" placeholder="制单员姓名" size="10"></label>
+  <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
+    <input type="checkbox" id="doSave" checked>落盘留档</label>
+  <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
+  <button class="btn sm" id="btnAcct" hidden>账号管理</button>
+  <button class="btn sm gh" id="btnLogout" hidden>退出</button>
+</header>
+
+<div class="gate" id="gate">
+  <div class="card login">
+    <div class="t">分单审核台 · 登录</div>
+    <div class="body">
+      <form id="loginForm" autocomplete="on">
+        <label class="lf">账号<input id="lgName" type="text" autocomplete="username" placeholder="管理员 admin / 制单员姓名"></label>
+        <label class="lf">密码<input id="lgPass" type="password" autocomplete="current-password" placeholder="口令"></label>
+        <div class="lgerr" id="lgErr" hidden></div>
+        <button class="btn pri lgbtn" id="lgBtn" type="submit">登录</button>
+      </form>
+      <div class="lghint">管理员 admin 登录后，可在「账号管理」给制单员（马殿齐 / 宛平 / 陈新 / 叶庭伸 / 赵文宇 / 杨皓荃 / 隗一航 / 董文志）下发或重置密码。</div>
+    </div>
+  </div>
+</div>
+
+<div class="gate" id="acct" hidden>
+  <div class="card acctbox">
+    <div class="t">账号管理<span class="sp"></span><button class="btn sm gh" id="acctClose">关闭</button></div>
+    <div class="acctlist" id="acctList"></div>
+    <div class="acctadd">
+      <input id="acName" type="text" placeholder="账号名（制单员姓名，或已存在账号名以重置）">
+      <input id="acPass" type="text" placeholder="新口令（≥6 位；留空=只改角色/占位）" autocomplete="new-password">
+      <button class="btn sm pri" id="acAdd">保存</button>
+    </div>
+    <div class="lgerr" id="acctErr" hidden></div>
+    <div class="lghint">制单员可上传、看票面、核对与提交；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="side">
+    <section class="card">
+      <div class="t">上传分单<span class="sp"></span><span class="n" id="cnt">0 票</span></div>
+      <div class="drop" id="drop">
+        <b>把分单拖进来</b>
+        图片 / PDF / Excel 电子单，逐张解析后在此排队
+        <div class="btns"><button class="btn pri" id="pick">选择文件</button></div>
+      </div>
+      <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
+      <div class="list" id="list"><div class="empty">尚无票据。</div></div>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <div class="t">本地暂存<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
+      <div class="list" id="drafts" style="max-height:210px"></div>
+    </section>
+  </div>
+
+  <section class="card" id="view">
+    <div class="t">票面浏览<span class="sp"></span><span class="pvname" id="pvName"></span></div>
+    <div class="pvtools" id="pvTools" hidden>
+      <span id="pvZoom" hidden>
+        <button class="btn sm" id="pvOut" title="缩小">−</button>
+        <span class="hint" id="pvZoomTxt">100%</span>
+        <button class="btn sm" id="pvIn" title="放大">+</button>
+        <button class="btn sm" id="pvFit">适应宽度</button>
+      </span>
+      <span id="pvPdf" hidden>
+        <button class="btn sm" id="pvPage" title="在「整页看全」和「适应宽度看细节」之间切换"></button>
+      </span>
+      <span id="pvLoc" hidden>
+        <span class="hint">定位模式</span>
+        <button class="btn sm" id="pvLocPrev" title="上一页">‹</button>
+        <span class="hint" id="pvLocPage"></span>
+        <button class="btn sm" id="pvLocNext" title="下一页">›</button>
+        <button class="btn sm" id="pvLocExit" title="回到正常票面浏览">返回原视图</button>
+      </span>
+      <span class="sp"></span>
+      <button class="btn sm" id="pvNew">新窗口</button>
+      <button class="btn sm" id="pvDl">下载原件</button>
+    </div>
+    <div class="pv" id="pvBody">
+      <div class="empty">上传分单后这里显示票面原件，和右边字段逐条核对。</div>
+    </div>
+  </section>
+
+  <section class="card" id="main">
+    <div class="empty" style="padding:64px 20px;text-align:center">
+      上传分单后在这里逐字段核对。<br>
+      <span style="font-size:12px">左边是票面原件，这里是航空口径 39 个字段（国家两位码 / 城市三字码 / 电话归一），可直接改。<br>点字段名可在票面上定位并放大对应原文。</span>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* 字段清单：与后端 hawb2json.TARGET_KEYS_OUT 同序，改动要两边对齐 */
+const FIELDS = [
+  ["MAWB_NO","主单号","id"],["HAWB_NO","分单号","id"],
+  ["ORIGIN_NAME","起运港","route"],["TO1","航路 1","route"],["TO2","航路 2","route"],
+  ["TO3","航路 3","route"],["DEST_NAME","目的港","route"],
+  ["CREATE_TIME","签发日期","cargo"],["PIECES","件数","cargo"],["WEIGHT","毛重","cargo"],
+  ["SLAC","小件数 SLAC","cargo"],["GOODS_INFO","货物描述","cargo"],["SEND_STATUS","状态","cargo"],
+  ["SHIPPER_INFO","发货人整串","ship"],["SHIPPER_INFO_COMP_NAME","公司名称","ship"],
+  ["SHIPPER_INFO_COMP_ADDRESS","详细地址","ship"],["SHIPPER_INFO_CITY","城市","ship"],
+  ["SHIPPER_INFO_STATE","州 / 省","ship"],["SHIPPER_INFO_POSTAL","邮编","ship"],
+  ["SHIPPER_INFO_COUNTRY","国家","ship"],["SHIPPER_INFO_TEL","电话","ship"],
+  ["SHIPPER_INFO_FAX","传真","ship"],["SHIPPER_INFO_EORI","EORI","ship"],
+  ["SHIPPER_INFO_AEO","AEO","ship"],["SHIPPER_INFO_EMAIL","邮箱","ship"],
+  ["SHIPPER_INFO_TAX_ID","税号 USCI/CNPJ","ship"],
+  ["CONSIGNEE_INFO","收货人整串","cons"],["CONSIGNEE_INFO_COMP_NAME","公司名称","cons"],
+  ["CONSIGNEE_INFO_COMP_ADDRESS","详细地址","cons"],["CONSIGNEE_INFO_CITTY","城市","cons"],
+  ["CONSIGNEE_INFO_STATE","州 / 省","cons"],["CONSIGNEE_INFO_POSTAL","邮编","cons"],
+  ["CONSIGNEE_INFO_COUNTRY","国家","cons"],["CONSIGNEE_INFO_TEL","电话","cons"],
+  ["CONSIGNEE_INFO_FAX","传真","cons"],["CONSIGNEE_INFO_EORI","EORI","cons"],
+  ["CONSIGNEE_INFO_AEO","AEO","cons"],["CONSIGNEE_INFO_EMAIL","邮箱","cons"],
+  ["CONSIGNEE_INFO_TAX_ID","税号 USCI/CNPJ","cons"],
+];
+const KEYS = FIELDS.map(f => f[0]);
+const GROUPS = {id:"单号",route:"航路",cargo:"货物与日期",ship:"发货人 SHIPPER",cons:"收货人 CONSIGNEE"};
+const NUM = {PIECES:"int", SLAC:"int", WEIGHT:"num"};
+const LONG = new Set(["SHIPPER_INFO","CONSIGNEE_INFO","GOODS_INFO",
+  "SHIPPER_INFO_COMP_ADDRESS","CONSIGNEE_INFO_COMP_ADDRESS"]);
+const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm",".xls"];
+
+/* 提交接口尚未开通：后端就绪后只改这一行（其余逻辑不变，失败会自动本地暂存） */
+const SUBMIT_URL = "/submit";
+
+/* 页面可能被反代挂在子路径下（服务器上是 /hawb/）：接口前缀跟着当前目录走。
+   根路径下为空串，与从前完全一致；/hawb/ 与 /hawb/index.html 下均为 "/hawb"。 */
+const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
+
+const LS = {draft:"hawb.review.drafts"};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
+const S = {tickets:[], sel:null, running:false};
+let ME = null;   // 当前登录者 {name, role}：null = 未登录（显示登录遮罩）
+
+function toast(msg, kind){
+  const el = $("#toast"); el.textContent = msg; el.className = "toast on " + (kind || "");
+  clearTimeout(toast._t); toast._t = setTimeout(() => el.className = "toast", 3000);
+}
+function txt(o, k){ const v = o ? o[k] : null; return v === null || v === undefined ? "" : String(v); }
+function toNum(k, v){
+  const s = String(v).replace(/,/g, "").trim();
+  const m = s.match(NUM[k] === "int" ? /-?\d+(\.\d+)?/ : /-?\d+(\.\d+)?/);
+  if (!m) return s === "" ? null : s;
+  if (NUM[k] === "int" && m[0].includes(".")) return s;   // 件数出现小数：留着原样让人去查，不悄悄取整
+  return NUM[k] === "int" ? parseInt(m[0], 10) : parseFloat(m[0]);
+}
+
+/* ── 即时规则提示：与后端 validator 同口径，只提示不阻断 ─────────────────
+   只提示航空口径这一列：原文口径已不展示，提示它等于让人去改看不见的东西。
+   原文侧的毛病由后端 validator / 保真回查出红旗，走 chips 那条路。 */
+function checks(k, l2, l3){
+  const out = [], g = v => (v === undefined || v === null ? "" : String(v).trim()), a = g(l3);
+  if (k === "MAWB_NO"){
+    const d = a.replace(/\D/g, "");
+    if (d){
+      if (d.length !== 11) out.push(["主单号要 3 位前缀+8 位数字", "warn"]);
+      else if (+d.slice(3, 10) % 7 !== +d.slice(10)) out.push(["主单号 IATA 校验位不符", "warn"]);
+    }
+  }
+  if (k.endsWith("_COUNTRY")){
+    if (a && !/^[A-Z]{2}$/.test(a)) out.push(["国家要 ISO 两位码", "warn"]);
+    if (!a && g(l2)) out.push(["票面有国家却没转出码：码表缺项", "warn"]);
+  }
+  if (["ORIGIN_NAME","DEST_NAME","TO1","TO2","TO3"].includes(k)){
+    if (a && !/^[A-Z0-9]{3}$/.test(a)) out.push(["城市要三字码：补码表或改票面名", "warn"]);
+    if (!a && g(l2)) out.push(["票面有城市却没映射出三字码", "warn"]);
+  }
+  if (/_TEL$|_FAX$/.test(k)){
+    if (a && !/^\+\d{6,}$/.test(a.replace(/[\s().-]/g, ""))) out.push(["电话/传真未归一成 +数字", "warn"]);
+  }
+  if (k.endsWith("_TAX_ID")){
+    if (a){
+      if (/^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]/.test(a))
+        out.push(["税号混进了标签，只填号码本身", "warn"]);
+      else if (a.replace(/[^0-9A-Za-z]/g, "").length < 8) out.push(["税号过短，疑似截断", "warn"]);
+    }
+  }
+  if (k === "CREATE_TIME"){
+    if (a && !/^\d{4}-\d{2}-\d{2}$/.test(a)) out.push(["签发日期要 YYYY-MM-DD", "warn"]);
+    if (a && /^\d{1,2}-[A-Za-z\u4e00-\u9fa5]{2,}-?\d{2}$/.test(g(l2)) && g(l2).slice(-2) === a.slice(8))
+      out.push(["票面是两位年，别把「年」当成日", "warn"]);
+  }
+  if (NUM[k] !== undefined){
+    if (a && toNum(k, a) === null || (NUM[k] === "int" && a && /\./.test(a))) out.push(["件数不该有小数或非数字", "warn"]);
+    const p = parseFloat(g(l2).replace(/[^\d.]/g, "")), q = parseFloat(a.replace(/[^\d.]/g, ""));
+    if (k === "WEIGHT" && p && q && Math.abs(q - p * 2) < 1e-6)
+      out.push(["疑似把总数行重复累加了：正好是票面毛重的 2 倍", "warn"]);
+  }
+  return out;
+}
+
+/* ── 质检红旗 → 落到哪个字段 ─────────────────────────────────────────── */
+function flagsByField(qc){
+  const map = {}, rest = [];
+  for (const f of (qc && qc.flags) || []){
+    const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") ||
+                              f.includes(kk + " 未") || f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
+    if (k) (map[k] = map[k] || []).push(f); else rest.push(f);
+  }
+  return {map, rest};
+}
+function flagNote(f){
+  if (f.startsWith("保真")) return "保真未命中票面转录：" + f.slice(3).trim();
+  return f;
+}
+
+/* ── 本地暂存（防刷新丢编辑；接口未就绪时也是提交兜底） ────────────────── */
+function drafts(){ try { return JSON.parse(localStorage.getItem(LS.draft) || "{}"); } catch (e) { return {}; } }
+function saveDraft(t){
+  if (!t.stem) return;
+  const d = drafts();
+  d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
+               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, submitted:t.submitted};
+  localStorage.setItem(LS.draft, JSON.stringify(d));
+}
+function loadDraft(stem){
+  const d = drafts()[stem]; if (!d) return null;
+  return {file:null, filename:d.filename || d.stem, stem:d.stem, state:"done", restored:true,
+          channel:d.channel, elapsed:d.elapsed, qc:d.qc, raw:d.raw || {}, air:d.air || {},
+          airE:d.airE || {}, submitted:d.submitted || null};
+}
+
+/* ── 票据模型：页面只展示/编辑航空口径，原文口径留在数据里做保真追溯 ──────── */
+function airVal(t, k){
+  if (k in t.airE) return t.airE[k];
+  return txt(t.air, k);
+}
+function setEdit(t, k, v){
+  const orig = txt(t.air, k);
+  if (v === orig) delete t.airE[k]; else t.airE[k] = v;
+  saveDraft(t);
+}
+function editedList(t){
+  return Object.keys(t.airE).map(k => "air." + k);
+}
+function reviewed(t){
+  const base = Object.assign({}, t.air), box = t.airE;
+  for (const k in box) base[k] = NUM[k] !== undefined ? toNum(k, box[k]) : box[k];
+  return base;
+}
+function payloadFor(t, who){
+  return {
+    filename: t.filename, stem: t.stem, channel: t.channel, elapsed: t.elapsed,
+    reviewer: who, reviewed_at: nowTxt(),
+    needs_review: !!(t.qc && t.qc.needs_review), flags: (t.qc && t.qc.flags) || [],
+    edited_fields: editedList(t),
+    raw_original: t.raw, air_original: t.air,
+    air_reviewed: reviewed(t),
+  };
+}
+
+/* ── 票面浏览：核对时把原件和字段并排看 ───────────────────────────────── */
+const PREVIEW = {key:"", url:"", zoom:100, pdfFit:"FitH"};
+let _pvSeq = 0;
+
+function fileKind(name){
+  const e = "." + (String(name || "").split(".").pop() || "").toLowerCase();
+  if (e === ".pdf") return "pdf";
+  if ([".png", ".jpg", ".jpeg", ".bmp"].includes(e)) return "img";
+  return "other";     // xlsx / tif：浏览器渲染不了，走服务端转出的 PDF 或下载
+}
+function releasePreview(){
+  if (PREVIEW.url){ URL.revokeObjectURL(PREVIEW.url); PREVIEW.url = ""; }
+}
+function pvBody(html){ $("#pvBody").innerHTML = html; }
+function applyZoom(){
+  const img = $("#pvImg"); if (!img) return;
+  img.style.width = PREVIEW.zoom + "%";
+  $("#pvZoomTxt").textContent = PREVIEW.zoom + "%";
+}
+function showPreview(url, kind){
+  releasePreview();
+  PREVIEW.url = url;
+  if (kind === "pdf"){
+    $("#pvZoom").hidden = true;
+    $("#pvPdf").hidden = false;
+    pdfFrame();                       // 翻页/缩放交给浏览器自带阅读器
+  } else {
+    PREVIEW.zoom = 100;
+    $("#pvZoom").hidden = false;
+    $("#pvPdf").hidden = true;
+    pvBody(`<img id="pvImg" src="${url}" alt="票面原件">`);
+    applyZoom();
+  }
+}
+/* 阅读器默认带缩略图侧栏，窄栏里它要占掉一半宽度、票面只剩半个——用开放参数关掉并直接适应宽度。
+   FitH=适应宽度看细节，Fit=整页看全，按票的版式在这两者间切。 */
+function pdfFrame(){
+  pvBody(`<iframe src="${PREVIEW.url}#navpanes=0&view=${PREVIEW.pdfFit}" title="票面 PDF"></iframe>`);
+  $("#pvPage").textContent = PREVIEW.pdfFit === "FitH" ? "整页看全" : "适应宽度";
+}
+/* 同一张票不重建预览：render() 会因为解析进度等反复跑，重建会把 iframe 的滚动位置也一起清掉 */
+function previewKey(t){
+  if (!t) return "";
+  if (t.file && fileKind(t.filename) !== "other") return "F|" + t.filename;
+  return "A|" + (t.stem || t.filename) + (t.state === "done" ? "|d" : "|p");
+}
+function renderPreview(){
+  const t = current(), key = previewKey(t);
+  /* 定位模式画的是票面页图：切到别的票时必须先退出，否则正常预览会把高亮层冲掉 */
+  if (LOC.on && (!t || (t.stem || "") !== LOC.stem)){ exitLocate(); return; }
+  if (key === PREVIEW.key) return;
+  PREVIEW.key = key;
+  loadPreview(t);
+}
+async function loadPreview(t){
+  const seq = ++_pvSeq;
+  releasePreview();
+  $("#pvName").textContent = t ? (t.filename || "") : "";
+  $("#pvTools").hidden = !t;
+  if (!t){ pvBody(`<div class="empty">上传分单后这里显示票面原件，和右边字段逐条核对。</div>`); return; }
+  const kind = fileKind(t.filename);
+  if (t.file && kind !== "other"){
+    showPreview(URL.createObjectURL(t.file), kind);     // 本次会话上传的：直接用浏览器里的文件，不占服务端
+    return;
+  }
+  if (!t.stem){ pvBody(`<div class="empty">正在解析…解析完就能回看票面。</div>`); return; }
+  pvBody(`<div class="empty">正在取票面…</div>`);
+  try{
+    const r = await fetch(BASE + "/source/" + encodeURIComponent(t.stem));
+    if (seq !== _pvSeq) return;                          // 期间切到别的票了，这份结果丢掉
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      pvBody(`<div class="empty">${esc(j.detail || ("取票面失败 HTTP " + r.status))}<br>
+        <span style="font-size:12px">上传时勾上「落盘留档」才会归档原件。</span></div>`);
+      return;
+    }
+    const blob = await r.blob();
+    if (seq !== _pvSeq) return;
+    showPreview(URL.createObjectURL(blob),
+                (r.headers.get("content-type") || "").includes("pdf") ? "pdf" : "img");
+  }catch(e){
+    if (seq === _pvSeq) pvBody(`<div class="empty">取票面失败：${esc(String(e.message || e))}</div>`);
+  }
+}
+function saveBlob(blob, name){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function downloadSource(){
+  const t = current(); if (!t) return;
+  if (t.file && fileKind(t.filename) !== "other"){ saveBlob(t.file, t.filename); return; }
+  if (!t.stem){ toast("还没解析完，稍后再下载", "bad"); return; }
+  try{
+    const r = await fetch(BASE + "/source/" + encodeURIComponent(t.stem) + "?raw=1");
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      toast(j.detail || ("取原件失败 HTTP " + r.status), "bad"); return;
+    }
+    saveBlob(await r.blob(), t.filename || (t.stem + ".pdf"));
+  }catch(e){ toast("取原件失败：" + (e.message || e), "bad"); }
+}
+
+/* ── 字段 → 票面定位：点字段名，把 L1 转录 bbox 叠在页图上、自动放大到看得清 ────
+   浏览器内嵌 PDF 阅读器无法按坐标高亮/缩放，所以定位模式用服务端按页渲染的 PNG 打底。
+   匹配口径仿后端 fidelity 的 _find_lines 但更宽松：大小写忽略（大小写不符后端已出红旗，
+   定位是给人看位置的）；整串对不上就拆词元对（999-0686 5456 vs 999 0686 5456 这类）。 */
+const LOC = {on:false, key:"", stem:"", base:"", remote:false, url:"", ll:null,
+             page:1, pages:1, hits:[], pagesWithMatch:new Set()};
+const _FWJS = {"，":",", "：":":", "；":";", "（":"(", "）":")", "　":" "};
+function normFace(s){
+  let t = String(s == null ? "" : s).normalize("NFKC");
+  t = t.replace(/[，：；（）\u3000]/g, c => _FWJS[c] || " ");
+  return t.replace(/\s+/g, " ").trim().toUpperCase();
+}
+const faceToks = s => normFace(s).split(/[^0-9A-Z&]+/).filter(Boolean);
+function matchLines(q, lines){
+  const nq = normFace(q);
+  if (!nq || !lines || !lines.length) return [];
+  const tqs = faceToks(q).filter(t => t.length >= 3);
+  const boxed = l => Array.isArray(l.bbox) && l.bbox.length === 4;
+  let best = 0, out = [];
+  for (const l of lines){
+    if (!boxed(l)) continue;
+    const nl = normFace(l.text);
+    let s = 0;
+    if (nl.includes(nq) || (nq.length >= 12 && nl.length >= 6 && nq.includes(nl))) s = 2;
+    else if (tqs.length){
+      const lt = faceToks(l.text);
+      const miss = tqs.filter(t => lt.indexOf(t) < 0).length;
+      if (!miss) s = 1;
+      else if (tqs.length > 2 && miss <= Math.floor(tqs.length / 3)) s = 1;
+    }
+    if (!s) continue;
+    if (s > best){ best = s; out = [l]; }
+    else if (s === best) out.push(l);
+  }
+  if (!out.length && tqs.length){            // 兜底：按最长词元单挑，至少滚到那一区让人对眼
+    const t = tqs.slice().sort((a, b) => b.length - a.length)[0];
+    for (const l of lines) if (boxed(l) && normFace(l.text).includes(t)) out.push(l);
+  }
+  return out;
+}
+function fieldValCandidates(t, k){
+  const out = [];
+  for (const v of [txt(t.raw, k), airVal(t, k)]){
+    const s = String(v || "").trim();
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+/* 转录来源：本次会话提取的用响应里的 t.ll；本地暂存载入的从服务端 /layout 取（要归档过才有）。
+   在途 Promise 挂在票上共享：连点两个字段时第二个别再发一遍请求、也不会误判"无转录"。 */
+async function layoutFor(t){
+  const usable = ll => { const ls = (ll && ll.lines) || []; return ls.some(l => l.bbox) ? ls : null; };
+  let ls = usable(t.ll); if (ls) return ls;
+  if (!t.stem) return null;
+  if (!t._llP){
+    t._llP = fetch(BASE + "/layout/" + encodeURIComponent(t.stem))
+      .then(r => r.ok ? r.json() : null).catch(() => null)
+      .then(j => { if (j) t.ll = j; return usable(t.ll); });
+  }
+  return t._llP;
+}
+async function enterLocate(t, k){
+  if (!t || t.state === "busy" || t.state === "queued"){ toast("还没解析完，解析好才能定位", "bad"); return; }
+  const seq = ++_pvSeq;
+  const label = (FIELDS.find(f => f[0] === k) || [k, k])[1];
+  const ll = await layoutFor(t);
+  if (!ll){ toast(`「${label}」没有可用的 L1 转录：上传时勾「落盘留档」才能定位到票面`, "bad"); return; }
+  const img = fileKind(t.filename) === "img";
+  let base;
+  if (t.file && !t.save){
+    if (!img){ toast("原件没归档：服务器没法按页渲染。重新上传并勾「落盘留档」即可定位", "bad"); return; }
+    base = URL.createObjectURL(t.file);       // 未落盘的图票：浏览器里那份文件就能当底图
+  } else base = BASE + "/render/" + encodeURIComponent(t.stem);
+  LOC.on = true; LOC.key = (t.stem || t.filename) + "|" + k;
+  LOC.stem = t.stem || ""; LOC.base = base; LOC.remote = base.indexOf("/render/") > -1;
+  LOC.ll = ll;
+  LOC.pages = Math.max(1, ...ll.map(l => l.page || 1));
+  const cands = fieldValCandidates(t, k);
+  LOC.hits = []; LOC.q = "";
+  for (const c of cands){ LOC.hits = matchLines(c, ll); if (LOC.hits.length){ LOC.q = c; break; } }
+  LOC.pagesWithMatch = new Set(LOC.hits.map(l => l.page || 1));
+  LOC.page = LOC.hits.length ? (LOC.hits[0].page || 1) : 1;
+  $("#pvName").textContent = (t.filename || t.stem) + " · 定位：" + label;
+  pvSetTools();
+  await showLocPage(LOC.page, seq);
+  if (!cands.length) toast("该字段值为空，先把整页票面放出来给你看", "ok");
+  else if (!LOC.hits.length) toast("票面转录没直接命中这个值：L3 是归一口径（国家两位码/电话 + 号），票面可能印的是全称或分了行", "bad");
+  else if (LOC.hits.length < 8)
+    toast(`命中 ${LOC.hits.length} 行转录${LOC.pagesWithMatch.size > 1 ? "，跨第 " + [...LOC.pagesWithMatch].sort().join("/") + " 页" : ""}`, "ok");
+}
+async function showLocPage(page, seq){
+  LOC.page = Math.min(Math.max(1, page || 1), LOC.pages);
+  let src = LOC.base;
+  if (LOC.remote){
+    try{
+      const r = await fetch(LOC.base + "?page=" + LOC.page + "&scale=2");
+      if (!r.ok){
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.detail || ("HTTP " + r.status));
+      }
+      const pg = +r.headers.get("X-Ticket-Pages");
+      if (pg > 0) LOC.pages = pg;
+      if (LOC.url) URL.revokeObjectURL(LOC.url);
+      src = LOC.url = URL.createObjectURL(await r.blob());
+    }catch(e){ pvBody(`<div class="empty">取票面页图失败：${esc(String(e.message || e))}<br>
+        <span style="font-size:12px">上传时勾上「落盘留档」才会归档原件，服务器才能按页渲染。</span></div>`); return; }
+  }
+  if (seq !== _pvSeq) return;                 // 期间又点了别的字段/票，这份丢掉
+  const boxes = LOC.hits.filter(l => (l.page || 1) === LOC.page).map(l => {
+    const [x1, y1, x2, y2] = l.bbox;
+    return `<div class="bbox" title="${esc(l.text)}" style="left:${x1 / 10}%;top:${y1 / 10}%;` +
+      `width:${Math.max(x2 - x1, 10) / 10}%;height:${Math.max(y2 - y1, 10) / 10}%"></div>`;
+  }).join("");
+  pvBody(`<div class="page" id="pvPageBox"><img id="pvImg" src="${src}" alt="票面第 ${LOC.page} 页"><div class="lyr">${boxes}</div></div>`);
+  $("#pvLocPage").textContent = "第 " + LOC.page + "/" + LOC.pages + " 页";
+  $("#pvLocPrev").disabled = LOC.page <= 1;
+  $("#pvLocNext").disabled = LOC.page >= LOC.pages;
+  const im = $("#pvImg");
+  if (im.complete && im.naturalWidth) locFit(); else im.onload = locFit;
+}
+/* 自动放大：让命中行高到约占窗格 1/3，再把第一条命中滚到正中。倍数即 #pvPageBox 的宽度%。 */
+function locFit(){
+  const im = $("#pvImg"), page = $("#pvPageBox"), pane = $("#pvBody");
+  if (!im || !page || !im.naturalHeight) return;
+  const first = page.querySelector(".bbox");
+  let z = 100;
+  if (first){
+    const bh100 = im.naturalHeight * parseFloat(first.style.height) / 100;   // 100% 宽时该行的高（px）
+    if (bh100 > 0) z = Math.round(Math.min(500, Math.max(100, pane.clientHeight * 100 / (3 * bh100))));
+  }
+  page.style.width = z + "%";
+  if (first){
+    const pr = page.getBoundingClientRect(), fr = first.getBoundingClientRect(), br = pane.getBoundingClientRect();
+    pane.scrollTop += (fr.top + fr.height / 2) - (pr.top + br.height / 2);
+    pane.scrollLeft += (fr.left + fr.width / 2) - (pr.left + br.width / 2);
+  }
+}
+function pvSetTools(){
+  $("#pvLoc").hidden = !LOC.on;
+  $("#pvZoom").hidden = true; $("#pvPdf").hidden = true;
+}
+function exitLocate(){
+  LOC.on = false; LOC.key = ""; LOC.ll = null; LOC.hits = [];
+  if (LOC.url){ URL.revokeObjectURL(LOC.url); LOC.url = ""; }
+  PREVIEW.key = "";                            // 强制重画正常票面
+  pvSetTools();
+  render();
+}
+
+/* ── 提取服务 ───────────────────────────────────────────────────────── */
+async function probe(){
+  try{
+    const r = await fetch(BASE + "/health").then(x => x.json());
+    /* 服务端跑的是改动前的旧进程时，票面浏览这类新功能会像坏了——直接说清是没重启 */
+    const stale = r.stale_files || [];
+    $("#svcDot").className = "dot " + (stale.length ? "bad" :
+      (r.key_configured ? "ok" : "bad"));
+    $("#svcTxt").innerHTML = "提取服务在线 · 模型 <b>" + esc(String(r.model || "").split("/").pop()) + "</b>" +
+      (r.vision === false ? " · <b style='color:#8c4a17'>纯文本模型：扫描件会失败，电子单/文字层 PDF 可用</b>" : "") +
+      (r.key_configured ? "" : " · <b style='color:#9c2b20'>服务端未配当前模型渠道的密钥</b>") +
+      (stale.length ? " · <b style='color:#9c2b20'>服务端代码改了没重启（" + esc(stale.join("、")) +
+        "），票面浏览等功能不生效：关掉服务窗口，重跑 4_启动HTTP服务.bat</b>" : "");
+    if (stale.length) toast("提取服务还是改动前的旧进程：关掉服务窗口重跑 4_启动HTTP服务.bat，票面浏览才会生效", "bad");
+  }catch(e){
+    $("#svcDot").className = "dot bad";
+    $("#svcTxt").textContent = "连不上提取服务：先跑 4_启动HTTP服务.bat，再从 http://127.0.0.1:8000/ 打开本页";
+  }
+}
+/* ── 模型切换 ───────────────────────────────────────────────────────── */
+async function loadModels(){
+  try{
+    const r = await fetch(BASE + "/models").then(x => x.json());
+    const cur = r.current || "";
+    const opts = (r.presets || []).map(p =>
+      '<option value="' + esc(p.key) + '"' + (p.key === cur ? " selected" : "") + ">" + esc(p.label || p.model) + "</option>");
+    if (cur && !(r.presets || []).some(p => p.key === cur)){
+      /* .env 里直接写的是原始模型 id：也列出来并选中，否则下拉会显示成另一个模型，看着像切错了 */
+      opts.unshift('<option value="' + esc(cur) + '" selected>自定义：' + esc(r.effective || cur) + "</option>");
+    }
+    $("#modelSel").innerHTML = opts.join("") || '<option value="">（服务端没给预设）</option>';
+  }catch(e){
+    $("#modelSel").innerHTML = '<option value="">（服务端旧进程，重启后再试）</option>';
+  }
+}
+$("#modelSel").addEventListener("change", async e => {
+  const v = e.target.value;
+  if (!v) return;
+  e.target.disabled = true;
+  try{
+    const r = await fetch(BASE + "/model", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({model: v})});
+    const j = await r.json().catch(() => ({detail:"返回不是 JSON（HTTP " + r.status + "）"}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    toast("已切换模型：" + (j.label || j.model) +
+          (j.vision ? "" : "（纯文本：扫描件会失败，电子单/文字层 PDF 可用）"), "ok");
+  }catch(err){
+    toast("切换模型失败：" + err.message, "bad");
+  }finally{
+    e.target.disabled = false;
+    loadModels(); probe();     // 以服务端实际值为准重画下拉（失败了要退回原选项）
+  }
+});
+async function extract(t){
+  const fd = new FormData();
+  fd.append("file", t.file, t.filename);
+  const r = await fetch(BASE + "/extract?save=" + (t.save ? "true" : "false"),
+    {method:"POST", body:fd});
+  const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
+  if (!r.ok || !j.ok) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+async function runQueue(){
+  if (S.running) return;
+  S.running = true;
+  for (;;){
+    const t = S.tickets.find(x => x.state === "queued");
+    if (!t) break;
+    if (t.save === undefined) t.save = $("#doSave").checked;   // 定位模式要知道原件当时归没归档
+    t.state = "busy"; t.startedAt = Date.now(); render();
+    try{
+      const j = await extract(t);
+      Object.assign(t, {state:"done", stem:j.stem, channel:j.channel, elapsed:j.elapsed,
+                        qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ll:j.transcript || null});
+      if (S.sel === t.filename) S.sel = t.stem;
+      saveDraft(t);
+    }catch(e){
+      t.state = "failed"; t.error = String(e.message || e);
+    }
+    render();
+  }
+  S.running = false;
+}
+function addFiles(files){
+  const bad = [];
+  for (const f of files){
+    const ext = "." + (f.name.split(".").pop() || "").toLowerCase();
+    if (!EXTS.includes(ext)){ bad.push(f.name); continue; }
+    S.tickets.push({file:f, filename:f.name, state:"queued", raw:{}, air:{}, airE:{}, qc:null});
+  }
+  if (bad.length) toast("已忽略不支持的类型：" + bad.slice(0, 3).join("、") + (bad.length > 3 ? " 等" : ""), "bad");
+  const first = S.tickets.find(t => t.state === "queued");
+  if (first && !S.sel) S.sel = first.filename;
+  render(); runQueue();
+}
+
+/* ── 提交 ───────────────────────────────────────────────────────────── */
+async function submitTicket(t){
+  const who = $("#reviewer").value.trim();
+  if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
+  const body = {tickets:[payloadFor(t, who)], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
+  t.state = "submitting"; render();
+  let pending = false;
+  try{
+    const r = await fetch(SUBMIT_URL, {method:"POST", headers:{"Content-Type":"application/json"},
+                                       body:JSON.stringify(body)});
+    if (r.status === 404 || r.status === 405) pending = true;
+    else {
+      const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
+      if (!r.ok || j.ok === false) throw new Error(j.error || ("HTTP " + r.status));
+    }
+  }catch(e){ if (!pending) { t.state = "done"; render(); toast("提交失败：" + e.message, "bad"); return; } else pending = false; }
+  if (pending){
+    t.state = "done"; t.submitted = {mode:"pending", at:null, body:body};
+    saveDraft(t); render();
+    toast("提交接口尚未开通（" + SUBMIT_URL + "）：结果已在本地暂存，可导出 JSON 兜底", "bad");
+    return;
+  }
+  t.state = "done"; t.submitted = {mode:"server", at:nowTxt()};
+  saveDraft(t); render(); toast("已提交：" + t.stem, "ok");
+}
+function exportTickets(list, name){
+  if (!list.length){ toast("没有可导出的票据", "bad"); return; }
+  const json = JSON.stringify({reviewer:$("#reviewer").value.trim(), exported_at:nowTxt(),
+                               tickets:list.map(t => payloadFor(t, $("#reviewer").value.trim()))}, null, 2);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([json], {type:"application/json"}));
+  a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast("已导出 " + list.length + " 票", "ok");
+}
+
+/* ── 渲染 ───────────────────────────────────────────────────────────── */
+function statusOf(t){
+  if (t.state === "queued") return ["", "排队中"];
+  if (t.state === "busy") return ["busy", "解析中…"];
+  if (t.state === "failed") return ["bad", "失败"];
+  if (t.state === "submitting") return ["busy", "提交中…"];
+  if (t.submitted && t.submitted.mode === "server") return ["ok", "已提交"];
+  if (t.submitted) return ["warn", "待提交"];
+  if (t.qc && t.qc.needs_review) return ["warn", "需复核"];
+  return ["ok", "干净"];
+}
+function current(){ return S.tickets.find(t => t.stem === S.sel) || S.tickets.find(t => t.filename === S.sel); }
+function render(){
+  const done = S.tickets.filter(t => t.state === "done").length;
+  const rev = S.tickets.filter(t => t.qc && t.qc.needs_review).length;
+  $("#cnt").textContent = S.tickets.length + " 票 · 已解析 " + done + (rev ? " · 需复核 " + rev : "");
+  $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
+    const [c, label] = statusOf(t), n = editedList(t).length;
+    const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
+    return `<div class="row ${isCur ? "sel" : ""}" data-i="${i}">
+      <span class="dot ${c}" style="margin-top:5px"></span>
+      <span class="nm">${esc(t.filename)}<br><span class="m">${esc(t.stem || "等待解析")}</span></span>
+      <span class="st">${label}${n ? `<br><span style="color:var(--edit)">改 ${n} 项</span>` : ""}</span></div>`;
+  }).join("") : `<div class="empty">尚无票据。</div>`;
+  renderMain(); renderDrafts(); renderPreview();
+}
+function renderDrafts(){
+  const d = drafts();
+  const keys = Object.keys(d).filter(k => !S.tickets.some(t => t.stem === k));
+  $("#drafts").innerHTML = keys.length ? keys.map(k => {
+    const t = d[k], n = Object.keys(t.airE || {}).length;
+    return `<div class="row" data-load="${esc(k)}"><span class="dot warn" style="margin-top:5px"></span>
+      <span class="nm">${esc(k)}<br><span class="m">${esc(t.savedAt || "")} · 改 ${n} 项 · 未提交</span></span>
+      <span class="st"><button class="btn sm">载入</button></span></div>`;
+  }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功后仍可在此回看。</div>`;
+}
+function control(t, k){
+  const v = airVal(t, k);
+  if (LONG.has(k)) return `<textarea data-k="${k}">${esc(v)}</textarea>`;
+  return `<input data-k="${k}" value="${esc(v)}"` + (NUM[k] ? ` inputmode="decimal"` : "") + `>`;
+}
+/* 长文本框高度跟着内容走：以前按 "\n" 数行数，收发货人整串是一整段没有换行，
+   再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。 */
+function autoGrow(el){
+  el.style.height = "auto";
+  el.style.height = (el.scrollHeight + 2) + "px";
+}
+function statusCell(t, k, fl){
+  const l2 = txt(t.raw, k), l3 = airVal(t, k);
+  const ck = checks(k, l2, l3);
+  let head = "";
+  if (fl.length) head = `<span class="badge warn">红旗 ${fl.length}</span>`;
+  else if (!l2.trim() && !l3.trim()) head = `<span class="badge">字段为空</span>`;
+  else if (!l3.trim()) head = `<span class="badge miss">航空口径空</span>`;
+  else head = `<span class="badge same">已归一</span>`;
+  const edits = (k in t.airE) ? `<div class="note"><span class="e">已改</span>
+      <span class="rs" data-restore="${esc(k)}">还原</span></div>` : "";
+  const notes = ck.slice(0, 3).map(x => `<div class="note"><span class="${x[1] === "bad" ? "b" : "q"}">${esc(x[0])}</span></div>`).join("");
+  return head + edits + notes;
+}
+function renderMain(){
+  const el = $("#main"), t = current();
+  if (!t){
+    el.innerHTML = `<div class="empty" style="padding:64px 20px;text-align:center">上传分单后在这里逐字段核对。</div>`;
+    return;
+  }
+  if (t.state === "busy" || t.state === "queued"){
+    el.innerHTML = `<div class="empty" style="padding:64px 20px;text-align:center">正在解析 ${esc(t.filename)}…<br>
+      <span style="font-size:12px">扫描件约 7-20 秒；Excel 先由 LibreOffice 转 PDF，再直读文字层，通常更快。</span></div>`;
+    return;
+  }
+  if (t.state === "failed"){
+    el.innerHTML = `<div class="hd"><span class="nm">${esc(t.filename)}</span></div>
+      <div class="empty" style="color:var(--bad)">解析失败：${esc(t.error || "未知错误")}<br><br>
+      <span style="color:var(--ink3);font-size:12px">常见原因：登录已过期（401，请重新登录）、
+      文件超上限（413）、原件读不出。</span></div>`;
+    return;
+  }
+  const fm = flagsByField(t.qc), [c, label] = statusOf(t);
+  const chips = ((t.qc && t.qc.flags) || []).map(f => {
+    const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
+                              f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
+    const hard = f.startsWith("保真") || f.includes("缺失");
+    return `<span class="chip ${hard ? "bad" : "warn"}" data-jump="${k || ""}" title="${esc(f)}">${esc(f)}</span>`;
+  }).join("");
+  let rows = "", last = "";
+  for (const [k, lab, g] of FIELDS){
+    if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
+    const fl = fm.map[k] || [];
+    rows += `<tr id="f-${k}" class="${fl.length ? "flag" : ""}">
+      <td class="k loc" title="点击：在左边票面上定位并放大这个值"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
+      <td class="c v" data-cell="air">${control(t, k)}</td>
+      <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
+  }
+  const fid = t.qc && t.qc.fidelity;
+  el.innerHTML = `
+    <div class="hd">
+      <span class="dot ${c}" style="margin-top:6px"></span>
+      <div><div class="nm">${esc(t.filename)}</div>
+        <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
+          ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}</div></div>
+      <span class="sp"></span>
+      <span class="hint" id="editedHint">已改 ${editedList(t).length} 项 · 红旗 ${((t.qc && t.qc.flags) || []).length} 条</span>
+    </div>
+    ${chips ? `<div class="chips">${chips}</div>` : ""}
+    ${chips ? `<div class="chips">${chips}</div>` : ""}
+    <div class="ft top">
+      <button class="btn pri" id="submit">提交本票</button>
+      <button class="btn" id="expOne">导出本票 JSON</button>
+      <button class="btn" id="expAll">导出全部已解析</button>
+      <span class="sp"></span>
+      <span class="hint">保真回查：${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</span>
+    </div>
+    <div class="tools">
+      <button class="btn sm" id="jumpFirst">跳到首个红旗字段</button>
+      <label><input type="checkbox" id="onlyFlag"> 只看有红旗 / 空值的字段</label>
+      <span class="hint">点左边字段名 → 票面定位并放大对应原文</span>
+    </div>
+    <table><thead><tr>
+      <th>字段</th><th class="g">航空口径 L3 · 已归一（可改）</th>
+      <th style="text-align:right">状态</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    <div class="ft">
+      <span class="sp"></span>
+      <button class="btn gh" id="dropOne">从列表移除</button>
+    </div>`;
+  wireMain(t);
+  $("#main").querySelectorAll("textarea").forEach(autoGrow);
+}
+function refreshRow(t, k){
+  const tr = $("#f-" + CSS.escape(k)); if (!tr) return;
+  const fl = flagsByField(t.qc).map[k] || [];
+  tr.querySelector("[data-st]").innerHTML = statusCell(t, k, fl);
+  tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
+  const hint = $("#editedHint");
+  if (hint) hint.textContent = `已改 ${editedList(t).length} 项 · 红旗 ${((t.qc && t.qc.flags) || []).length} 条`;
+  const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
+  if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span style="color:var(--edit)">改 ${editedList(t).length} 项</span>` : "");
+}
+function wireMain(t){
+  /* 委托挂 #main（renderMain 每次换的是它的 innerHTML，节点不毁）：只接一次，
+     否则重画一回就多挂一份监听，点一下字段名会并发跑一遍定位 */
+  if (!$("#main")._locWired){
+    $("#main")._locWired = true;
+    $("#main").addEventListener("click", e => {
+      const td = e.target.closest("td.k"); if (!td) return;
+      const tr = td.closest("tr"); if (!tr || tr.id.slice(0, 2) !== "f-") return;
+      const t2 = current(); if (!t2) return;
+      enterLocate(t2, tr.id.slice(2));
+    });
+  }
+  $("#main").querySelectorAll("[data-k]").forEach(inp => {
+    const apply = () => {
+      setEdit(t, inp.dataset.k, inp.value);
+      refreshRow(t, inp.dataset.k);
+      if (inp.tagName === "TEXTAREA") autoGrow(inp);
+    };
+    inp.addEventListener("input", apply);
+    inp.addEventListener("blur", apply);
+  });
+  $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
+  }));
+  $("#main").querySelectorAll(".chip[data-jump]").forEach(ch => ch.addEventListener("click", () => {
+    const k = ch.dataset.jump; if (!k) return;
+    const row = $("#f-" + CSS.escape(k)); if (!row) return;
+    row.scrollIntoView({behavior:"smooth", block:"center"});
+    row.style.background = "#fff3d6"; setTimeout(() => row.style.background = "", 1500);
+    const inp = row.querySelector("[data-k]"); if (inp) inp.focus();
+  }));
+  $("#jumpFirst").addEventListener("click", () => {
+    const fm = flagsByField(t.qc);
+    const k = KEYS.find(x => (fm.map[x] || []).length) || (fm.rest[0] ? "" : "");
+    if (!k){ toast("本票红旗未指到具体字段，逐条对照票面看", "ok"); return; }
+    $("#f-" + CSS.escape(k)).scrollIntoView({behavior:"smooth", block:"center"});
+  });
+  $("#onlyFlag").addEventListener("change", e => {
+    const fm = flagsByField(t.qc);
+    for (const [k] of FIELDS){
+      const row = $("#f-" + CSS.escape(k)); if (!row) continue;
+      const interesting = (fm.map[k] || []).length || !txt(t.raw, k).trim() || !airVal(t, k).trim() ||
+                          k in t.airE;
+      row.hidden = e.target.checked && !interesting;
+    }
+  });
+  $("#submit").addEventListener("click", () => submitTicket(t));
+  $("#expOne").addEventListener("click", () => exportTickets([t], (t.stem || t.filename) + ".审核结果.json"));
+  $("#expAll").addEventListener("click", () => exportTickets(
+    S.tickets.filter(x => x.state === "done"), "分单审核_" + new Date().toISOString().slice(0, 10) + ".json"));
+  $("#dropOne").addEventListener("click", () => {
+    const i = S.tickets.indexOf(t);
+    S.tickets.splice(i, 1);
+    S.sel = S.tickets.length ? (S.tickets[Math.max(0, i - 1)].stem || S.tickets[Math.max(0, i - 1)].filename) : null;
+    render();
+  });
+}
+
+/* ── 事件挂载与启动 ─────────────────────────────────────────────────── */
+$("#pick").addEventListener("click", () => $("#file").click());
+$("#file").addEventListener("change", e => { addFiles([...e.target.files]); e.target.value = ""; });
+const dz = $("#drop");
+for (const ev of ["dragenter", "dragover"]) dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add("hot"); });
+for (const ev of ["dragleave", "drop"]) dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove("hot"); });
+dz.addEventListener("drop", e => addFiles([...e.dataTransfer.files]));
+$("#pvIn").addEventListener("click", () => { PREVIEW.zoom = Math.min(400, PREVIEW.zoom + 25); applyZoom(); });
+$("#pvOut").addEventListener("click", () => { PREVIEW.zoom = Math.max(25, PREVIEW.zoom - 25); applyZoom(); });
+$("#pvFit").addEventListener("click", () => { PREVIEW.zoom = 100; applyZoom(); });
+$("#pvPage").addEventListener("click", () => {
+  PREVIEW.pdfFit = PREVIEW.pdfFit === "FitH" ? "Fit" : "FitH";
+  pdfFrame();
+});
+$("#pvDl").addEventListener("click", downloadSource);
+$("#pvLocExit").addEventListener("click", exitLocate);
+$("#pvLocPrev").addEventListener("click", () => showLocPage(LOC.page - 1, ++_pvSeq));
+$("#pvLocNext").addEventListener("click", () => showLocPage(LOC.page + 1, ++_pvSeq));
+$("#pvNew").addEventListener("click", () => {
+  const u = (LOC.on && LOC.url) || PREVIEW.url;
+  if (!u){ toast("还没有可打开的票面", "bad"); return; }
+  window.open(u, "_blank");       // blob URL 直接开新标签：图片能看，PDF 走阅读器
+});
+$("#list").addEventListener("click", e => {
+  const row = e.target.closest(".row"); if (!row) return;
+  const t = S.tickets[+row.dataset.i]; if (!t) return;
+  S.sel = t.stem || t.filename; render();
+});
+$("#drafts").addEventListener("click", e => {
+  const row = e.target.closest("[data-load]");
+  if (!row) return;
+  const t = loadDraft(row.dataset.load);
+  if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本地暂存：" + t.stem, "ok"); }
+});
+/* 「清空」在卡片标题栏里，不在 #drafts 列表内——挂在列表上的委托收不到它的点击（曾因此点了没反应） */
+$("#clearDrafts").addEventListener("click", () => {
+  const n = Object.keys(drafts()).length;
+  if (!n){ toast("本地暂存本来就是空的", "bad"); return; }
+  if (!confirm(`清空本机浏览器里的 ${n} 条暂存记录？（已落盘的 JSON 结果不受影响）`)) return;
+  localStorage.removeItem(LS.draft); renderDrafts();
+  toast(`已清空本地暂存 ${n} 条`, "ok");
+});
+/* ── 登录 / 角色 / 账号管理 ─────────────────────────────────────────── */
+function acctErr(msg, clear){ const el = $("#acctErr"); if (clear){ el.hidden = true; return; } el.textContent = msg; el.hidden = false; }
+
+function applyRole(){
+  const admin = !!ME && ME.role === "admin";
+  $("#gate").hidden = !!ME;                 // 已登录：收起登录遮罩
+  $("#whoWrap").hidden = !ME;
+  $("#btnLogout").hidden = !ME;
+  if (!ME) return;
+  $("#whoName").textContent = ME.name;
+  $("#whoRole").textContent = admin ? "管理员" : "制单员";
+  $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
+  $("#fModel").hidden = !admin;              // 模型下拉仅管理员
+  const rv = $("#reviewer");                 // 复核人 = 登录身份，锁定不让手写（提交留痕即本人）
+  rv.value = ME.name; rv.readOnly = true;
+}
+function startDesk(){
+  if (startDesk._on) return;
+  startDesk._on = true;
+  probe(); loadModels(); render();
+}
+async function checkAuth(){
+  try{
+    const j = await fetch(BASE + "/api/me").then(x => x.json());
+    ME = j.authenticated ? j.user : null;
+  }catch(e){ ME = null; }
+  applyRole();
+  if (ME) startDesk();
+}
+$("#loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const name = $("#lgName").value.trim(), pw = $("#lgPass").value, err = $("#lgErr");
+  err.hidden = true;
+  if (!name || !pw){ err.textContent = "请输入账号和密码"; err.hidden = false; return; }
+  $("#lgBtn").disabled = true;
+  try{
+    const r = await fetch(BASE + "/login", {method:"POST", headers:{"Content-Type":"application/json"},
+                                           body:JSON.stringify({name, password:pw})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    ME = j.user; applyRole(); startDesk();
+    $("#lgPass").value = "";
+    toast("已登录：" + ME.name + (ME.role === "admin" ? "（管理员）" : ""), "ok");
+  }catch(e2){ err.textContent = "登录失败：" + (e2.message || e2); err.hidden = false; }
+  finally{ $("#lgBtn").disabled = false; }
+});
+$("#btnLogout").addEventListener("click", async () => {
+  try{ await fetch(BASE + "/logout", {method:"POST"}); }catch(e){ /* 清不掉也要回登录页 */ }
+  location.reload();
+});
+async function getAdmin(path){
+  try{
+    const r = await fetch(BASE + path);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    return j;
+  }catch(e){ $("#acctList").innerHTML = `<div class="empty">读取失败：${esc(e.message || e)}</div>`; return null; }
+}
+async function loadAcct(){
+  $("#acctList").innerHTML = '<div class="empty">加载中…</div>';
+  const j = await getAdmin("/admin/users"); if (!j) return;
+  $("#acctList").innerHTML = (j.users || []).map(u => `<div class="arow">
+      <span class="an">${esc(u.name)}</span>
+      <span class="tag ${u.role === "admin" ? "admin" : ""}">${u.role === "admin" ? "管理员" : "制单员"}</span>
+      <span class="${u.has_password ? "" : "nopw"}">${u.has_password ? "已设口令" : "未设口令"}</span>
+      <button class="btn sm" data-pw="${esc(u.name)}">重置口令</button>
+      <button class="btn sm gh" data-del="${esc(u.name)}">删除</button>
+    </div>`).join("") || '<div class="empty">还没有账号。</div>';
+}
+async function saveAcct(name, password, role){
+  acctErr("", true);
+  try{
+    const r = await fetch(BASE + "/admin/users", {method:"POST", headers:{"Content-Type":"application/json"},
+                                                 body:JSON.stringify({name, password, role: role || ""})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    toast("已保存账号：" + name, "ok"); loadAcct();
+  }catch(e){ acctErr("保存失败：" + (e.message || e)); }
+}
+$("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
+$("#acctClose").addEventListener("click", () => { $("#acct").hidden = true; });
+$("#acAdd").addEventListener("click", async () => {
+  const n = $("#acName").value.trim(), p = $("#acPass").value;
+  if (!n){ acctErr("请填写账号名"); return; }
+  await saveAcct(n, p, ""); $("#acName").value = ""; $("#acPass").value = "";
+});
+$("#acctList").addEventListener("click", async e => {
+  const pw = e.target.closest("[data-pw]"), del = e.target.closest("[data-del]");
+  if (pw){
+    const np = prompt("为「" + pw.dataset.pw + "」设置新口令（≥6 位）：");
+    if (np !== null) await saveAcct(pw.dataset.pw, np, "");
+  } else if (del){
+    if (!confirm("删除账号「" + del.dataset.del + "」？该账号将无法再登录。")) return;
+    try{
+      const r = await fetch(BASE + "/admin/users/" + encodeURIComponent(del.dataset.del), {method:"DELETE"});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+      toast("已删除", "ok"); loadAcct();
+    }catch(err){ acctErr("删除失败：" + (err.message || err)); }
+  }
+});
+checkAuth();
+</script>
+</body>
+</html>

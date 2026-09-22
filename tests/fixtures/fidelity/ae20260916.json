@@ -1,0 +1,1306 @@
+{
+ "source_name": "分单AE20260916",
+ "expect": {
+  "checked": 18,
+  "passed": 17,
+  "failed_fields": [
+   "CREATE_TIME"
+  ],
+  "missing_mawb": [],
+  "missing_tax": []
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "235",
+    "bbox": [
+     40,
+     5,
+     71,
+     21
+    ]
+   },
+   {
+    "i": 2,
+    "text": "PEK",
+    "bbox": [
+     112,
+     5,
+     153,
+     21
+    ]
+   },
+   {
+    "i": 3,
+    "text": "96146385",
+    "bbox": [
+     177,
+     5,
+     257,
+     21
+    ]
+   },
+   {
+    "i": 4,
+    "text": "AE20260916",
+    "bbox": [
+     666,
+     5,
+     773,
+     21
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Shipper's Name and Address",
+    "bbox": [
+     23,
+     28,
+     165,
+     38
+    ]
+   },
+   {
+    "i": 6,
+    "text": "Exporter's Account Number",
+    "bbox": [
+     299,
+     28,
+     437,
+     38
+    ]
+   },
+   {
+    "i": 7,
+    "text": "Not  Negotiation",
+    "bbox": [
+     460,
+     27,
+     550,
+     38
+    ]
+   },
+   {
+    "i": 8,
+    "text": "Air Waybill",
+    "bbox": [
+     460,
+     38,
+     563,
+     54
+    ]
+   },
+   {
+    "i": 9,
+    "text": "Issued by",
+    "bbox": [
+     460,
+     60,
+     511,
+     70
+    ]
+   },
+   {
+    "i": 10,
+    "text": "MAXWORLD LOGISTICS LTD",
+    "bbox": [
+     607,
+     71,
+     896,
+     86
+    ]
+   },
+   {
+    "i": 11,
+    "text": "Copise 1,2and 3 of this Air Waybill are originals and have the same validity",
+    "bbox": [
+     391,
+     119,
+     867,
+     129
+    ]
+   },
+   {
+    "i": 12,
+    "text": "Consignee's Name and Adress",
+    "bbox": [
+     23,
+     134,
+     170,
+     143
+    ]
+   },
+   {
+    "i": 13,
+    "text": "Consignee's Account Number",
+    "bbox": [
+     295,
+     134,
+     440,
+     143
+    ]
+   },
+   {
+    "i": 14,
+    "text": "It is agreed that the goods described herein are accepted in apperent good order",
+    "bbox": [
+     460,
+     133,
+     885,
+     143
+    ]
+   },
+   {
+    "i": 15,
+    "text": "and condition (except as noted)for carriage SUBJECT TO THE CONDITIONS",
+    "bbox": [
+     460,
+     147,
+     894,
+     158
+    ]
+   },
+   {
+    "i": 16,
+    "text": "OF CONTRACT ON THE REVERSE  HEREOF,THE SHIPPER'S ATTENTION IS DRAWN",
+    "bbox": [
+     460,
+     163,
+     926,
+     172
+    ]
+   },
+   {
+    "i": 17,
+    "text": "TO THE NOTICE CONCERNING CARRIERS LIMITATION  OF LIABILITY. Shipper",
+    "bbox": [
+     460,
+     176,
+     916,
+     186
+    ]
+   },
+   {
+    "i": 18,
+    "text": "may  increase such limitation of liability by declaring a higher value for carriage and paying  a",
+    "bbox": [
+     460,
+     191,
+     913,
+     200
+    ]
+   },
+   {
+    "i": 19,
+    "text": "supplimental chargeif required.",
+    "bbox": [
+     460,
+     230,
+     628,
+     241
+    ]
+   },
+   {
+    "i": 20,
+    "text": "Issuing Carrier's Agent Name",
+    "bbox": [
+     23,
+     242,
+     186,
+     253
+    ]
+   },
+   {
+    "i": 21,
+    "text": "Accounting Information",
+    "bbox": [
+     460,
+     242,
+     590,
+     253
+    ]
+   },
+   {
+    "i": 22,
+    "text": "Freight Prepaid",
+    "bbox": [
+     605,
+     271,
+     719,
+     286
+    ]
+   },
+   {
+    "i": 23,
+    "text": "Agent's IATA Code",
+    "bbox": [
+     23,
+     278,
+     120,
+     288
+    ]
+   },
+   {
+    "i": 24,
+    "text": "Account No.",
+    "bbox": [
+     224,
+     278,
+     286,
+     288
+    ]
+   },
+   {
+    "i": 25,
+    "text": "Airport of Departure",
+    "bbox": [
+     23,
+     302,
+     134,
+     312
+    ]
+   },
+   {
+    "i": 26,
+    "text": "Reference Number",
+    "bbox": [
+     391,
+     302,
+     493,
+     312
+    ]
+   },
+   {
+    "i": 27,
+    "text": "Shipping Information",
+    "bbox": [
+     600,
+     302,
+     715,
+     312
+    ]
+   },
+   {
+    "i": 28,
+    "text": "BEIJING ,CHINA",
+    "bbox": [
+     23,
+     315,
+     148,
+     328
+    ]
+   },
+   {
+    "i": 29,
+    "text": "To",
+    "bbox": [
+     23,
+     330,
+     38,
+     341
+    ]
+   },
+   {
+    "i": 30,
+    "text": "By First Carrier",
+    "bbox": [
+     95,
+     330,
+     180,
+     341
+    ]
+   },
+   {
+    "i": 31,
+    "text": "To",
+    "bbox": [
+     293,
+     330,
+     308,
+     341
+    ]
+   },
+   {
+    "i": 32,
+    "text": "By",
+    "bbox": [
+     332,
+     330,
+     348,
+     341
+    ]
+   },
+   {
+    "i": 33,
+    "text": "To",
+    "bbox": [
+     387,
+     330,
+     402,
+     341
+    ]
+   },
+   {
+    "i": 34,
+    "text": "By",
+    "bbox": [
+     419,
+     330,
+     434,
+     341
+    ]
+   },
+   {
+    "i": 35,
+    "text": "Currency",
+    "bbox": [
+     460,
+     330,
+     510,
+     341
+    ]
+   },
+   {
+    "i": 36,
+    "text": "CHGS",
+    "bbox": [
+     529,
+     331,
+     561,
+     341
+    ]
+   },
+   {
+    "i": 37,
+    "text": "WT/VAL",
+    "bbox": [
+     574,
+     330,
+     626,
+     341
+    ]
+   },
+   {
+    "i": 38,
+    "text": "Other",
+    "bbox": [
+     651,
+     330,
+     682,
+     341
+    ]
+   },
+   {
+    "i": 39,
+    "text": "Declared Value for Carriag Declared Comtoms",
+    "bbox": [
+     702,
+     332,
+     924,
+     341
+    ]
+   },
+   {
+    "i": 40,
+    "text": "ECN",
+    "bbox": [
+     42,
+     352,
+     69,
+     363
+    ]
+   },
+   {
+    "i": 41,
+    "text": "TK",
+    "bbox": [
+     123,
+     352,
+     141,
+     363
+    ]
+   },
+   {
+    "i": 42,
+    "text": "PP",
+    "bbox": [
+     538,
+     345,
+     551,
+     354
+    ]
+   },
+   {
+    "i": 43,
+    "text": "PPD COLL PPD COLL",
+    "bbox": [
+     569,
+     345,
+     698,
+     354
+    ]
+   },
+   {
+    "i": 44,
+    "text": "USD",
+    "bbox": [
+     473,
+     356,
+     507,
+     369
+    ]
+   },
+   {
+    "i": 45,
+    "text": "Code",
+    "bbox": [
+     532,
+     360,
+     557,
+     369
+    ]
+   },
+   {
+    "i": 46,
+    "text": "PP",
+    "bbox": [
+     572,
+     356,
+     590,
+     369
+    ]
+   },
+   {
+    "i": 47,
+    "text": "PP",
+    "bbox": [
+     639,
+     356,
+     658,
+     369
+    ]
+   },
+   {
+    "i": 48,
+    "text": "NVD",
+    "bbox": [
+     743,
+     354,
+     786,
+     369
+    ]
+   },
+   {
+    "i": 49,
+    "text": "NCV",
+    "bbox": [
+     883,
+     354,
+     926,
+     369
+    ]
+   },
+   {
+    "i": 50,
+    "text": "Airport of Destination",
+    "bbox": [
+     53,
+     371,
+     188,
+     383
+    ]
+   },
+   {
+    "i": 51,
+    "text": "Flight/Date",
+    "bbox": [
+     293,
+     371,
+     370,
+     383
+    ]
+   },
+   {
+    "i": 52,
+    "text": "Amount of insurance",
+    "bbox": [
+     460,
+     372,
+     574,
+     383
+    ]
+   },
+   {
+    "i": 53,
+    "text": "ERCAN",
+    "bbox": [
+     95,
+     389,
+     146,
+     401
+    ]
+   },
+   {
+    "i": 54,
+    "text": "TK0089/24SEP",
+    "bbox": [
+     286,
+     387,
+     392,
+     400
+    ]
+   },
+   {
+    "i": 55,
+    "text": "NIL",
+    "bbox": [
+     510,
+     385,
+     543,
+     401
+    ]
+   },
+   {
+    "i": 56,
+    "text": "requested in accordance with the conditions thereof,indicate amount",
+    "bbox": [
+     623,
+     383,
+     952,
+     393
+    ]
+   },
+   {
+    "i": 57,
+    "text": "to be insured in figures in box marked Amount of insurance.",
+    "bbox": [
+     600,
+     391,
+     893,
+     401
+    ]
+   },
+   {
+    "i": 58,
+    "text": "Handling Information",
+    "bbox": [
+     23,
+     406,
+     140,
+     417
+    ]
+   },
+   {
+    "i": 59,
+    "text": "No.of",
+    "bbox": [
+     40,
+     454,
+     71,
+     465
+    ]
+   },
+   {
+    "i": 60,
+    "text": "Gross        kg",
+    "bbox": [
+     95,
+     454,
+     190,
+     465
+    ]
+   },
+   {
+    "i": 61,
+    "text": "Rate Class",
+    "bbox": [
+     221,
+     454,
+     278,
+     465
+    ]
+   },
+   {
+    "i": 62,
+    "text": "Chargeable",
+    "bbox": [
+     301,
+     454,
+     362,
+     465
+    ]
+   },
+   {
+    "i": 63,
+    "text": "Rate/Charge",
+    "bbox": [
+     393,
+     468,
+     480,
+     479
+    ]
+   },
+   {
+    "i": 64,
+    "text": "Total",
+    "bbox": [
+     583,
+     468,
+     611,
+     479
+    ]
+   },
+   {
+    "i": 65,
+    "text": "Nature and Quantity Goods",
+    "bbox": [
+     770,
+     454,
+     918,
+     465
+    ]
+   },
+   {
+    "i": 66,
+    "text": "Pieces",
+    "bbox": [
+     38,
+     465,
+     73,
+     475
+    ]
+   },
+   {
+    "i": 67,
+    "text": "Weight      lb",
+    "bbox": [
+     95,
+     465,
+     187,
+     475
+    ]
+   },
+   {
+    "i": 68,
+    "text": "Commodity",
+    "bbox": [
+     218,
+     465,
+     282,
+     475
+    ]
+   },
+   {
+    "i": 69,
+    "text": "Weight",
+    "bbox": [
+     312,
+     465,
+     351,
+     475
+    ]
+   },
+   {
+    "i": 70,
+    "text": "(incl.Dimensions or Volume)",
+    "bbox": [
+     765,
+     465,
+     923,
+     475
+    ]
+   },
+   {
+    "i": 71,
+    "text": "RCP",
+    "bbox": [
+     43,
+     478,
+     68,
+     489
+    ]
+   },
+   {
+    "i": 72,
+    "text": "Item No.",
+    "bbox": [
+     226,
+     478,
+     273,
+     489
+    ]
+   },
+   {
+    "i": 73,
+    "text": "1",
+    "bbox": [
+     51,
+     512,
+     60,
+     524
+    ]
+   },
+   {
+    "i": 74,
+    "text": "94.0 K Q",
+    "bbox": [
+     136,
+     511,
+     208,
+     524
+    ]
+   },
+   {
+    "i": 75,
+    "text": "101.0",
+    "bbox": [
+     310,
+     511,
+     352,
+     524
+    ]
+   },
+   {
+    "i": 76,
+    "text": "AS ARRANGED",
+    "bbox": [
+     395,
+     514,
+     478,
+     524
+    ]
+   },
+   {
+    "i": 77,
+    "text": "AS ARRANGED",
+    "bbox": [
+     537,
+     514,
+     620,
+     524
+    ]
+   },
+   {
+    "i": 78,
+    "text": "Prepaid",
+    "bbox": [
+     95,
+     689,
+     136,
+     700
+    ]
+   },
+   {
+    "i": 79,
+    "text": "Weight Charge          Collect",
+    "bbox": [
+     177,
+     689,
+     330,
+     700
+    ]
+   },
+   {
+    "i": 80,
+    "text": "Other Charges",
+    "bbox": [
+     376,
+     689,
+     454,
+     700
+    ]
+   },
+   {
+    "i": 81,
+    "text": "Valuation Charge",
+    "bbox": [
+     177,
+     719,
+     272,
+     729
+    ]
+   },
+   {
+    "i": 82,
+    "text": "AS ARRANGED",
+    "bbox": [
+     23,
+     730,
+     134,
+     744
+    ]
+   },
+   {
+    "i": 83,
+    "text": "Tax",
+    "bbox": [
+     177,
+     749,
+     221,
+     760
+    ]
+   },
+   {
+    "i": 84,
+    "text": "WEIGHT CHARGES INCLUDED THE S.C.",
+    "bbox": [
+     391,
+     758,
+     731,
+     772
+    ]
+   },
+   {
+    "i": 85,
+    "text": "Total Other Charges Due Agent",
+    "bbox": [
+     95,
+     777,
+     286,
+     787
+    ]
+   },
+   {
+    "i": 86,
+    "text": "Shipper certifies that the particulars on the face hereof are correct and that insofar as any part",
+    "bbox": [
+     376,
+     777,
+     879,
+     787
+    ]
+   },
+   {
+    "i": 87,
+    "text": "AS ARRANGED",
+    "bbox": [
+     59,
+     792,
+     170,
+     807
+    ]
+   },
+   {
+    "i": 88,
+    "text": "of the consignment contains restricted articles,such part is properly described by name and is",
+    "bbox": [
+     376,
+     786,
+     875,
+     797
+    ]
+   },
+   {
+    "i": 89,
+    "text": "in proper condition for carriage by air acording to the International Air Transport",
+    "bbox": [
+     376,
+     796,
+     818,
+     807
+    ]
+   },
+   {
+    "i": 90,
+    "text": "Total Other Charges Due Carrier",
+    "bbox": [
+     95,
+     811,
+     291,
+     822
+    ]
+   },
+   {
+    "i": 91,
+    "text": "Association's Restricted Articles Regulations.",
+    "bbox": [
+     376,
+     811,
+     621,
+     822
+    ]
+   },
+   {
+    "i": 92,
+    "text": "Signature of Shipper or his Agent",
+    "bbox": [
+     569,
+     847,
+     750,
+     858
+    ]
+   },
+   {
+    "i": 93,
+    "text": "Total Prepaid",
+    "bbox": [
+     84,
+     861,
+     156,
+     872
+    ]
+   },
+   {
+    "i": 94,
+    "text": "Total Collect",
+    "bbox": [
+     240,
+     861,
+     310,
+     872
+    ]
+   },
+   {
+    "i": 95,
+    "text": "AS ARRANGED",
+    "bbox": [
+     59,
+     874,
+     170,
+     889
+    ]
+   },
+   {
+    "i": 96,
+    "text": "Currency Conversion Rates",
+    "bbox": [
+     53,
+     894,
+     187,
+     904
+    ]
+   },
+   {
+    "i": 97,
+    "text": "CC Charges in Dest.Currency",
+    "bbox": [
+     224,
+     894,
+     371,
+     904
+    ]
+   },
+   {
+    "i": 98,
+    "text": "PEK",
+    "bbox": [
+     754,
+     888,
+     792,
+     904
+    ]
+   },
+   {
+    "i": 99,
+    "text": "Executed on",
+    "bbox": [
+     391,
+     907,
+     465,
+     918
+    ]
+   },
+   {
+    "i": 100,
+    "text": "(Date) at",
+    "bbox": [
+     488,
+     907,
+     535,
+     918
+    ]
+   },
+   {
+    "i": 101,
+    "text": "(Place)",
+    "bbox": [
+     600,
+     907,
+     638,
+     918
+    ]
+   },
+   {
+    "i": 102,
+    "text": "Signature of Issuing Branch",
+    "bbox": [
+     702,
+     907,
+     853,
+     918
+    ]
+   },
+   {
+    "i": 103,
+    "text": "For Carriers Use Only",
+    "bbox": [
+     23,
+     921,
+     143,
+     931
+    ]
+   },
+   {
+    "i": 104,
+    "text": "Charges at Destination",
+    "bbox": [
+     224,
+     921,
+     356,
+     931
+    ]
+   },
+   {
+    "i": 105,
+    "text": "Of or Destination",
+    "bbox": [
+     23,
+     934,
+     117,
+     945
+    ]
+   },
+   {
+    "i": 106,
+    "text": "Beijing Winkonlaser Technology Limited",
+    "bbox": [
+     23,
+     42,
+     248,
+     53
+    ]
+   },
+   {
+    "i": 107,
+    "text": "CTC:Zoey Zhang TEL:'8613944484042",
+    "bbox": [
+     23,
+     53,
+     239,
+     63
+    ]
+   },
+   {
+    "i": 108,
+    "text": "E-mail address:zoeywinkonlaser@gmail.com",
+    "bbox": [
+     23,
+     63,
+     267,
+     74
+    ]
+   },
+   {
+    "i": 109,
+    "text": "USCI：911101125960453647",
+    "bbox": [
+     23,
+     74,
+     188,
+     84
+    ]
+   },
+   {
+    "i": 110,
+    "text": "Özcan&Nazım Sağlık Hizmetleri Ticaret Şti. Ltd",
+    "bbox": [
+     23,
+     148,
+     287,
+     159
+    ]
+   },
+   {
+    "i": 111,
+    "text": "ECZACI MONOR BEY SOK.NO.7 ORTAKOY LEFKOSA",
+    "bbox": [
+     23,
+     159,
+     351,
+     169
+    ]
+   },
+   {
+    "i": 112,
+    "text": "CTC:Ozdjan Nuri TEL: '905428542609",
+    "bbox": [
+     23,
+     169,
+     238,
+     179
+    ]
+   },
+   {
+    "i": 113,
+    "text": "E-mail address:medistarclinic.cy@gmail.com",
+    "bbox": [
+     23,
+     179,
+     268,
+     190
+    ]
+   },
+   {
+    "i": 114,
+    "text": "tax number ：MŞ15298",
+    "bbox": [
+     23,
+     190,
+     154,
+     200
+    ]
+   },
+   {
+    "i": 115,
+    "text": "INSURANCE:If Carrier offers insurance,and such insurance is",
+    "bbox": [
+     600,
+     367,
+     917,
+     383
+    ]
+   },
+   {
+    "i": 116,
+    "text": "MEDICAL DEVICE (DIODE LASER FOR",
+    "bbox": [
+     712,
+     549,
+     970,
+     561
+    ]
+   },
+   {
+    "i": 117,
+    "text": "HAIR REMOVAL)",
+    "bbox": [
+     712,
+     561,
+     977,
+     572
+    ]
+   },
+   {
+    "i": 118,
+    "text": "HS CODE:854370",
+    "bbox": [
+     712,
+     572,
+     838,
+     584
+    ]
+   },
+   {
+    "i": 119,
+    "text": "DIMS(CM) :65*64*145*1",
+    "bbox": [
+     712,
+     595,
+     875,
+     607
+    ]
+   },
+   {
+    "i": 120,
+    "text": "VOL(CBM) : 0.603 CBM",
+    "bbox": [
+     712,
+     617,
+     870,
+     629
+    ]
+   },
+   {
+    "i": 121,
+    "text": "Ozdjan Nuri",
+    "bbox": [
+     23,
+     559,
+     106,
+     572
+    ]
+   },
+   {
+    "i": 122,
+    "text": "BT-JQ-",
+    "bbox": [
+     23,
+     572,
+     74,
+     585
+    ]
+   },
+   {
+    "i": 123,
+    "text": "N-20260902012",
+    "bbox": [
+     23,
+     585,
+     133,
+     598
+    ]
+   },
+   {
+    "i": 124,
+    "text": "WK-Zoey",
+    "bbox": [
+     23,
+     598,
+     91,
+     611
+    ]
+   },
+   {
+    "i": 125,
+    "text": "19-9月-26",
+    "bbox": [
+     479,
+     888,
+     563,
+     904
+    ]
+   }
+  ],
+  "full_text": "235\nPEK\n96146385\nAE20260916\nShipper's Name and Address\nExporter's Account Number\nNot  Negotiation\nAir Waybill\nIssued by\nMAXWORLD LOGISTICS LTD\nCopise 1,2and 3 of this Air Waybill are originals and have the same validity\nConsignee's Name and Adress\nConsignee's Account Number\nIt is agreed that the goods described herein are accepted in apperent good order\nand condition (except as noted)for carriage SUBJECT TO THE CONDITIONS\nOF CONTRACT ON THE REVERSE  HEREOF,THE SHIPPER'S ATTENTION IS DRAWN\nTO THE NOTICE CONCERNING CARRIERS LIMITATION  OF LIABILITY. Shipper\nmay  increase such limitation of liability by declaring a higher value for carriage and paying  a\nsupplimental chargeif required.\nIssuing Carrier's Agent Name\nAccounting Information\nFreight Prepaid\nAgent's IATA Code\nAccount No.\nAirport of Departure\nReference Number\nShipping Information\nBEIJING ,CHINA\nTo\nBy First Carrier\nTo\nBy\nTo\nBy\nCurrency\nCHGS\nWT/VAL\nOther\nDeclared Value for Carriag Declared Comtoms\nECN\nTK\nPP\nPPD COLL PPD COLL\nUSD\nCode\nPP\nPP\nNVD\nNCV\nAirport of Destination\nFlight/Date\nAmount of insurance\nERCAN\nTK0089/24SEP\nNIL\nrequested in accordance with the conditions thereof,indicate amount\nto be insured in figures in box marked Amount of insurance.\nHandling Information\nNo.of\nGross        kg\nRate Class\nChargeable\nRate/Charge\nTotal\nNature and Quantity Goods\nPieces\nWeight      lb\nCommodity\nWeight\n(incl.Dimensions or Volume)\nRCP\nItem No.\n1\n94.0 K Q\n101.0\nAS ARRANGED\nAS ARRANGED\nPrepaid\nWeight Charge          Collect\nOther Charges\nValuation Charge\nAS ARRANGED\nTax\nWEIGHT CHARGES INCLUDED THE S.C.\nTotal Other Charges Due Agent\nShipper certifies that the particulars on the face hereof are correct and that insofar as any part\nAS ARRANGED\nof the consignment contains restricted articles,such part is properly described by name and is\nin proper condition for carriage by air acording to the International Air Transport\nTotal Other Charges Due Carrier\nAssociation's Restricted Articles Regulations.\nSignature of Shipper or his Agent\nTotal Prepaid\nTotal Collect\nAS ARRANGED\nCurrency Conversion Rates\nCC Charges in Dest.Currency\nPEK\nExecuted on\n(Date) at\n(Place)\nSignature of Issuing Branch\nFor Carriers Use Only\nCharges at Destination\nOf or Destination\nBeijing Winkonlaser Technology Limited\nCTC:Zoey Zhang TEL:'8613944484042\nE-mail address:zoeywinkonlaser@gmail.com\nUSCI：911101125960453647\nÖzcan&Nazım Sağlık Hizmetleri Ticaret Şti. Ltd\nECZACI MONOR BEY SOK.NO.7 ORTAKOY LEFKOSA\nCTC:Ozdjan Nuri TEL: '905428542609\nE-mail address:medistarclinic.cy@gmail.com\ntax number ：MŞ15298\nINSURANCE:If Carrier offers insurance,and such insurance is\nMEDICAL DEVICE (DIODE LASER FOR\nHAIR REMOVAL)\nHS CODE:854370\nDIMS(CM) :65*64*145*1\nVOL(CBM) : 0.603 CBM\nOzdjan Nuri\nBT-JQ-\nN-20260902012\nWK-Zoey\n19-9月-26"
+ },
+ "raw": {
+  "MAWB_NO": "235-96146385",
+  "HAWB_NO": "AE20260916",
+  "SHIPPER_INFO": "Beijing Winkonlaser Technology Limited, CTC:Zoey Zhang TEL:'8613944484042 E-mail address:zoeywinkonlaser@gmail.com USCI：911101125960453647, TEL/FAX: '8613944484042",
+  "CONSIGNEE_INFO": "Özcan&Nazım Sağlık Hizmetleri Ticaret Şti. Ltd, ECZACI MONOR BEY SOK.NO.7 ORTAKOY LEFKOSA CTC:Ozdjan Nuri TEL: '905428542609 E-mail address:medistarclinic.cy@gmail.com tax number ：MŞ15298, TEL/FAX: '905428542609",
+  "ORIGIN_NAME": "BEIJING ,CHINA",
+  "TO1": "ECN",
+  "TO2": "",
+  "TO3": "",
+  "DEST_NAME": "ERCAN",
+  "GOODS_INFO": "MEDICAL DEVICE (DIODE LASER FOR HAIR REMOVAL) HS CODE:854370 DIMS(CM) :65*64*145*1 VOL(CBM) : 0.603 CBM",
+  "PIECES": 1,
+  "WEIGHT": 94.0,
+  "SLAC": 1,
+  "CREATE_TIME": "2026-09-26",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "Beijing Winkonlaser Technology Limited",
+  "SHIPPER_INFO_COMP_ADDRESS": "CTC:Zoey Zhang TEL:'8613944484042 E-mail address:zoeywinkonlaser@gmail.com USCI：911101125960453647",
+  "SHIPPER_INFO_CITY": "",
+  "SHIPPER_INFO_COUNTRY": "",
+  "SHIPPER_INFO_STATE": "",
+  "SHIPPER_INFO_POSTAL": "",
+  "SHIPPER_INFO_TEL": "'8613944484042",
+  "SHIPPER_INFO_FAX": "'8613944484042",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "zoeywinkonlaser@gmail.com",
+  "CONSIGNEE_INFO_COMP_NAME": "Özcan&Nazım Sağlık Hizmetleri Ticaret Şti. Ltd",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "ECZACI MONOR BEY SOK.NO.7 ORTAKOY LEFKOSA CTC:Ozdjan Nuri TEL: '905428542609 E-mail address:medistarclinic.cy@gmail.com tax number ：MŞ15298",
+  "CONSIGNEE_INFO_CITTY": "LEFKOSA",
+  "CONSIGNEE_INFO_COUNTRY": "",
+  "CONSIGNEE_INFO_STATE": "",
+  "CONSIGNEE_INFO_POSTAL": "",
+  "CONSIGNEE_INFO_TEL": "'905428542609",
+  "CONSIGNEE_INFO_FAX": "'905428542609",
+  "CONSIGNEE_INFO_EORI": "",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": "medistarclinic.cy@gmail.com"
+ }
+}

@@ -1,0 +1,3191 @@
+{
+ "source_name": "Copy 6 - (Extra Copy) - HAWB No_ TAO10359760",
+ "expect": {
+  "checked": 24,
+  "passed": 23,
+  "failed_fields": [
+   "CONSIGNEE_INFO_CITTY"
+  ],
+  "missing_mawb": [],
+  "missing_tax": []
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "057 TAO 48003561",
+    "bbox": [
+     48,
+     41,
+     220,
+     61
+    ],
+    "page": 1
+   },
+   {
+    "i": 2,
+    "text": "HAWB No: TAO10359760",
+    "bbox": [
+     683,
+     41,
+     917,
+     61
+    ],
+    "page": 1
+   },
+   {
+    "i": 3,
+    "text": "Shipper's Name and Address",
+    "bbox": [
+     37,
+     61,
+     157,
+     70
+    ],
+    "page": 1
+   },
+   {
+    "i": 4,
+    "text": "Shipper's Account Number",
+    "bbox": [
+     295,
+     61,
+     404,
+     70
+    ],
+    "page": 1
+   },
+   {
+    "i": 5,
+    "text": "YANGXIN ORIENT",
+    "bbox": [
+     37,
+     76,
+     156,
+     89
+    ],
+    "page": 1
+   },
+   {
+    "i": 6,
+    "text": "YANORIBIN",
+    "bbox": [
+     303,
+     73,
+     396,
+     89
+    ],
+    "page": 1
+   },
+   {
+    "i": 7,
+    "text": "GRAND PRECISION METAL CO LTD",
+    "bbox": [
+     37,
+     88,
+     265,
+     101
+    ],
+    "page": 1
+   },
+   {
+    "i": 8,
+    "text": "Issued by",
+    "bbox": [
+     459,
+     92,
+     498,
+     101
+    ],
+    "page": 1
+   },
+   {
+    "i": 9,
+    "text": "JAS FORWARDING (CHINA) CO LTD - CORPORATE",
+    "bbox": [
+     512,
+     88,
+     839,
+     101
+    ],
+    "page": 1
+   },
+   {
+    "i": 10,
+    "text": "10/F, TOWER 1, CRYSTAL PLAZA",
+    "bbox": [
+     512,
+     98,
+     724,
+     111
+    ],
+    "page": 1
+   },
+   {
+    "i": 11,
+    "text": "1359 YAOLONG ROAD, PUDONG DISTRICT, 200124, SHANGH",
+    "bbox": [
+     512,
+     108,
+     904,
+     121
+    ],
+    "page": 1
+   },
+   {
+    "i": 12,
+    "text": "ZHAIWANG TOWN",
+    "bbox": [
+     37,
+     100,
+     154,
+     113
+    ],
+    "page": 1
+   },
+   {
+    "i": 13,
+    "text": "YANGXIN COUNTY",
+    "bbox": [
+     37,
+     112,
+     158,
+     125
+    ],
+    "page": 1
+   },
+   {
+    "i": 14,
+    "text": "BINZHOU SHANDONG 000000 CN",
+    "bbox": [
+     37,
+     124,
+     251,
+     137
+    ],
+    "page": 1
+   },
+   {
+    "i": 15,
+    "text": "TE +865438380377",
+    "bbox": [
+     37,
+     136,
+     155,
+     149
+    ],
+    "page": 1
+   },
+   {
+    "i": 16,
+    "text": "Copies 1, 2 and 3 of this Air Waybill are originals and have the same validity.",
+    "bbox": [
+     459,
+     139,
+     772,
+     148
+    ],
+    "page": 1
+   },
+   {
+    "i": 17,
+    "text": "Consignee's Name and Address",
+    "bbox": [
+     37,
+     150,
+     169,
+     159
+    ],
+    "page": 1
+   },
+   {
+    "i": 18,
+    "text": "Consignee's Account Number",
+    "bbox": [
+     288,
+     150,
+     410,
+     159
+    ],
+    "page": 1
+   },
+   {
+    "i": 19,
+    "text": "WICHARD SAS",
+    "bbox": [
+     37,
+     161,
+     132,
+     174
+    ],
+    "page": 1
+   },
+   {
+    "i": 20,
+    "text": "WICPROTRS",
+    "bbox": [
+     298,
+     158,
+     401,
+     174
+    ],
+    "page": 1
+   },
+   {
+    "i": 21,
+    "text": "ZONE INDUSTRIELLE",
+    "bbox": [
+     37,
+     185,
+     174,
+     198
+    ],
+    "page": 1
+   },
+   {
+    "i": 22,
+    "text": "CS 50085",
+    "bbox": [
+     37,
+     197,
+     97,
+     210
+    ],
+    "page": 1
+   },
+   {
+    "i": 23,
+    "text": "THIERS CEDEX  63307 FR",
+    "bbox": [
+     37,
+     208,
+     203,
+     221
+    ],
+    "page": 1
+   },
+   {
+    "i": 24,
+    "text": "TE +33473516500 EORI No.: FR74548017800029",
+    "bbox": [
+     37,
+     219,
+     339,
+     232
+    ],
+    "page": 1
+   },
+   {
+    "i": 25,
+    "text": "Issuing Carrier's Agent Name and City",
+    "bbox": [
+     37,
+     233,
+     194,
+     242
+    ],
+    "page": 1
+   },
+   {
+    "i": 26,
+    "text": "Accounting Information",
+    "bbox": [
+     459,
+     233,
+     553,
+     242
+    ],
+    "page": 1
+   },
+   {
+    "i": 27,
+    "text": "N Y N Y",
+    "bbox": [
+     528,
+     231,
+     604,
+     248
+    ],
+    "page": 1
+   },
+   {
+    "i": 28,
+    "text": ". Agent",
+    "bbox": [
+     635,
+     231,
+     692,
+     248
+    ],
+    "page": 1
+   },
+   {
+    "i": 29,
+    "text": "JAS FORWARDING(CHINA) CO.LTD",
+    "bbox": [
+     37,
+     249,
+     263,
+     262
+    ],
+    "page": 1
+   },
+   {
+    "i": 30,
+    "text": "QINGDAO",
+    "bbox": [
+     37,
+     264,
+     100,
+     277
+    ],
+    "page": 1
+   },
+   {
+    "i": 31,
+    "text": "Agent's IATA Code",
+    "bbox": [
+     37,
+     290,
+     115,
+     299
+    ],
+    "page": 1
+   },
+   {
+    "i": 32,
+    "text": "Account No.",
+    "bbox": [
+     247,
+     290,
+     297,
+     299
+    ],
+    "page": 1
+   },
+   {
+    "i": 33,
+    "text": "91-3 6083/1133",
+    "bbox": [
+     37,
+     304,
+     155,
+     320
+    ],
+    "page": 1
+   },
+   {
+    "i": 34,
+    "text": "Airport of Departure (Addr. of First Carrier) and Requested Routing",
+    "bbox": [
+     37,
+     320,
+     310,
+     329
+    ],
+    "page": 1
+   },
+   {
+    "i": 35,
+    "text": "Reference Number",
+    "bbox": [
+     495,
+     320,
+     573,
+     329
+    ],
+    "page": 1
+   },
+   {
+    "i": 36,
+    "text": "Optional Shipping Information",
+    "bbox": [
+     629,
+     320,
+     750,
+     329
+    ],
+    "page": 1
+   },
+   {
+    "i": 37,
+    "text": "QINGDAO",
+    "bbox": [
+     37,
+     334,
+     116,
+     351
+    ],
+    "page": 1
+   },
+   {
+    "i": 38,
+    "text": "C6904218170",
+    "bbox": [
+     486,
+     334,
+     592,
+     351
+    ],
+    "page": 1
+   },
+   {
+    "i": 39,
+    "text": "TERMS: EXW",
+    "bbox": [
+     642,
+     334,
+     749,
+     351
+    ],
+    "page": 1
+   },
+   {
+    "i": 40,
+    "text": "To",
+    "bbox": [
+     37,
+     350,
+     48,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 41,
+    "text": "By First Carrier",
+    "bbox": [
+     85,
+     350,
+     148,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 42,
+    "text": "Routing and Destination",
+    "bbox": [
+     180,
+     350,
+     269,
+     358
+    ],
+    "page": 1
+   },
+   {
+    "i": 43,
+    "text": "to",
+    "bbox": [
+     285,
+     350,
+     293,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 44,
+    "text": "by",
+    "bbox": [
+     334,
+     350,
+     343,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 45,
+    "text": "to",
+    "bbox": [
+     367,
+     350,
+     374,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 46,
+    "text": "by",
+    "bbox": [
+     414,
+     350,
+     424,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 47,
+    "text": "Currency CHGS",
+    "bbox": [
+     459,
+     350,
+     523,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 48,
+    "text": "WT/VAL",
+    "bbox": [
+     536,
+     350,
+     565,
+     357
+    ],
+    "page": 1
+   },
+   {
+    "i": 49,
+    "text": "Other",
+    "bbox": [
+     589,
+     350,
+     608,
+     357
+    ],
+    "page": 1
+   },
+   {
+    "i": 50,
+    "text": "Declared Value for Carriage",
+    "bbox": [
+     638,
+     350,
+     753,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 51,
+    "text": "Declared Value for Customs",
+    "bbox": [
+     786,
+     350,
+     902,
+     359
+    ],
+    "page": 1
+   },
+   {
+    "i": 52,
+    "text": "Code",
+    "bbox": [
+     506,
+     360,
+     518,
+     365
+    ],
+    "page": 1
+   },
+   {
+    "i": 53,
+    "text": "PPD",
+    "bbox": [
+     532,
+     360,
+     544,
+     366
+    ],
+    "page": 1
+   },
+   {
+    "i": 54,
+    "text": "COLL",
+    "bbox": [
+     555,
+     360,
+     571,
+     366
+    ],
+    "page": 1
+   },
+   {
+    "i": 55,
+    "text": "PPD",
+    "bbox": [
+     581,
+     360,
+     593,
+     366
+    ],
+    "page": 1
+   },
+   {
+    "i": 56,
+    "text": "COLL",
+    "bbox": [
+     603,
+     360,
+     618,
+     366
+    ],
+    "page": 1
+   },
+   {
+    "i": 57,
+    "text": "CDG",
+    "bbox": [
+     40,
+     364,
+     77,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 58,
+    "text": "AF",
+    "bbox": [
+     172,
+     364,
+     194,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 59,
+    "text": "LYS",
+    "bbox": [
+     372,
+     364,
+     404,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 60,
+    "text": "AF",
+    "bbox": [
+     422,
+     364,
+     444,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 61,
+    "text": "CNY CC",
+    "bbox": [
+     460,
+     364,
+     524,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 62,
+    "text": "X",
+    "bbox": [
+     553,
+     364,
+     565,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 63,
+    "text": "X",
+    "bbox": [
+     602,
+     364,
+     613,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 64,
+    "text": "NVD",
+    "bbox": [
+     678,
+     364,
+     713,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 65,
+    "text": "NCV",
+    "bbox": [
+     826,
+     364,
+     862,
+     380
+    ],
+    "page": 1
+   },
+   {
+    "i": 66,
+    "text": "Airport of Destination",
+    "bbox": [
+     96,
+     379,
+     183,
+     388
+    ],
+    "page": 1
+   },
+   {
+    "i": 67,
+    "text": "Requested Flight/Date",
+    "bbox": [
+     301,
+     379,
+     393,
+     388
+    ],
+    "page": 1
+   },
+   {
+    "i": 68,
+    "text": "Amount of insurance",
+    "bbox": [
+     459,
+     379,
+     543,
+     388
+    ],
+    "page": 1
+   },
+   {
+    "i": 69,
+    "text": "INSURANCE - If Carrier offers Insurance, and such Insurance is",
+    "bbox": [
+     593,
+     379,
+     858,
+     388
+    ],
+    "page": 1
+   },
+   {
+    "i": 70,
+    "text": "requested in accordance with the conditions thereof, indicate amount to be",
+    "bbox": [
+     593,
+     386,
+     900,
+     395
+    ],
+    "page": 1
+   },
+   {
+    "i": 71,
+    "text": "insured in figures in box marked \"amount of insurance\".",
+    "bbox": [
+     593,
+     393,
+     819,
+     402
+    ],
+    "page": 1
+   },
+   {
+    "i": 72,
+    "text": "SAINT-EXUPÉRY APT/LYOAF201/21",
+    "bbox": [
+     37,
+     392,
+     320,
+     408
+    ],
+    "page": 1
+   },
+   {
+    "i": 73,
+    "text": "/",
+    "bbox": [
+     345,
+     392,
+     350,
+     408
+    ],
+    "page": 1
+   },
+   {
+    "i": 74,
+    "text": "XXX",
+    "bbox": [
+     506,
+     392,
+     540,
+     408
+    ],
+    "page": 1
+   },
+   {
+    "i": 75,
+    "text": "Handling Information   PLEASE NOTIFY CONSIGNEE IMMEDIATELY UPON ARRIVAL",
+    "bbox": [
+     37,
+     407,
+     564,
+     420
+    ],
+    "page": 1
+   },
+   {
+    "i": 76,
+    "text": "SCI",
+    "bbox": [
+     841,
+     435,
+     857,
+     444
+    ],
+    "page": 1
+   },
+   {
+    "i": 77,
+    "text": "No. Of",
+    "bbox": [
+     45,
+     471,
+     72,
+     480
+    ],
+    "page": 1
+   },
+   {
+    "i": 78,
+    "text": "Pieces",
+    "bbox": [
+     45,
+     478,
+     73,
+     487
+    ],
+    "page": 1
+   },
+   {
+    "i": 79,
+    "text": "RCP",
+    "bbox": [
+     49,
+     485,
+     69,
+     494
+    ],
+    "page": 1
+   },
+   {
+    "i": 80,
+    "text": "Gross",
+    "bbox": [
+     110,
+     464,
+     138,
+     473
+    ],
+    "page": 1
+   },
+   {
+    "i": 81,
+    "text": "Weight",
+    "bbox": [
+     108,
+     471,
+     137,
+     480
+    ],
+    "page": 1
+   },
+   {
+    "i": 82,
+    "text": "kg",
+    "bbox": [
+     166,
+     464,
+     174,
+     471
+    ],
+    "page": 1
+   },
+   {
+    "i": 83,
+    "text": "lb",
+    "bbox": [
+     167,
+     470,
+     173,
+     477
+    ],
+    "page": 1
+   },
+   {
+    "i": 84,
+    "text": "Rate Class",
+    "bbox": [
+     189,
+     464,
+     234,
+     473
+    ],
+    "page": 1
+   },
+   {
+    "i": 85,
+    "text": "Chargeable",
+    "bbox": [
+     300,
+     464,
+     347,
+     473
+    ],
+    "page": 1
+   },
+   {
+    "i": 86,
+    "text": "Weight",
+    "bbox": [
+     309,
+     471,
+     338,
+     480
+    ],
+    "page": 1
+   },
+   {
+    "i": 87,
+    "text": "Rate",
+    "bbox": [
+     378,
+     464,
+     410,
+     473
+    ],
+    "page": 1
+   },
+   {
+    "i": 88,
+    "text": "Charge",
+    "bbox": [
+     378,
+     478,
+     470,
+     487
+    ],
+    "page": 1
+   },
+   {
+    "i": 89,
+    "text": "Total",
+    "bbox": [
+     550,
+     474,
+     570,
+     483
+    ],
+    "page": 1
+   },
+   {
+    "i": 90,
+    "text": "Nature and Quantity of Goods",
+    "bbox": [
+     721,
+     471,
+     843,
+     480
+    ],
+    "page": 1
+   },
+   {
+    "i": 91,
+    "text": "(incl. Dimensions or Volume)",
+    "bbox": [
+     723,
+     478,
+     841,
+     487
+    ],
+    "page": 1
+   },
+   {
+    "i": 92,
+    "text": "Commodity",
+    "bbox": [
+     214,
+     479,
+     257,
+     487
+    ],
+    "page": 1
+   },
+   {
+    "i": 93,
+    "text": "Item No.",
+    "bbox": [
+     220,
+     485,
+     251,
+     494
+    ],
+    "page": 1
+   },
+   {
+    "i": 94,
+    "text": "1",
+    "bbox": [
+     37,
+     492,
+     46,
+     509
+    ],
+    "page": 1
+   },
+   {
+    "i": 95,
+    "text": "333.000 K",
+    "bbox": [
+     100,
+     492,
+     175,
+     509
+    ],
+    "page": 1
+   },
+   {
+    "i": 96,
+    "text": "Q",
+    "bbox": [
+     187,
+     493,
+     199,
+     508
+    ],
+    "page": 1
+   },
+   {
+    "i": 97,
+    "text": "333.0",
+    "bbox": [
+     321,
+     492,
+     363,
+     509
+    ],
+    "page": 1
+   },
+   {
+    "i": 98,
+    "text": "STAINLESS STEEL CASTING",
+    "bbox": [
+     648,
+     493,
+     855,
+     507
+    ],
+    "page": 1
+   },
+   {
+    "i": 99,
+    "text": "INV NO.:WI260915",
+    "bbox": [
+     648,
+     507,
+     778,
+     522
+    ],
+    "page": 1
+   },
+   {
+    "i": 100,
+    "text": "DIMS:83*81*73CM",
+    "bbox": [
+     648,
+     522,
+     776,
+     537
+    ],
+    "page": 1
+   },
+   {
+    "i": 101,
+    "text": "VOL 0.491 M3",
+    "bbox": [
+     648,
+     537,
+     746,
+     551
+    ],
+    "page": 1
+   },
+   {
+    "i": 102,
+    "text": "1",
+    "bbox": [
+     54,
+     670,
+     63,
+     687
+    ],
+    "page": 1
+   },
+   {
+    "i": 103,
+    "text": "333.000",
+    "bbox": [
+     92,
+     670,
+     153,
+     687
+    ],
+    "page": 1
+   },
+   {
+    "i": 104,
+    "text": "Prepaid",
+    "bbox": [
+     76,
+     694,
+     108,
+     703
+    ],
+    "page": 1
+   },
+   {
+    "i": 105,
+    "text": "Weight Charge",
+    "bbox": [
+     156,
+     694,
+     217,
+     703
+    ],
+    "page": 1
+   },
+   {
+    "i": 106,
+    "text": "Collect",
+    "bbox": [
+     274,
+     694,
+     302,
+     703
+    ],
+    "page": 1
+   },
+   {
+    "i": 107,
+    "text": "Other Charges",
+    "bbox": [
+     355,
+     694,
+     416,
+     703
+    ],
+    "page": 1
+   },
+   {
+    "i": 108,
+    "text": "Valuation Charge",
+    "bbox": [
+     170,
+     719,
+     241,
+     728
+    ],
+    "page": 1
+   },
+   {
+    "i": 109,
+    "text": "Tax",
+    "bbox": [
+     186,
+     748,
+     202,
+     757
+    ],
+    "page": 1
+   },
+   {
+    "i": 110,
+    "text": "Total Other Charges Due Agent",
+    "bbox": [
+     117,
+     777,
+     247,
+     786
+    ],
+    "page": 1
+   },
+   {
+    "i": 111,
+    "text": "Shipper certifies that the particulars on the face hereof are correct and that insofar as any part of the consignment",
+    "bbox": [
+     355,
+     777,
+     835,
+     786
+    ],
+    "page": 1
+   },
+   {
+    "i": 112,
+    "text": "contains dangerous goods, such part is properly described by name and is in proper condition for carriage by air according to",
+    "bbox": [
+     355,
+     785,
+     913,
+     794
+    ],
+    "page": 1
+   },
+   {
+    "i": 113,
+    "text": "the applicable Dangerous Goods Regulations.",
+    "bbox": [
+     355,
+     792,
+     558,
+     801
+    ],
+    "page": 1
+   },
+   {
+    "i": 114,
+    "text": "Total Other Charges Due Carrier",
+    "bbox": [
+     115,
+     807,
+     249,
+     816
+    ],
+    "page": 1
+   },
+   {
+    "i": 115,
+    "text": "FRANK LEE",
+    "bbox": [
+     589,
+     835,
+     682,
+     851
+    ],
+    "page": 1
+   },
+   {
+    "i": 116,
+    "text": "Signature of Shipper or his Agent",
+    "bbox": [
+     568,
+     853,
+     704,
+     862
+    ],
+    "page": 1
+   },
+   {
+    "i": 117,
+    "text": "Total Prepaid",
+    "bbox": [
+     89,
+     861,
+     144,
+     870
+    ],
+    "page": 1
+   },
+   {
+    "i": 118,
+    "text": "Total Collect",
+    "bbox": [
+     251,
+     861,
+     302,
+     870
+    ],
+    "page": 1
+   },
+   {
+    "i": 119,
+    "text": "Currency Conversion Rates",
+    "bbox": [
+     59,
+     887,
+     172,
+     896
+    ],
+    "page": 1
+   },
+   {
+    "i": 120,
+    "text": "CC. Charges in Dest. Currency",
+    "bbox": [
+     213,
+     887,
+     340,
+     896
+    ],
+    "page": 1
+   },
+   {
+    "i": 121,
+    "text": "20-Sep-26",
+    "bbox": [
+     355,
+     889,
+     422,
+     903
+    ],
+    "page": 1
+   },
+   {
+    "i": 122,
+    "text": "QINGDAO",
+    "bbox": [
+     577,
+     889,
+     645,
+     903
+    ],
+    "page": 1
+   },
+   {
+    "i": 123,
+    "text": "JAS FORWARDING(CHINA) CO.LTD",
+    "bbox": [
+     684,
+     890,
+     917,
+     903
+    ],
+    "page": 1
+   },
+   {
+    "i": 124,
+    "text": "Executed on (date)",
+    "bbox": [
+     355,
+     907,
+     436,
+     916
+    ],
+    "page": 1
+   },
+   {
+    "i": 125,
+    "text": "at (place)",
+    "bbox": [
+     578,
+     907,
+     616,
+     916
+    ],
+    "page": 1
+   },
+   {
+    "i": 126,
+    "text": "Signature of Issuing Carrier or its Agent",
+    "bbox": [
+     750,
+     907,
+     917,
+     916
+    ],
+    "page": 1
+   },
+   {
+    "i": 127,
+    "text": "For Carrier's use only",
+    "bbox": [
+     73,
+     928,
+     161,
+     937
+    ],
+    "page": 1
+   },
+   {
+    "i": 128,
+    "text": "at Destination",
+    "bbox": [
+     89,
+     935,
+     145,
+     944
+    ],
+    "page": 1
+   },
+   {
+    "i": 129,
+    "text": "Charges at Destination",
+    "bbox": [
+     230,
+     920,
+     324,
+     929
+    ],
+    "page": 1
+   },
+   {
+    "i": 130,
+    "text": "Total Collect Charges",
+    "bbox": [
+     393,
+     920,
+     481,
+     929
+    ],
+    "page": 1
+   },
+   {
+    "i": 131,
+    "text": "057-48003561",
+    "bbox": [
+     787,
+     920,
+     917,
+     939
+    ],
+    "page": 1
+   },
+   {
+    "i": 132,
+    "text": "Copy 6",
+    "bbox": [
+     90,
+     953,
+     144,
+     970
+    ],
+    "page": 1
+   },
+   {
+    "i": 133,
+    "text": "Copy 6 - (Extra Copy)",
+    "bbox": [
+     347,
+     950,
+     552,
+     970
+    ],
+    "page": 1
+   },
+   {
+    "i": 134,
+    "text": "JAS FORWARDING (CHINA) CO LTD.",
+    "bbox": [
+     327,
+     61,
+     662,
+     98
+    ],
+    "page": 2
+   },
+   {
+    "i": 135,
+    "text": "CONSOL",
+    "bbox": [
+     812,
+     71,
+     853,
+     90
+    ],
+    "page": 2
+   },
+   {
+    "i": 136,
+    "text": "QINGDAO - BRANCH",
+    "bbox": [
+     435,
+     94,
+     554,
+     117
+    ],
+    "page": 2
+   },
+   {
+    "i": 137,
+    "text": "C6904218170",
+    "bbox": [
+     812,
+     97,
+     872,
+     116
+    ],
+    "page": 2
+   },
+   {
+    "i": 138,
+    "text": "ROOM 1201, BLOCK B, COSCO PLAZA",
+    "bbox": [
+     408,
+     111,
+     581,
+     129
+    ],
+    "page": 2
+   },
+   {
+    "i": 139,
+    "text": "NO 61 HONGKONG MIDDLE ROAD",
+    "bbox": [
+     417,
+     126,
+     572,
+     144
+    ],
+    "page": 2
+   },
+   {
+    "i": 140,
+    "text": "MAWB",
+    "bbox": [
+     812,
+     126,
+     843,
+     144
+    ],
+    "page": 2
+   },
+   {
+    "i": 141,
+    "text": "QINGDAO,  266071",
+    "bbox": [
+     452,
+     140,
+     536,
+     159
+    ],
+    "page": 2
+   },
+   {
+    "i": 142,
+    "text": "05748003561",
+    "bbox": [
+     812,
+     141,
+     870,
+     160
+    ],
+    "page": 2
+   },
+   {
+    "i": 143,
+    "text": "CHINA",
+    "bbox": [
+     479,
+     155,
+     509,
+     174
+    ],
+    "page": 2
+   },
+   {
+    "i": 144,
+    "text": "Phone: +86 532 8668 0998",
+    "bbox": [
+     437,
+     170,
+     552,
+     188
+    ],
+    "page": 2
+   },
+   {
+    "i": 145,
+    "text": "DATE",
+    "bbox": [
+     812,
+     170,
+     838,
+     188
+    ],
+    "page": 2
+   },
+   {
+    "i": 146,
+    "text": "Fax: +86 532 8668 0996",
+    "bbox": [
+     443,
+     184,
+     546,
+     203
+    ],
+    "page": 2
+   },
+   {
+    "i": 147,
+    "text": "20-Sep-26 09:14",
+    "bbox": [
+     812,
+     184,
+     883,
+     203
+    ],
+    "page": 2
+   },
+   {
+    "i": 148,
+    "text": "www.jas.com",
+    "bbox": [
+     466,
+     206,
+     522,
+     225
+    ],
+    "page": 2
+   },
+   {
+    "i": 149,
+    "text": "Air Freight Manifest",
+    "bbox": [
+     41,
+     242,
+     264,
+     288
+    ],
+    "page": 2
+   },
+   {
+    "i": 150,
+    "text": "Page 1 of 2",
+    "bbox": [
+     901,
+     254,
+     964,
+     277
+    ],
+    "page": 2
+   },
+   {
+    "i": 151,
+    "text": "CONSOL DETAILS",
+    "bbox": [
+     41,
+     290,
+     124,
+     309
+    ],
+    "page": 2
+   },
+   {
+    "i": 152,
+    "text": "PRINTED BY: Frank Lee",
+    "bbox": [
+     856,
+     290,
+     964,
+     309
+    ],
+    "page": 2
+   },
+   {
+    "i": 153,
+    "text": "EXPORT AGENT",
+    "bbox": [
+     41,
+     312,
+     116,
+     331
+    ],
+    "page": 2
+   },
+   {
+    "i": 154,
+    "text": "IMPORT AGENT",
+    "bbox": [
+     366,
+     312,
+     439,
+     331
+    ],
+    "page": 2
+   },
+   {
+    "i": 155,
+    "text": "DEPARTURE CFS",
+    "bbox": [
+     681,
+     312,
+     762,
+     331
+    ],
+    "page": 2
+   },
+   {
+    "i": 156,
+    "text": "The Freight Manager",
+    "bbox": [
+     41,
+     329,
+     129,
+     348
+    ],
+    "page": 2
+   },
+   {
+    "i": 157,
+    "text": "JAS FORWARDING (CHINA) CO LTD - QINGDAO BRANCH",
+    "bbox": [
+     41,
+     344,
+     299,
+     362
+    ],
+    "page": 2
+   },
+   {
+    "i": 158,
+    "text": "ROOM 1201, BLOCK B, COSCO PLAZA",
+    "bbox": [
+     41,
+     358,
+     213,
+     377
+    ],
+    "page": 2
+   },
+   {
+    "i": 159,
+    "text": "NO 61 HONGKONG MIDDLE ROAD",
+    "bbox": [
+     41,
+     373,
+     196,
+     391
+    ],
+    "page": 2
+   },
+   {
+    "i": 160,
+    "text": "266071 QINGDAO",
+    "bbox": [
+     41,
+     387,
+     120,
+     406
+    ],
+    "page": 2
+   },
+   {
+    "i": 161,
+    "text": "SHANDONG",
+    "bbox": [
+     41,
+     402,
+     95,
+     420
+    ],
+    "page": 2
+   },
+   {
+    "i": 162,
+    "text": "CHINA",
+    "bbox": [
+     41,
+     416,
+     70,
+     435
+    ],
+    "page": 2
+   },
+   {
+    "i": 163,
+    "text": "The Freight Manager",
+    "bbox": [
+     366,
+     329,
+     455,
+     348
+    ],
+    "page": 2
+   },
+   {
+    "i": 164,
+    "text": "JAS JET AIR SERVICE FRANCE",
+    "bbox": [
+     366,
+     344,
+     508,
+     362
+    ],
+    "page": 2
+   },
+   {
+    "i": 165,
+    "text": "5 RUE JULES VERNE",
+    "bbox": [
+     366,
+     358,
+     462,
+     377
+    ],
+    "page": 2
+   },
+   {
+    "i": 166,
+    "text": "LES ESPACES OCEANE",
+    "bbox": [
+     366,
+     373,
+     474,
+     391
+    ],
+    "page": 2
+   },
+   {
+    "i": 167,
+    "text": "44400 REZE",
+    "bbox": [
+     366,
+     387,
+     421,
+     406
+    ],
+    "page": 2
+   },
+   {
+    "i": 168,
+    "text": "FRANCE",
+    "bbox": [
+     366,
+     402,
+     405,
+     420
+    ],
+    "page": 2
+   },
+   {
+    "i": 169,
+    "text": "EORI NO.:FR34351590400161",
+    "bbox": [
+     366,
+     431,
+     498,
+     449
+    ],
+    "page": 2
+   },
+   {
+    "i": 170,
+    "text": "Phone: +86 532 8668 0998",
+    "bbox": [
+     41,
+     450,
+     155,
+     469
+    ],
+    "page": 2
+   },
+   {
+    "i": 171,
+    "text": "Fax:",
+    "bbox": [
+     205,
+     450,
+     226,
+     469
+    ],
+    "page": 2
+   },
+   {
+    "i": 172,
+    "text": "Phone: +33 2 40 13 15 60",
+    "bbox": [
+     366,
+     450,
+     476,
+     469
+    ],
+    "page": 2
+   },
+   {
+    "i": 173,
+    "text": "Fax: +33 2 40 13 15 61",
+    "bbox": [
+     524,
+     450,
+     622,
+     469
+    ],
+    "page": 2
+   },
+   {
+    "i": 174,
+    "text": "Email:",
+    "bbox": [
+     41,
+     469,
+     70,
+     487
+    ],
+    "page": 2
+   },
+   {
+    "i": 175,
+    "text": "Email:",
+    "bbox": [
+     366,
+     469,
+     395,
+     487
+    ],
+    "page": 2
+   },
+   {
+    "i": 176,
+    "text": "Phone:",
+    "bbox": [
+     681,
+     469,
+     714,
+     487
+    ],
+    "page": 2
+   },
+   {
+    "i": 177,
+    "text": "Fax:",
+    "bbox": [
+     838,
+     469,
+     859,
+     487
+    ],
+    "page": 2
+   },
+   {
+    "i": 178,
+    "text": "TOTAL WEIGHT",
+    "bbox": [
+     41,
+     495,
+     113,
+     513
+    ],
+    "page": 2
+   },
+   {
+    "i": 179,
+    "text": "TOTAL VOLUME",
+    "bbox": [
+     153,
+     495,
+     228,
+     513
+    ],
+    "page": 2
+   },
+   {
+    "i": 180,
+    "text": "CHARGEABLE",
+    "bbox": [
+     258,
+     495,
+     325,
+     513
+    ],
+    "page": 2
+   },
+   {
+    "i": 181,
+    "text": "CARRIER",
+    "bbox": [
+     366,
+     495,
+     409,
+     513
+    ],
+    "page": 2
+   },
+   {
+    "i": 182,
+    "text": "CUSTOMS ENTRY NUMBER",
+    "bbox": [
+     681,
+     495,
+     808,
+     513
+    ],
+    "page": 2
+   },
+   {
+    "i": 183,
+    "text": "333.000 KG",
+    "bbox": [
+     41,
+     512,
+     91,
+     530
+    ],
+    "page": 2
+   },
+   {
+    "i": 184,
+    "text": "0.491 M3",
+    "bbox": [
+     153,
+     512,
+     192,
+     530
+    ],
+    "page": 2
+   },
+   {
+    "i": 185,
+    "text": "333.000 KG",
+    "bbox": [
+     258,
+     512,
+     308,
+     530
+    ],
+    "page": 2
+   },
+   {
+    "i": 186,
+    "text": "AIR FRANCE / KLM CARGO",
+    "bbox": [
+     366,
+     512,
+     489,
+     530
+    ],
+    "page": 2
+   },
+   {
+    "i": 187,
+    "text": "PACKAGES",
+    "bbox": [
+     41,
+     535,
+     94,
+     553
+    ],
+    "page": 2
+   },
+   {
+    "i": 188,
+    "text": "MASTER FREIGHT",
+    "bbox": [
+     205,
+     535,
+     290,
+     553
+    ],
+    "page": 2
+   },
+   {
+    "i": 189,
+    "text": "ORIGIN",
+    "bbox": [
+     366,
+     535,
+     400,
+     553
+    ],
+    "page": 2
+   },
+   {
+    "i": 190,
+    "text": "ETD DESTINATION",
+    "bbox": [
+     656,
+     535,
+     745,
+     553
+    ],
+    "page": 2
+   },
+   {
+    "i": 191,
+    "text": "ETA",
+    "bbox": [
+     945,
+     535,
+     964,
+     553
+    ],
+    "page": 2
+   },
+   {
+    "i": 192,
+    "text": "1 Package(s)",
+    "bbox": [
+     41,
+     552,
+     97,
+     570
+    ],
+    "page": 2
+   },
+   {
+    "i": 193,
+    "text": "PPD",
+    "bbox": [
+     205,
+     552,
+     225,
+     570
+    ],
+    "page": 2
+   },
+   {
+    "i": 194,
+    "text": "CNTAO = Qingdao, China",
+    "bbox": [
+     366,
+     552,
+     476,
+     570
+    ],
+    "page": 2
+   },
+   {
+    "i": 195,
+    "text": "21-Sep-26 23:05 FRLYS = Saint-Exupéry Apt/Lyon, France",
+    "bbox": [
+     605,
+     552,
+     857,
+     570
+    ],
+    "page": 2
+   },
+   {
+    "i": 196,
+    "text": "23-Sep-26 08:00",
+    "bbox": [
+     893,
+     552,
+     964,
+     570
+    ],
+    "page": 2
+   },
+   {
+    "i": 197,
+    "text": "CARRIER BOOKING REFERENCE",
+    "bbox": [
+     41,
+     577,
+     193,
+     595
+    ],
+    "page": 2
+   },
+   {
+    "i": 198,
+    "text": "AGENT'S REFERENCE",
+    "bbox": [
+     366,
+     577,
+     469,
+     595
+    ],
+    "page": 2
+   },
+   {
+    "i": 199,
+    "text": "LAST FOREIGN PORT",
+    "bbox": [
+     681,
+     577,
+     781,
+     595
+    ],
+    "page": 2
+   },
+   {
+    "i": 200,
+    "text": "ROUTING INFORMATION",
+    "bbox": [
+     41,
+     621,
+     154,
+     640
+    ],
+    "page": 2
+   },
+   {
+    "i": 201,
+    "text": "Mode",
+    "bbox": [
+     41,
+     638,
+     65,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 202,
+    "text": "Flight / Date",
+    "bbox": [
+     93,
+     638,
+     147,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 203,
+    "text": "Carrier",
+    "bbox": [
+     392,
+     638,
+     424,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 204,
+    "text": "Load",
+    "bbox": [
+     655,
+     638,
+     677,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 205,
+    "text": "Disch.",
+    "bbox": [
+     733,
+     638,
+     762,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 206,
+    "text": "ETD",
+    "bbox": [
+     812,
+     638,
+     831,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 207,
+    "text": "ETA",
+    "bbox": [
+     891,
+     638,
+     910,
+     657
+    ],
+    "page": 2
+   },
+   {
+    "i": 208,
+    "text": "AIR",
+    "bbox": [
+     41,
+     657,
+     56,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 209,
+    "text": "AF201 / 21-Sep",
+    "bbox": [
+     93,
+     657,
+     160,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 210,
+    "text": "AIR FRANCE CARGO",
+    "bbox": [
+     392,
+     657,
+     487,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 211,
+    "text": "CNPEK",
+    "bbox": [
+     655,
+     657,
+     687,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 212,
+    "text": "FRCDG",
+    "bbox": [
+     733,
+     657,
+     767,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 213,
+    "text": "21-Sep-26 23:05",
+    "bbox": [
+     812,
+     657,
+     883,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 214,
+    "text": "22-Sep-26 05:50",
+    "bbox": [
+     891,
+     657,
+     962,
+     675
+    ],
+    "page": 2
+   },
+   {
+    "i": 215,
+    "text": "AIR",
+    "bbox": [
+     41,
+     675,
+     56,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 216,
+    "text": "AF120M / 22-Sep",
+    "bbox": [
+     93,
+     675,
+     167,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 217,
+    "text": "KLM ROYAL DUTCH AIRLINES NV CARGO",
+    "bbox": [
+     392,
+     675,
+     582,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 218,
+    "text": "NLAMS",
+    "bbox": [
+     655,
+     675,
+     687,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 219,
+    "text": "FRLYS",
+    "bbox": [
+     733,
+     675,
+     764,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 220,
+    "text": "22-Sep-26 00:00",
+    "bbox": [
+     812,
+     675,
+     883,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 221,
+    "text": "23-Sep-26 08:00",
+    "bbox": [
+     891,
+     675,
+     962,
+     693
+    ],
+    "page": 2
+   },
+   {
+    "i": 222,
+    "text": "SHIPMENT DETAILS",
+    "bbox": [
+     41,
+     704,
+     133,
+     723
+    ],
+    "page": 2
+   },
+   {
+    "i": 223,
+    "text": "HOUSE",
+    "bbox": [
+     41,
+     723,
+     74,
+     742
+    ],
+    "page": 2
+   },
+   {
+    "i": 224,
+    "text": "SHIPPER",
+    "bbox": [
+     284,
+     723,
+     326,
+     742
+    ],
+    "page": 2
+   },
+   {
+    "i": 225,
+    "text": "CONSIGNEE",
+    "bbox": [
+     445,
+     723,
+     502,
+     742
+    ],
+    "page": 2
+   },
+   {
+    "i": 226,
+    "text": "NATURE OF GOODS",
+    "bbox": [
+     602,
+     723,
+     696,
+     742
+    ],
+    "page": 2
+   },
+   {
+    "i": 227,
+    "text": "HANDLING INSTRUCTIONS",
+    "bbox": [
+     786,
+     723,
+     910,
+     742
+    ],
+    "page": 2
+   },
+   {
+    "i": 228,
+    "text": "Continued Over…",
+    "bbox": [
+     460,
+     902,
+     544,
+     921
+    ],
+    "page": 2
+   },
+   {
+    "i": 229,
+    "text": "JAS FORWARDING (CHINA) CO LTD.",
+    "bbox": [
+     41,
+     44,
+     459,
+     90
+    ],
+    "page": 3
+   },
+   {
+    "i": 230,
+    "text": "CONSOL",
+    "bbox": [
+     655,
+     47,
+     695,
+     65
+    ],
+    "page": 3
+   },
+   {
+    "i": 231,
+    "text": "MAWB",
+    "bbox": [
+     733,
+     47,
+     764,
+     65
+    ],
+    "page": 3
+   },
+   {
+    "i": 232,
+    "text": "DATE",
+    "bbox": [
+     865,
+     47,
+     890,
+     65
+    ],
+    "page": 3
+   },
+   {
+    "i": 233,
+    "text": "C6904218170",
+    "bbox": [
+     655,
+     65,
+     714,
+     84
+    ],
+    "page": 3
+   },
+   {
+    "i": 234,
+    "text": "05748003561",
+    "bbox": [
+     733,
+     65,
+     791,
+     84
+    ],
+    "page": 3
+   },
+   {
+    "i": 235,
+    "text": "20-Sep-26 09:14",
+    "bbox": [
+     865,
+     65,
+     936,
+     84
+    ],
+    "page": 3
+   },
+   {
+    "i": 236,
+    "text": "Air Freight Manifest",
+    "bbox": [
+     41,
+     90,
+     264,
+     136
+    ],
+    "page": 3
+   },
+   {
+    "i": 237,
+    "text": "Page 2 of 2",
+    "bbox": [
+     901,
+     102,
+     964,
+     125
+    ],
+    "page": 3
+   },
+   {
+    "i": 238,
+    "text": "CONSOL DETAILS",
+    "bbox": [
+     41,
+     139,
+     124,
+     157
+    ],
+    "page": 3
+   },
+   {
+    "i": 239,
+    "text": "PRINTED BY: Frank Lee",
+    "bbox": [
+     856,
+     139,
+     964,
+     157
+    ],
+    "page": 3
+   },
+   {
+    "i": 240,
+    "text": "SHIPMENT DETAILS (cont).",
+    "bbox": [
+     41,
+     163,
+     165,
+     181
+    ],
+    "page": 3
+   },
+   {
+    "i": 241,
+    "text": "HOUSE",
+    "bbox": [
+     41,
+     182,
+     74,
+     201
+    ],
+    "page": 3
+   },
+   {
+    "i": 242,
+    "text": "SHIPPER",
+    "bbox": [
+     284,
+     182,
+     326,
+     201
+    ],
+    "page": 3
+   },
+   {
+    "i": 243,
+    "text": "CONSIGNEE",
+    "bbox": [
+     445,
+     182,
+     502,
+     201
+    ],
+    "page": 3
+   },
+   {
+    "i": 244,
+    "text": "NATURE OF GOODS",
+    "bbox": [
+     602,
+     182,
+     696,
+     201
+    ],
+    "page": 3
+   },
+   {
+    "i": 245,
+    "text": "HANDLING INSTRUCTIONS",
+    "bbox": [
+     786,
+     182,
+     910,
+     201
+    ],
+    "page": 3
+   },
+   {
+    "i": 246,
+    "text": "HAWB:",
+    "bbox": [
+     41,
+     205,
+     73,
+     223
+    ],
+    "page": 3
+   },
+   {
+    "i": 247,
+    "text": "TAO10359760",
+    "bbox": [
+     119,
+     205,
+     182,
+     223
+    ],
+    "page": 3
+   },
+   {
+    "i": 248,
+    "text": "YANGXIN ORIENT GRAND",
+    "bbox": [
+     284,
+     204,
+     405,
+     223
+    ],
+    "page": 3
+   },
+   {
+    "i": 249,
+    "text": "PRECISION METAL CO LTD",
+    "bbox": [
+     284,
+     219,
+     408,
+     237
+    ],
+    "page": 3
+   },
+   {
+    "i": 250,
+    "text": "ZHAIWANG TOWN",
+    "bbox": [
+     284,
+     233,
+     367,
+     251
+    ],
+    "page": 3
+   },
+   {
+    "i": 251,
+    "text": "YANGXIN COUNTY",
+    "bbox": [
+     284,
+     247,
+     369,
+     266
+    ],
+    "page": 3
+   },
+   {
+    "i": 252,
+    "text": "000000 BINZHOU",
+    "bbox": [
+     284,
+     262,
+     361,
+     280
+    ],
+    "page": 3
+   },
+   {
+    "i": 253,
+    "text": "SHANDONG",
+    "bbox": [
+     284,
+     276,
+     339,
+     295
+    ],
+    "page": 3
+   },
+   {
+    "i": 254,
+    "text": "CHINA",
+    "bbox": [
+     284,
+     291,
+     313,
+     309
+    ],
+    "page": 3
+   },
+   {
+    "i": 255,
+    "text": "WICHARD SAS",
+    "bbox": [
+     445,
+     204,
+     512,
+     223
+    ],
+    "page": 3
+   },
+   {
+    "i": 256,
+    "text": "ZONE INDUSTRIELLE",
+    "bbox": [
+     445,
+     219,
+     542,
+     237
+    ],
+    "page": 3
+   },
+   {
+    "i": 257,
+    "text": "CS 50085",
+    "bbox": [
+     445,
+     233,
+     487,
+     251
+    ],
+    "page": 3
+   },
+   {
+    "i": 258,
+    "text": "63307 THIERS CEDEX",
+    "bbox": [
+     445,
+     247,
+     544,
+     266
+    ],
+    "page": 3
+   },
+   {
+    "i": 259,
+    "text": "FRANCE",
+    "bbox": [
+     445,
+     262,
+     484,
+     280
+    ],
+    "page": 3
+   },
+   {
+    "i": 260,
+    "text": "EORI NO.:FR74548017800029",
+    "bbox": [
+     445,
+     276,
+     577,
+     295
+    ],
+    "page": 3
+   },
+   {
+    "i": 261,
+    "text": "Release:",
+    "bbox": [
+     602,
+     205,
+     641,
+     223
+    ],
+    "page": 3
+   },
+   {
+    "i": 262,
+    "text": "Job Ref:",
+    "bbox": [
+     41,
+     223,
+     79,
+     242
+    ],
+    "page": 3
+   },
+   {
+    "i": 263,
+    "text": "S610359760",
+    "bbox": [
+     119,
+     223,
+     173,
+     242
+    ],
+    "page": 3
+   },
+   {
+    "i": 264,
+    "text": "Freight Collect",
+    "bbox": [
+     602,
+     222,
+     663,
+     241
+    ],
+    "page": 3
+   },
+   {
+    "i": 265,
+    "text": "Wgt / Vol / Pkg:",
+    "bbox": [
+     41,
+     242,
+     110,
+     260
+    ],
+    "page": 3
+   },
+   {
+    "i": 266,
+    "text": "333.000 KG / 0.491 M3 / 1 PKG",
+    "bbox": [
+     119,
+     241,
+     253,
+     259
+    ],
+    "page": 3
+   },
+   {
+    "i": 267,
+    "text": "Origin:",
+    "bbox": [
+     41,
+     260,
+     72,
+     278
+    ],
+    "page": 3
+   },
+   {
+    "i": 268,
+    "text": "CNTAO",
+    "bbox": [
+     119,
+     260,
+     152,
+     278
+    ],
+    "page": 3
+   },
+   {
+    "i": 269,
+    "text": "Destination:",
+    "bbox": [
+     41,
+     280,
+     95,
+     298
+    ],
+    "page": 3
+   },
+   {
+    "i": 270,
+    "text": "FRLYS",
+    "bbox": [
+     119,
+     278,
+     150,
+     296
+    ],
+    "page": 3
+   },
+   {
+    "i": 271,
+    "text": "Type:",
+    "bbox": [
+     602,
+     280,
+     628,
+     298
+    ],
+    "page": 3
+   },
+   {
+    "i": 272,
+    "text": "Shippers Ref:",
+    "bbox": [
+     41,
+     299,
+     102,
+     318
+    ],
+    "page": 3
+   },
+   {
+    "i": 273,
+    "text": "GEN (General)",
+    "bbox": [
+     602,
+     298,
+     666,
+     317
+    ],
+    "page": 3
+   },
+   {
+    "i": 274,
+    "text": "Service Level:",
+    "bbox": [
+     41,
+     317,
+     104,
+     336
+    ],
+    "page": 3
+   },
+   {
+    "i": 275,
+    "text": "STD",
+    "bbox": [
+     119,
+     317,
+     138,
+     335
+    ],
+    "page": 3
+   },
+   {
+    "i": 276,
+    "text": "Goods Description:",
+    "bbox": [
+     602,
+     317,
+     690,
+     336
+    ],
+    "page": 3
+   },
+   {
+    "i": 277,
+    "text": "Marks & Numbers:",
+    "bbox": [
+     786,
+     317,
+     870,
+     336
+    ],
+    "page": 3
+   },
+   {
+    "i": 278,
+    "text": "Master:",
+    "bbox": [
+     41,
+     335,
+     74,
+     354
+    ],
+    "page": 3
+   },
+   {
+    "i": 279,
+    "text": "05748003561",
+    "bbox": [
+     119,
+     335,
+     177,
+     353
+    ],
+    "page": 3
+   },
+   {
+    "i": 280,
+    "text": "Phone: +86 543 838 0377",
+    "bbox": [
+     284,
+     335,
+     393,
+     353
+    ],
+    "page": 3
+   },
+   {
+    "i": 281,
+    "text": "Fax: +86 543 838 0977",
+    "bbox": [
+     284,
+     349,
+     382,
+     368
+    ],
+    "page": 3
+   },
+   {
+    "i": 282,
+    "text": "Phone: +33 4 73 51 65 00",
+    "bbox": [
+     445,
+     335,
+     555,
+     353
+    ],
+    "page": 3
+   },
+   {
+    "i": 283,
+    "text": "Fax: +33 4 73 80 62 81",
+    "bbox": [
+     445,
+     349,
+     543,
+     368
+    ],
+    "page": 3
+   },
+   {
+    "i": 284,
+    "text": "STAINLESS STEEL CASTING",
+    "bbox": [
+     602,
+     335,
+     732,
+     353
+    ],
+    "page": 3
+   },
+   {
+    "i": 285,
+    "text": "END OF DOCUMENT",
+    "bbox": [
+     454,
+     902,
+     550,
+     921
+    ],
+    "page": 3
+   }
+  ],
+  "full_text": "057 TAO 48003561\nHAWB No: TAO10359760\nShipper's Name and Address\nShipper's Account Number\nYANGXIN ORIENT\nYANORIBIN\nGRAND PRECISION METAL CO LTD\nIssued by\nJAS FORWARDING (CHINA) CO LTD - CORPORATE\n10/F, TOWER 1, CRYSTAL PLAZA\n1359 YAOLONG ROAD, PUDONG DISTRICT, 200124, SHANGH\nZHAIWANG TOWN\nYANGXIN COUNTY\nBINZHOU SHANDONG 000000 CN\nTE +865438380377\nCopies 1, 2 and 3 of this Air Waybill are originals and have the same validity.\nConsignee's Name and Address\nConsignee's Account Number\nWICHARD SAS\nWICPROTRS\nZONE INDUSTRIELLE\nCS 50085\nTHIERS CEDEX  63307 FR\nTE +33473516500 EORI No.: FR74548017800029\nIssuing Carrier's Agent Name and City\nAccounting Information\nN Y N Y\n. Agent\nJAS FORWARDING(CHINA) CO.LTD\nQINGDAO\nAgent's IATA Code\nAccount No.\n91-3 6083/1133\nAirport of Departure (Addr. of First Carrier) and Requested Routing\nReference Number\nOptional Shipping Information\nQINGDAO\nC6904218170\nTERMS: EXW\nTo\nBy First Carrier\nRouting and Destination\nto\nby\nto\nby\nCurrency CHGS\nWT/VAL\nOther\nDeclared Value for Carriage\nDeclared Value for Customs\nCode\nPPD\nCOLL\nPPD\nCOLL\nCDG\nAF\nLYS\nAF\nCNY CC\nX\nX\nNVD\nNCV\nAirport of Destination\nRequested Flight/Date\nAmount of insurance\nINSURANCE - If Carrier offers Insurance, and such Insurance is\nrequested in accordance with the conditions thereof, indicate amount to be\ninsured in figures in box marked \"amount of insurance\".\nSAINT-EXUPÉRY APT/LYOAF201/21\n/\nXXX\nHandling Information   PLEASE NOTIFY CONSIGNEE IMMEDIATELY UPON ARRIVAL\nSCI\nNo. Of\nPieces\nRCP\nGross\nWeight\nkg\nlb\nRate Class\nChargeable\nWeight\nRate\nCharge\nTotal\nNature and Quantity of Goods\n(incl. Dimensions or Volume)\nCommodity\nItem No.\n1\n333.000 K\nQ\n333.0\nSTAINLESS STEEL CASTING\nINV NO.:WI260915\nDIMS:83*81*73CM\nVOL 0.491 M3\n1\n333.000\nPrepaid\nWeight Charge\nCollect\nOther Charges\nValuation Charge\nTax\nTotal Other Charges Due Agent\nShipper certifies that the particulars on the face hereof are correct and that insofar as any part of the consignment\ncontains dangerous goods, such part is properly described by name and is in proper condition for carriage by air according to\nthe applicable Dangerous Goods Regulations.\nTotal Other Charges Due Carrier\nFRANK LEE\nSignature of Shipper or his Agent\nTotal Prepaid\nTotal Collect\nCurrency Conversion Rates\nCC. Charges in Dest. Currency\n20-Sep-26\nQINGDAO\nJAS FORWARDING(CHINA) CO.LTD\nExecuted on (date)\nat (place)\nSignature of Issuing Carrier or its Agent\nFor Carrier's use only\nat Destination\nCharges at Destination\nTotal Collect Charges\n057-48003561\nCopy 6\nCopy 6 - (Extra Copy)\nJAS FORWARDING (CHINA) CO LTD.\nCONSOL\nQINGDAO - BRANCH\nC6904218170\nROOM 1201, BLOCK B, COSCO PLAZA\nNO 61 HONGKONG MIDDLE ROAD\nMAWB\nQINGDAO,  266071\n05748003561\nCHINA\nPhone: +86 532 8668 0998\nDATE\nFax: +86 532 8668 0996\n20-Sep-26 09:14\nwww.jas.com\nAir Freight Manifest\nPage 1 of 2\nCONSOL DETAILS\nPRINTED BY: Frank Lee\nEXPORT AGENT\nIMPORT AGENT\nDEPARTURE CFS\nThe Freight Manager\nJAS FORWARDING (CHINA) CO LTD - QINGDAO BRANCH\nROOM 1201, BLOCK B, COSCO PLAZA\nNO 61 HONGKONG MIDDLE ROAD\n266071 QINGDAO\nSHANDONG\nCHINA\nThe Freight Manager\nJAS JET AIR SERVICE FRANCE\n5 RUE JULES VERNE\nLES ESPACES OCEANE\n44400 REZE\nFRANCE\nEORI NO.:FR34351590400161\nPhone: +86 532 8668 0998\nFax:\nPhone: +33 2 40 13 15 60\nFax: +33 2 40 13 15 61\nEmail:\nEmail:\nPhone:\nFax:\nTOTAL WEIGHT\nTOTAL VOLUME\nCHARGEABLE\nCARRIER\nCUSTOMS ENTRY NUMBER\n333.000 KG\n0.491 M3\n333.000 KG\nAIR FRANCE / KLM CARGO\nPACKAGES\nMASTER FREIGHT\nORIGIN\nETD DESTINATION\nETA\n1 Package(s)\nPPD\nCNTAO = Qingdao, China\n21-Sep-26 23:05 FRLYS = Saint-Exupéry Apt/Lyon, France\n23-Sep-26 08:00\nCARRIER BOOKING REFERENCE\nAGENT'S REFERENCE\nLAST FOREIGN PORT\nROUTING INFORMATION\nMode\nFlight / Date\nCarrier\nLoad\nDisch.\nETD\nETA\nAIR\nAF201 / 21-Sep\nAIR FRANCE CARGO\nCNPEK\nFRCDG\n21-Sep-26 23:05\n22-Sep-26 05:50\nAIR\nAF120M / 22-Sep\nKLM ROYAL DUTCH AIRLINES NV CARGO\nNLAMS\nFRLYS\n22-Sep-26 00:00\n23-Sep-26 08:00\nSHIPMENT DETAILS\nHOUSE\nSHIPPER\nCONSIGNEE\nNATURE OF GOODS\nHANDLING INSTRUCTIONS\nContinued Over…\nJAS FORWARDING (CHINA) CO LTD.\nCONSOL\nMAWB\nDATE\nC6904218170\n05748003561\n20-Sep-26 09:14\nAir Freight Manifest\nPage 2 of 2\nCONSOL DETAILS\nPRINTED BY: Frank Lee\nSHIPMENT DETAILS (cont).\nHOUSE\nSHIPPER\nCONSIGNEE\nNATURE OF GOODS\nHANDLING INSTRUCTIONS\nHAWB:\nTAO10359760\nYANGXIN ORIENT GRAND\nPRECISION METAL CO LTD\nZHAIWANG TOWN\nYANGXIN COUNTY\n000000 BINZHOU\nSHANDONG\nCHINA\nWICHARD SAS\nZONE INDUSTRIELLE\nCS 50085\n63307 THIERS CEDEX\nFRANCE\nEORI NO.:FR74548017800029\nRelease:\nJob Ref:\nS610359760\nFreight Collect\nWgt / Vol / Pkg:\n333.000 KG / 0.491 M3 / 1 PKG\nOrigin:\nCNTAO\nDestination:\nFRLYS\nType:\nShippers Ref:\nGEN (General)\nService Level:\nSTD\nGoods Description:\nMarks & Numbers:\nMaster:\n05748003561\nPhone: +86 543 838 0377\nFax: +86 543 838 0977\nPhone: +33 4 73 51 65 00\nFax: +33 4 73 80 62 81\nSTAINLESS STEEL CASTING\nEND OF DOCUMENT"
+ },
+ "raw": {
+  "MAWB_NO": "057-48003561",
+  "HAWB_NO": "TAO10359760",
+  "SHIPPER_INFO": "YANGXIN ORIENT GRAND PRECISION METAL CO LTD, ZHAIWANG TOWN YANGXIN COUNTY BINZHOU SHANDONG 000000 CN, TEL/FAX: +865438380377",
+  "CONSIGNEE_INFO": "WICHARD SAS, ZONE INDUSTRIELLE CS 50085 THIERS CEDEX  63307 FR, TE +33473516500 EORI No.: FR74548017800029",
+  "ORIGIN_NAME": "QINGDAO",
+  "TO1": "CDG",
+  "TO2": "LYS",
+  "TO3": "",
+  "DEST_NAME": "SAINT-EXUPÉRY APT/LYO",
+  "GOODS_INFO": "STAINLESS STEEL CASTING INV NO.:WI260915 DIMS:83*81*73CM VOL 0.491 M3",
+  "PIECES": 1,
+  "WEIGHT": 333.0,
+  "SLAC": 1,
+  "CREATE_TIME": "2026-09-20",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "YANGXIN ORIENT GRAND PRECISION METAL CO LTD",
+  "SHIPPER_INFO_COMP_ADDRESS": "ZHAIWANG TOWN YANGXIN COUNTY BINZHOU SHANDONG 000000 CN",
+  "SHIPPER_INFO_CITY": "BINZHOU",
+  "SHIPPER_INFO_COUNTRY": "CN",
+  "SHIPPER_INFO_STATE": "SHANDONG",
+  "SHIPPER_INFO_POSTAL": "000000",
+  "SHIPPER_INFO_TEL": "+865438380377",
+  "SHIPPER_INFO_FAX": "+865438380377",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "",
+  "CONSIGNEE_INFO_COMP_NAME": "WICHARD SAS",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "ZONE INDUSTRIELLE CS 50085 THIERS CEDEX  63307 FR",
+  "CONSIGNEE_INFO_CITTY": "TIERS CEDEX",
+  "CONSIGNEE_INFO_COUNTRY": "FR",
+  "CONSIGNEE_INFO_STATE": "",
+  "CONSIGNEE_INFO_POSTAL": "63307",
+  "CONSIGNEE_INFO_TEL": "+33473516500",
+  "CONSIGNEE_INFO_FAX": "+33473516500",
+  "CONSIGNEE_INFO_EORI": "FR74548017800029",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": ""
+ }
+}

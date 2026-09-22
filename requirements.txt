@@ -1,0 +1,28 @@
+# === 核心（必装，纯 CPU，无需显卡）===
+openai>=3.0
+pillow>=10.0
+pymupdf>=1.24
+numpy>=1.24
+
+# === 汇总导出 XLSX（5_导出Excel.bat）；电子单本身走 LibreOffice 转 PDF，不在此列 ===
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0            # 仅 hawb2json.py 旧规则层直读 .xls 时用
+
+# === 以下仅在退回本地 OCR 兜底时需要（VLM 通道不需要）===
+rapidocr-onnxruntime>=1.4
+opencv-python>=4.8
+onnxruntime>=1.17
+
+# === 自动化形态 ===
+fastapi>=0.110       # HTTP 接口
+uvicorn>=0.29        # HTTP 服务运行器
+python-multipart>=0.0.9  # HTTP 文件上传
+python-dotenv>=1.0   # .env 配置文件
+# 文件夹监控采用轮询方式（跨平台、无需额外驱动），不依赖 watchdog
+
+# === 数据库写入（可选，按公司库类型二选一或都装）===
+SQLAlchemy>=2.0      # 通用数据库层
+# PyMySQL>=1.1       # MySQL
+# psycopg2-binary    # PostgreSQL
+# pyodbc             # SQL Server

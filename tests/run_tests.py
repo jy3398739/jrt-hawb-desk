@@ -1,0 +1,91 @@
+# -*- coding: utf-8 -*-
+"""HAWB 提取器回归测试入口（零 API 调用、纯本地，改完代码随时跑）。
+
+用法（在 release/hawb_extractor 目录下）:
+  python tests/run_tests.py                  # 跑全部
+  python tests/run_tests.py fidelity         # 只跑名字含 fidelity 的模块
+  python tests/run_tests.py --update-baseline # 有意改了 to_air/码表后，重算 L3 期望值并打印差异
+
+覆盖三层确定性逻辑（VLM 本身不在此列，那部分靠 output/fidelity_report.json 人工复核）：
+  L1 文字层直读 / L2→L3 归一化 / 保真正反查 / 规则校验器分工。
+新增样本：把该单的 L2 JSON 拷进 fixtures/l3/input/，跑 --update-baseline 复核差异即可入基线。
+"""
+import argparse
+import importlib.util
+import json
+import sys
+import traceback
+from pathlib import Path
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows 控制台默认 GBK，票面名会炸
+
+TESTS = Path(__file__).resolve().parent
+ROOT = TESTS.parent
+sys.path.insert(0, str(ROOT))
+
+
+def _load_modules(only: str):
+    for p in sorted(TESTS.glob("test_*.py")):
+        if only and only.lower() not in p.stem.lower():
+            continue
+        spec = importlib.util.spec_from_file_location(p.stem, p)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        yield p, m
+
+
+def update_baseline():
+    """有意改了 L3 逻辑后重算期望值，逐字段打印变化让人确认，防止误把回归当预期。"""
+    import to_air
+    inp, exp = TESTS / "fixtures" / "l3" / "input", TESTS / "fixtures" / "l3" / "expected"
+    changed = 0
+    for p in sorted(inp.glob("*.json")):
+        new = to_air.to_air(json.loads(p.read_text(encoding="utf-8")))
+        ep = exp / p.name
+        old = json.loads(ep.read_text(encoding="utf-8")) if ep.exists() else {}
+        keys = [k for k in new if str(old.get(k, "") or "") != str(new.get(k, "") or "")]
+        if not keys:
+            continue
+        changed += 1
+        print(f"\n== {p.name}")
+        for k in keys:
+            print(f"   {k}\n     旧 {str(old.get(k, ''))[:120]!r}\n     新 {str(new.get(k, ''))[:120]!r}")
+        ep.write_text(json.dumps(new, ensure_ascii=False, indent=2), encoding="utf-8")
+    miss = {p.stem for p in inp.glob("*.json")} ^ {p.stem for p in exp.glob("*.json")}
+    print(f"\n更新 {changed} 份期望值；input/expected 不匹配的夹具: {sorted(miss) or '无'}")
+    print("请逐条确认上面这些差异确实是本次改动想要的，再提交。")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="HAWB 提取器离线回归测试")
+    ap.add_argument("filter", nargs="?", default="", help="只跑模块名含此串的用例")
+    ap.add_argument("--update-baseline", action="store_true", help="重算 L3 期望值（改了 to_air/码表后用）")
+    args = ap.parse_args()
+    if args.update_baseline:
+        return update_baseline()
+
+    passed = failed = ran = 0
+    for p, m in _load_modules(args.filter):
+        print(f"\n[{p.stem}]")
+        for name in [x for x in dir(m) if x.startswith("test_")]:
+            ran += 1
+            try:
+                getattr(m, name)()
+                passed += 1
+                print(f"  ok    {name}")
+            except AssertionError as e:
+                failed += 1
+                print(f"  FAIL  {name}: {e}")
+            except Exception:
+                failed += 1
+                print(f"  ERROR {name}:\n{traceback.format_exc()}")
+    print("\n" + "=" * 56)
+    if not ran:
+        print(f"没有任何用例被跑到（过滤词 {args.filter!r} 没匹配上 test_*.py），这不算通过。")
+        return 1
+    print(f"通过 {passed}，失败 {failed}" + ("  ✅ 全部绿灯" if not failed else "  ❌ 有回归"))
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

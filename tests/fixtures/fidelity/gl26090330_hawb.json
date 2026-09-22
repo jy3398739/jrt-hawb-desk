@@ -1,0 +1,319 @@
+{
+ "source_name": "GL26090330 HAWB",
+ "expect": {
+  "checked": 19,
+  "passed": 17,
+  "failed_fields": [
+   "GOODS_INFO",
+   "MAWB_NO"
+  ],
+  "missing_mawb": [
+   "235-96146363"
+  ],
+  "missing_tax": []
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "AS AGENT FOR THE CARRIER:Shenzhen Goglobal Int'l Logistics Co.Ltd",
+    "bbox": [
+     359,
+     816,
+     856,
+     827
+    ]
+   },
+   {
+    "i": 2,
+    "text": "GL26090330",
+    "bbox": [
+     590,
+     10,
+     683,
+     22
+    ]
+   },
+   {
+    "i": 3,
+    "text": "NO.4666, DONGYANG",
+    "bbox": [
+     33,
+     55,
+     188,
+     65
+    ]
+   },
+   {
+    "i": 4,
+    "text": "ROAD,DONGCHENGSTREET,LINQU COUNTY,",
+    "bbox": [
+     33,
+     68,
+     361,
+     79
+    ]
+   },
+   {
+    "i": 5,
+    "text": "WEIFANG CITY,SHANDONG PROVINCE,CHINA (262600)",
+    "bbox": [
+     33,
+     81,
+     427,
+     92
+    ]
+   },
+   {
+    "i": 6,
+    "text": "TEL: +8618265673278",
+    "bbox": [
+     33,
+     95,
+     192,
+     106
+    ]
+   },
+   {
+    "i": 7,
+    "text": "OPP CONTRACTING LTD",
+    "bbox": [
+     32,
+     120,
+     209,
+     130
+    ]
+   },
+   {
+    "i": 8,
+    "text": "ADD: BONAIR INDUSTRIAL ZONE-BONAIR ROAD,TRIOLET,",
+    "bbox": [
+     32,
+     133,
+     445,
+     144
+    ]
+   },
+   {
+    "i": 9,
+    "text": "REPUBLIC OF MAURITIUS.",
+    "bbox": [
+     32,
+     147,
+     221,
+     157
+    ]
+   },
+   {
+    "i": 10,
+    "text": "BRN CO7027351",
+    "bbox": [
+     32,
+     160,
+     153,
+     171
+    ]
+   },
+   {
+    "i": 11,
+    "text": "SAME AS CONSIGNEE",
+    "bbox": [
+     446,
+     211,
+     604,
+     221
+    ]
+   },
+   {
+    "i": 12,
+    "text": "NVD",
+    "bbox": [
+     642,
+     334,
+     673,
+     344
+    ]
+   },
+   {
+    "i": 13,
+    "text": "AS PER INV",
+    "bbox": [
+     757,
+     334,
+     839,
+     344
+    ]
+   },
+   {
+    "i": 14,
+    "text": "POWDER COATING",
+    "bbox": [
+     625,
+     471,
+     764,
+     481
+    ]
+   },
+   {
+    "i": 15,
+    "text": "HS CODE :3208909090",
+    "bbox": [
+     625,
+     484,
+     791,
+     495
+    ]
+   },
+   {
+    "i": 16,
+    "text": "AS ARRANGED",
+    "bbox": [
+     366,
+     484,
+     473,
+     495
+    ]
+   },
+   {
+    "i": 17,
+    "text": "N/M",
+    "bbox": [
+     74,
+     538,
+     101,
+     549
+    ]
+   },
+   {
+    "i": 18,
+    "text": "GL26090330",
+    "bbox": [
+     556,
+     915,
+     647,
+     926
+    ]
+   },
+   {
+    "i": 19,
+    "text": "235-96146363",
+    "bbox": [
+     183,
+     12,
+     285,
+     24
+    ]
+   },
+   {
+    "i": 20,
+    "text": "SHANDONG ORIENT ALUMINIUM CO.,LTD.",
+    "bbox": [
+     33,
+     41,
+     333,
+     52
+    ]
+   },
+   {
+    "i": 21,
+    "text": "MRU",
+    "bbox": [
+     50,
+     363,
+     168,
+     374
+    ]
+   },
+   {
+    "i": 22,
+    "text": "BEIJING",
+    "bbox": [
+     48,
+     293,
+     106,
+     303
+    ]
+   },
+   {
+    "i": 23,
+    "text": "IST                   TK                                    MRU",
+    "bbox": [
+     48,
+     327,
+     352,
+     339
+    ]
+   },
+   {
+    "i": 24,
+    "text": "TK0089/22.SEP",
+    "bbox": [
+     48,
+     362,
+     362,
+     374
+    ]
+   },
+   {
+    "i": 25,
+    "text": "4        102.00                         102.00",
+    "bbox": [
+     49,
+     465,
+     369,
+     485
+    ]
+   },
+   {
+    "i": 26,
+    "text": "VOL:0.173CBM",
+    "bbox": [
+     653,
+     643,
+     794,
+     662
+    ]
+   }
+  ],
+  "full_text": "AS AGENT FOR THE CARRIER:Shenzhen Goglobal Int'l Logistics Co.Ltd\nGL26090330\nNO.4666, DONGYANG\nROAD,DONGCHENGSTREET,LINQU COUNTY,\nWEIFANG CITY,SHANDONG PROVINCE,CHINA (262600)\nTEL: +8618265673278\nOPP CONTRACTING LTD\nADD: BONAIR INDUSTRIAL ZONE-BONAIR ROAD,TRIOLET,\nREPUBLIC OF MAURITIUS.\nBRN CO7027351\nSAME AS CONSIGNEE\nNVD\nAS PER INV\nPOWDER COATING\nHS CODE :3208909090\nAS ARRANGED\nN/M\nGL26090330\n235-96146363\nSHANDONG ORIENT ALUMINIUM CO.,LTD.\nMRU\nBEIJING\nIST                   TK                                    MRU\nTK0089/22.SEP\n4        102.00                         102.00\nVOL:0.173CBM"
+ },
+ "raw": {
+  "MAWB_NO": "",
+  "HAWB_NO": "GL26090330",
+  "SHIPPER_INFO": "SHANDONG ORIENT ALUMINIUM CO.,LTD.,NO.4666, DONGYANG ROAD,DONGCHENGSTREET,LINQU COUNTY, WEIFANG CITY,SHANDONG PROVINCE,CHINA (262600),TEL: +8618265673278",
+  "CONSIGNEE_INFO": "OPP CONTRACTING LTD,ADD: BONAIR INDUSTRIAL ZONE-BONAIR ROAD,TRIOLET, REPUBLIC OF MAURITIUS.,BRN CO7027351",
+  "ORIGIN_NAME": "BEIJING",
+  "TO1": "IST",
+  "TO2": "MRU",
+  "TO3": "",
+  "DEST_NAME": "MRU",
+  "GOODS_INFO": "PODER COATING HS CODE :3208909090 VOL:0.173CBM",
+  "PIECES": 4,
+  "WEIGHT": 102.0,
+  "SLAC": 4,
+  "CREATE_TIME": "",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "SHANDONG ORIENT ALUMINIUM CO.,LTD.",
+  "SHIPPER_INFO_COMP_ADDRESS": "NO.4666, DONGYANG ROAD,DONGCHENGSTREET,LINQU COUNTY, WEIFANG CITY,SHANDONG PROVINCE,CHINA (262600)",
+  "SHIPPER_INFO_CITY": "WEIFANG CITY",
+  "SHIPPER_INFO_COUNTRY": "CHINA",
+  "SHIPPER_INFO_STATE": "SHANDONG PROVINCE",
+  "SHIPPER_INFO_POSTAL": "262600",
+  "SHIPPER_INFO_TEL": "+8618265673278",
+  "SHIPPER_INFO_FAX": "",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "",
+  "CONSIGNEE_INFO_COMP_NAME": "OPP CONTRACTING LTD",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "ADD: BONAIR INDUSTRIAL ZONE-BONAIR ROAD,TRIOLET, REPUBLIC OF MAURITIUS.",
+  "CONSIGNEE_INFO_CITTY": "TRIOLET",
+  "CONSIGNEE_INFO_COUNTRY": "MAURITIUS",
+  "CONSIGNEE_INFO_STATE": "",
+  "CONSIGNEE_INFO_POSTAL": "",
+  "CONSIGNEE_INFO_TEL": "",
+  "CONSIGNEE_INFO_FAX": "",
+  "CONSIGNEE_INFO_EORI": "CO7027351",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": ""
+ }
+}

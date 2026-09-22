@@ -1,0 +1,1308 @@
+{
+ "source_name": "SALCN0002822",
+ "expect": {
+  "checked": 17,
+  "passed": 16,
+  "failed_fields": [
+   "MAWB_NO"
+  ],
+  "missing_mawb": [
+   "232-19509626"
+  ],
+  "missing_tax": []
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "232",
+    "bbox": [
+     81,
+     22,
+     109,
+     38
+    ]
+   },
+   {
+    "i": 2,
+    "text": "19509626",
+    "bbox": [
+     163,
+     22,
+     237,
+     38
+    ]
+   },
+   {
+    "i": 3,
+    "text": "SALCN0002822",
+    "bbox": [
+     729,
+     22,
+     850,
+     38
+    ]
+   },
+   {
+    "i": 4,
+    "text": "BEIJING",
+    "bbox": [
+     75,
+     308,
+     128,
+     322
+    ]
+   },
+   {
+    "i": 5,
+    "text": "BOM",
+    "bbox": [
+     75,
+     337,
+     106,
+     351
+    ]
+   },
+   {
+    "i": 6,
+    "text": "MH",
+    "bbox": [
+     123,
+     337,
+     145,
+     351
+    ]
+   },
+   {
+    "i": 7,
+    "text": "USD",
+    "bbox": [
+     504,
+     337,
+     533,
+     351
+    ]
+   },
+   {
+    "i": 8,
+    "text": "CC",
+    "bbox": [
+     587,
+     340,
+     603,
+     351
+    ]
+   },
+   {
+    "i": 9,
+    "text": "CC",
+    "bbox": [
+     634,
+     340,
+     650,
+     351
+    ]
+   },
+   {
+    "i": 10,
+    "text": "NVD",
+    "bbox": [
+     731,
+     337,
+     760,
+     351
+    ]
+   },
+   {
+    "i": 11,
+    "text": "NCV",
+    "bbox": [
+     868,
+     337,
+     897,
+     351
+    ]
+   },
+   {
+    "i": 12,
+    "text": "MUMBAI",
+    "bbox": [
+     75,
+     366,
+     130,
+     379
+    ]
+   },
+   {
+    "i": 13,
+    "text": "MH319",
+    "bbox": [
+     284,
+     366,
+     328,
+     379
+    ]
+   },
+   {
+    "i": 14,
+    "text": "2026-9-23",
+    "bbox": [
+     435,
+     366,
+     498,
+     379
+    ]
+   },
+   {
+    "i": 15,
+    "text": "NIL",
+    "bbox": [
+     558,
+     366,
+     579,
+     379
+    ]
+   },
+   {
+    "i": 16,
+    "text": "1",
+    "bbox": [
+     92,
+     468,
+     99,
+     482
+    ]
+   },
+   {
+    "i": 17,
+    "text": "#",
+    "bbox": [
+     226,
+     468,
+     233,
+     482
+    ]
+   },
+   {
+    "i": 18,
+    "text": "AS ARRANGED",
+    "bbox": [
+     554,
+     468,
+     654,
+     482
+    ]
+   },
+   {
+    "i": 19,
+    "text": "1",
+    "bbox": [
+     92,
+     639,
+     99,
+     652
+    ]
+   },
+   {
+    "i": 20,
+    "text": "0.0",
+    "bbox": [
+     150,
+     639,
+     170,
+     652
+    ]
+   },
+   {
+    "i": 21,
+    "text": "AS ARRANGED",
+    "bbox": [
+     554,
+     639,
+     654,
+     652
+    ]
+   },
+   {
+    "i": 22,
+    "text": "AS ARRANGED",
+    "bbox": [
+     272,
+     700,
+     372,
+     714
+    ]
+   },
+   {
+    "i": 23,
+    "text": "AS ARRANGED",
+    "bbox": [
+     272,
+     756,
+     372,
+     769
+    ]
+   },
+   {
+    "i": 24,
+    "text": "AS ARRANGED",
+    "bbox": [
+     272,
+     842,
+     372,
+     855
+    ]
+   },
+   {
+    "i": 25,
+    "text": "2026-9-22 BEIJING",
+    "bbox": [
+     758,
+     855,
+     905,
+     869
+    ]
+   },
+   {
+    "i": 26,
+    "text": "LIM-TEC（BEIJING）TRANSMISSION　EQUIPMENT CO.，LTD.",
+    "bbox": [
+     75,
+     58,
+     453,
+     72
+    ]
+   },
+   {
+    "i": 27,
+    "text": "NO.91, INDUSTRY ROAD 6TH, NEW & HIGH-TECH",
+    "bbox": [
+     75,
+     70,
+     370,
+     82
+    ]
+   },
+   {
+    "i": 28,
+    "text": "INDUSTRIAL DEVELOPMENT ZONE,",
+    "bbox": [
+     75,
+     80,
+     287,
+     92
+    ]
+   },
+   {
+    "i": 29,
+    "text": "TEL:+86-13311099286",
+    "bbox": [
+     75,
+     90,
+     205,
+     103
+    ]
+   },
+   {
+    "i": 30,
+    "text": "EXPORT@LIM-TEC.COM",
+    "bbox": [
+     75,
+     100,
+     220,
+     113
+    ]
+   },
+   {
+    "i": 31,
+    "text": "AICHELIN UNITHERM HEAT TREATMENT",
+    "bbox": [
+     75,
+     139,
+     316,
+     151
+    ]
+   },
+   {
+    "i": 32,
+    "text": "GAT NO.38,, B.M. KAKADE INDUSTRIAL PARK,JADHAVWADI",
+    "bbox": [
+     75,
+     149,
+     435,
+     161
+    ]
+   },
+   {
+    "i": 33,
+    "text": "ROAD,VILLAGE NAVALAKH UMBRE,,NEXT TO TALEGAON",
+    "bbox": [
+     75,
+     159,
+     419,
+     171
+    ]
+   },
+   {
+    "i": 34,
+    "text": "MIDC,TAL.:MAVAL,DIST.:PUNE,410 507, MAHARASHTRA, INDIA",
+    "bbox": [
+     75,
+     169,
+     445,
+     181
+    ]
+   },
+   {
+    "i": 35,
+    "text": "GSTIN NO. : 27AAICA2193H1ZMCIN NO.: U74900PN2010PTC150092 ***",
+    "bbox": [
+     75,
+     179,
+     487,
+     191
+    ]
+   },
+   {
+    "i": 36,
+    "text": "FREIGHT COLLECT",
+    "bbox": [
+     663,
+     261,
+     790,
+     275
+    ]
+   },
+   {
+    "i": 37,
+    "text": "NOTIFY: SAME AS CONSIGNEE",
+    "bbox": [
+     623,
+     272,
+     829,
+     286
+    ]
+   },
+   {
+    "i": 38,
+    "text": "***PAN  NO.: : AAICA2193H",
+    "bbox": [
+     75,
+     412,
+     248,
+     426
+    ]
+   },
+   {
+    "i": 39,
+    "text": "SCREW JACK",
+    "bbox": [
+     689,
+     465,
+     779,
+     479
+    ]
+   },
+   {
+    "i": 40,
+    "text": "Model:SLA150UM-R-V1-350 -P2",
+    "bbox": [
+     689,
+     476,
+     950,
+     490
+    ]
+   },
+   {
+    "i": 41,
+    "text": "VOL:",
+    "bbox": [
+     689,
+     499,
+     724,
+     512
+    ]
+   },
+   {
+    "i": 42,
+    "text": "DIM:",
+    "bbox": [
+     689,
+     510,
+     951,
+     523
+    ]
+   },
+   {
+    "i": 43,
+    "text": "Tax",
+    "bbox": [
+     223,
+     719,
+     240,
+     727
+    ]
+   },
+   {
+    "i": 44,
+    "text": "To",
+    "bbox": [
+     78,
+     329,
+     89,
+     337
+    ]
+   },
+   {
+    "i": 45,
+    "text": "By First Carrier",
+    "bbox": [
+     120,
+     329,
+     188,
+     337
+    ]
+   },
+   {
+    "i": 46,
+    "text": "To",
+    "bbox": [
+     335,
+     329,
+     347,
+     337
+    ]
+   },
+   {
+    "i": 47,
+    "text": "By",
+    "bbox": [
+     383,
+     329,
+     395,
+     337
+    ]
+   },
+   {
+    "i": 48,
+    "text": "By",
+    "bbox": [
+     467,
+     329,
+     479,
+     337
+    ]
+   },
+   {
+    "i": 49,
+    "text": "To",
+    "bbox": [
+     420,
+     329,
+     431,
+     337
+    ]
+   },
+   {
+    "i": 50,
+    "text": "Routing and Destination",
+    "bbox": [
+     204,
+     329,
+     311,
+     337
+    ]
+   },
+   {
+    "i": 51,
+    "text": "Currency",
+    "bbox": [
+     504,
+     329,
+     545,
+     337
+    ]
+   },
+   {
+    "i": 52,
+    "text": "CHGS",
+    "bbox": [
+     552,
+     327,
+     572,
+     332
+    ]
+   },
+   {
+    "i": 53,
+    "text": "Code",
+    "bbox": [
+     554,
+     332,
+     570,
+     338
+    ]
+   },
+   {
+    "i": 54,
+    "text": "WT/VAL",
+    "bbox": [
+     587,
+     329,
+     624,
+     337
+    ]
+   },
+   {
+    "i": 55,
+    "text": "Other",
+    "bbox": [
+     642,
+     329,
+     667,
+     337
+    ]
+   },
+   {
+    "i": 56,
+    "text": "PPD",
+    "bbox": [
+     587,
+     338,
+     601,
+     344
+    ]
+   },
+   {
+    "i": 57,
+    "text": "COLL",
+    "bbox": [
+     608,
+     338,
+     626,
+     344
+    ]
+   },
+   {
+    "i": 58,
+    "text": "PPD",
+    "bbox": [
+     636,
+     338,
+     650,
+     344
+    ]
+   },
+   {
+    "i": 59,
+    "text": "COLL",
+    "bbox": [
+     658,
+     338,
+     676,
+     344
+    ]
+   },
+   {
+    "i": 60,
+    "text": "Declared Value for Carriage",
+    "bbox": [
+     688,
+     329,
+     813,
+     337
+    ]
+   },
+   {
+    "i": 61,
+    "text": "Declared Value for Customs",
+    "bbox": [
+     821,
+     329,
+     947,
+     337
+    ]
+   },
+   {
+    "i": 62,
+    "text": "Airport of Destination",
+    "bbox": [
+     121,
+     356,
+     215,
+     364
+    ]
+   },
+   {
+    "i": 63,
+    "text": "Requested Flight/Date",
+    "bbox": [
+     355,
+     356,
+     455,
+     364
+    ]
+   },
+   {
+    "i": 64,
+    "text": "Amount of Insurance",
+    "bbox": [
+     526,
+     356,
+     619,
+     364
+    ]
+   },
+   {
+    "i": 65,
+    "text": "INSURANCE —— If carrier offers insurance, and such insurance is",
+    "bbox": [
+     645,
+     355,
+     936,
+     363
+    ]
+   },
+   {
+    "i": 66,
+    "text": "requested in accordance with the conditions thereof, indicate amount",
+    "bbox": [
+     645,
+     363,
+     952,
+     371
+    ]
+   },
+   {
+    "i": 67,
+    "text": "to be insured in figures in box marked \"Amount of Insurance\".",
+    "bbox": [
+     645,
+     371,
+     918,
+     380
+    ]
+   },
+   {
+    "i": 68,
+    "text": "Handling Information",
+    "bbox": [
+     79,
+     383,
+     172,
+     391
+    ]
+   },
+   {
+    "i": 69,
+    "text": "(For USA only) These commodities Licensed by U.S. for ultimate destination……………………………………………………………………………………………………………………………..Diversion contrary to U.S. law is prohibited",
+    "bbox": [
+     84,
+     428,
+     887,
+     436
+    ]
+   },
+   {
+    "i": 70,
+    "text": "No. of",
+    "bbox": [
+     78,
+     437,
+     105,
+     445
+    ]
+   },
+   {
+    "i": 71,
+    "text": "Pieces",
+    "bbox": [
+     76,
+     445,
+     107,
+     453
+    ]
+   },
+   {
+    "i": 72,
+    "text": "RCP22",
+    "bbox": [
+     75,
+     453,
+     108,
+     461
+    ]
+   },
+   {
+    "i": 73,
+    "text": "Gross",
+    "bbox": [
+     141,
+     440,
+     168,
+     448
+    ]
+   },
+   {
+    "i": 74,
+    "text": "Weight",
+    "bbox": [
+     139,
+     448,
+     170,
+     456
+    ]
+   },
+   {
+    "i": 75,
+    "text": "kg",
+    "bbox": [
+     197,
+     440,
+     208,
+     448
+    ]
+   },
+   {
+    "i": 76,
+    "text": "lb",
+    "bbox": [
+     198,
+     448,
+     206,
+     456
+    ]
+   },
+   {
+    "i": 77,
+    "text": "Rate Class",
+    "bbox": [
+     225,
+     437,
+     274,
+     445
+    ]
+   },
+   {
+    "i": 78,
+    "text": "Commodity",
+    "bbox": [
+     243,
+     446,
+     294,
+     454
+    ]
+   },
+   {
+    "i": 79,
+    "text": "Item No.",
+    "bbox": [
+     249,
+     454,
+     287,
+     462
+    ]
+   },
+   {
+    "i": 80,
+    "text": "Chargeable",
+    "bbox": [
+     347,
+     440,
+     399,
+     448
+    ]
+   },
+   {
+    "i": 81,
+    "text": "Weight",
+    "bbox": [
+     358,
+     448,
+     389,
+     456
+    ]
+   },
+   {
+    "i": 82,
+    "text": "Rate",
+    "bbox": [
+     438,
+     441,
+     459,
+     449
+    ]
+   },
+   {
+    "i": 83,
+    "text": "Charge",
+    "bbox": [
+     474,
+     451,
+     507,
+     459
+    ]
+   },
+   {
+    "i": 84,
+    "text": "Total",
+    "bbox": [
+     586,
+     444,
+     609,
+     452
+    ]
+   },
+   {
+    "i": 85,
+    "text": "Nature and Quantity of Goods",
+    "bbox": [
+     747,
+     440,
+     881,
+     448
+    ]
+   },
+   {
+    "i": 86,
+    "text": "(incl. Dimensions or Volume)",
+    "bbox": [
+     749,
+     448,
+     878,
+     456
+    ]
+   },
+   {
+    "i": 87,
+    "text": "Valuation Charge",
+    "bbox": [
+     197,
+     691,
+     274,
+     700
+    ]
+   },
+   {
+    "i": 88,
+    "text": "Total Other Charges Due Agent",
+    "bbox": [
+     159,
+     746,
+     301,
+     754
+    ]
+   },
+   {
+    "i": 89,
+    "text": "Total Other Charges Due Carrie",
+    "bbox": [
+     162,
+     773,
+     305,
+     781
+    ]
+   },
+   {
+    "i": 90,
+    "text": "Total Prepaid",
+    "bbox": [
+     123,
+     831,
+     183,
+     839
+    ]
+   },
+   {
+    "i": 91,
+    "text": "Total Collect",
+    "bbox": [
+     286,
+     831,
+     342,
+     839
+    ]
+   },
+   {
+    "i": 92,
+    "text": "Currency Conversion Rate",
+    "bbox": [
+     92,
+     861,
+     213,
+     869
+    ]
+   },
+   {
+    "i": 93,
+    "text": "CC Charges in Dest. Currency",
+    "bbox": [
+     249,
+     861,
+     388,
+     869
+    ]
+   },
+   {
+    "i": 94,
+    "text": "For Carrie's Use Only",
+    "bbox": [
+     105,
+     892,
+     202,
+     900
+    ]
+   },
+   {
+    "i": 95,
+    "text": "at Destination",
+    "bbox": [
+     123,
+     900,
+     187,
+     908
+    ]
+   },
+   {
+    "i": 96,
+    "text": "Charges at Destination",
+    "bbox": [
+     266,
+     890,
+     372,
+     898
+    ]
+   },
+   {
+    "i": 97,
+    "text": "Total Collection Charges",
+    "bbox": [
+     430,
+     890,
+     543,
+     898
+    ]
+   },
+   {
+    "i": 98,
+    "text": "Prepaid",
+    "bbox": [
+     106,
+     664,
+     141,
+     672
+    ]
+   },
+   {
+    "i": 99,
+    "text": "Collect",
+    "bbox": [
+     327,
+     664,
+     357,
+     672
+    ]
+   },
+   {
+    "i": 100,
+    "text": "Weight Charge",
+    "bbox": [
+     199,
+     664,
+     266,
+     672
+    ]
+   },
+   {
+    "i": 101,
+    "text": "Other Charges",
+    "bbox": [
+     409,
+     664,
+     475,
+     672
+    ]
+   },
+   {
+    "i": 102,
+    "text": "Shipper certifies that the particulars on the face hereof are correct and that insofar as any part of",
+    "bbox": [
+     422,
+     745,
+     923,
+     754
+    ]
+   },
+   {
+    "i": 103,
+    "text": "the consignment contains dangerous goods, such part is properly described by name and is in proper",
+    "bbox": [
+     422,
+     754,
+     950,
+     764
+    ]
+   },
+   {
+    "i": 104,
+    "text": "condition  for carriage by air according to the applicable Dangerous Goods Regulations.",
+    "bbox": [
+     422,
+     764,
+     876,
+     773
+    ]
+   },
+   {
+    "i": 105,
+    "text": "Signature of Shipper or his Agent",
+    "bbox": [
+     586,
+     816,
+     734,
+     824
+    ]
+   },
+   {
+    "i": 106,
+    "text": "Executed on (date)",
+    "bbox": [
+     412,
+     877,
+     497,
+     885
+    ]
+   },
+   {
+    "i": 107,
+    "text": "at (place)",
+    "bbox": [
+     632,
+     877,
+     674,
+     885
+    ]
+   },
+   {
+    "i": 108,
+    "text": "Signature of Issuing Carrier or Its Agent",
+    "bbox": [
+     759,
+     877,
+     936,
+     885
+    ]
+   },
+   {
+    "i": 109,
+    "text": "Shipper's Name and Address",
+    "bbox": [
+     79,
+     47,
+     210,
+     55
+    ]
+   },
+   {
+    "i": 110,
+    "text": "Shipper's Account Number",
+    "bbox": [
+     287,
+     47,
+     407,
+     55
+    ]
+   },
+   {
+    "i": 111,
+    "text": "Consignee's Name and Address",
+    "bbox": [
+     79,
+     130,
+     223,
+     138
+    ]
+   },
+   {
+    "i": 112,
+    "text": "Consignee's Account Number",
+    "bbox": [
+     290,
+     129,
+     423,
+     137
+    ]
+   },
+   {
+    "i": 113,
+    "text": "Agent's IATA Code",
+    "bbox": [
+     76,
+     269,
+     162,
+     277
+    ]
+   },
+   {
+    "i": 114,
+    "text": "Agent's Account Number",
+    "bbox": [
+     283,
+     269,
+     394,
+     277
+    ]
+   },
+   {
+    "i": 115,
+    "text": "Airport of Departure (Addr. of First Carrier) and Requested Routing",
+    "bbox": [
+     78,
+     298,
+     375,
+     306
+    ]
+   },
+   {
+    "i": 116,
+    "text": "Copies 1, 2 and 3 of this Air waybill are originals and have the same validity.",
+    "bbox": [
+     505,
+     117,
+     844,
+     125
+    ]
+   },
+   {
+    "i": 117,
+    "text": "Issuing Carrier's Agent Name and City",
+    "bbox": [
+     78,
+     216,
+     248,
+     224
+    ]
+   },
+   {
+    "i": 118,
+    "text": "Accounting Information",
+    "bbox": [
+     505,
+     216,
+     608,
+     224
+    ]
+   },
+   {
+    "i": 119,
+    "text": "It is agreed that the goods described herein are accepted for carriage in apparent good order",
+    "bbox": [
+     518,
+     134,
+     931,
+     142
+    ]
+   },
+   {
+    "i": 120,
+    "text": "and condition (except as noted) and SUBJECT TO THE CONDITION OF CONTRACT ON",
+    "bbox": [
+     518,
+     142,
+     919,
+     150
+    ]
+   },
+   {
+    "i": 121,
+    "text": "THE REVERSE HEREOF. ALL GOODS MAY BE CARRIED BY ANY OTHER MEANS",
+    "bbox": [
+     518,
+     150,
+     903,
+     159
+    ]
+   },
+   {
+    "i": 122,
+    "text": "INCLUDING ROAD OR ANY OTHER CARRIER UNLESS SPECIFIC CONTRARY",
+    "bbox": [
+     518,
+     159,
+     885,
+     167
+    ]
+   },
+   {
+    "i": 123,
+    "text": "IS DRAWN TO THE NOTICE CONCERNING CARRIER'S LIMITATION OF LIABILITY.",
+    "bbox": [
+     518,
+     167,
+     905,
+     175
+    ]
+   },
+   {
+    "i": 124,
+    "text": "Shipper may increase such limitation of liability by declaring higher value for carriage",
+    "bbox": [
+     518,
+     175,
+     895,
+     183
+    ]
+   },
+   {
+    "i": 125,
+    "text": "and paying a supplemental charge if required.",
+    "bbox": [
+     518,
+     183,
+     725,
+     191
+    ]
+   }
+  ],
+  "full_text": "232\n19509626\nSALCN0002822\nBEIJING\nBOM\nMH\nUSD\nCC\nCC\nNVD\nNCV\nMUMBAI\nMH319\n2026-9-23\nNIL\n1\n#\nAS ARRANGED\n1\n0.0\nAS ARRANGED\nAS ARRANGED\nAS ARRANGED\nAS ARRANGED\n2026-9-22 BEIJING\nLIM-TEC（BEIJING）TRANSMISSION　EQUIPMENT CO.，LTD.\nNO.91, INDUSTRY ROAD 6TH, NEW & HIGH-TECH\nINDUSTRIAL DEVELOPMENT ZONE,\nTEL:+86-13311099286\nEXPORT@LIM-TEC.COM\nAICHELIN UNITHERM HEAT TREATMENT\nGAT NO.38,, B.M. KAKADE INDUSTRIAL PARK,JADHAVWADI\nROAD,VILLAGE NAVALAKH UMBRE,,NEXT TO TALEGAON\nMIDC,TAL.:MAVAL,DIST.:PUNE,410 507, MAHARASHTRA, INDIA\nGSTIN NO. : 27AAICA2193H1ZMCIN NO.: U74900PN2010PTC150092 ***\nFREIGHT COLLECT\nNOTIFY: SAME AS CONSIGNEE\n***PAN  NO.: : AAICA2193H\nSCREW JACK\nModel:SLA150UM-R-V1-350 -P2\nVOL:\nDIM:\nTax\nTo\nBy First Carrier\nTo\nBy\nBy\nTo\nRouting and Destination\nCurrency\nCHGS\nCode\nWT/VAL\nOther\nPPD\nCOLL\nPPD\nCOLL\nDeclared Value for Carriage\nDeclared Value for Customs\nAirport of Destination\nRequested Flight/Date\nAmount of Insurance\nINSURANCE —— If carrier offers insurance, and such insurance is\nrequested in accordance with the conditions thereof, indicate amount\nto be insured in figures in box marked \"Amount of Insurance\".\nHandling Information\n(For USA only) These commodities Licensed by U.S. for ultimate destination……………………………………………………………………………………………………………………………..Diversion contrary to U.S. law is prohibited\nNo. of\nPieces\nRCP22\nGross\nWeight\nkg\nlb\nRate Class\nCommodity\nItem No.\nChargeable\nWeight\nRate\nCharge\nTotal\nNature and Quantity of Goods\n(incl. Dimensions or Volume)\nValuation Charge\nTotal Other Charges Due Agent\nTotal Other Charges Due Carrie\nTotal Prepaid\nTotal Collect\nCurrency Conversion Rate\nCC Charges in Dest. Currency\nFor Carrie's Use Only\nat Destination\nCharges at Destination\nTotal Collection Charges\nPrepaid\nCollect\nWeight Charge\nOther Charges\nShipper certifies that the particulars on the face hereof are correct and that insofar as any part of\nthe consignment contains dangerous goods, such part is properly described by name and is in proper\ncondition  for carriage by air according to the applicable Dangerous Goods Regulations.\nSignature of Shipper or his Agent\nExecuted on (date)\nat (place)\nSignature of Issuing Carrier or Its Agent\nShipper's Name and Address\nShipper's Account Number\nConsignee's Name and Address\nConsignee's Account Number\nAgent's IATA Code\nAgent's Account Number\nAirport of Departure (Addr. of First Carrier) and Requested Routing\nCopies 1, 2 and 3 of this Air waybill are originals and have the same validity.\nIssuing Carrier's Agent Name and City\nAccounting Information\nIt is agreed that the goods described herein are accepted for carriage in apparent good order\nand condition (except as noted) and SUBJECT TO THE CONDITION OF CONTRACT ON\nTHE REVERSE HEREOF. ALL GOODS MAY BE CARRIED BY ANY OTHER MEANS\nINCLUDING ROAD OR ANY OTHER CARRIER UNLESS SPECIFIC CONTRARY\nIS DRAWN TO THE NOTICE CONCERNING CARRIER'S LIMITATION OF LIABILITY.\nShipper may increase such limitation of liability by declaring higher value for carriage\nand paying a supplemental charge if required."
+ },
+ "raw": {
+  "MAWB_NO": "",
+  "HAWB_NO": "SALCN0002822",
+  "SHIPPER_INFO": "LIM-TEC（BEIJING）TRANSMISSION　EQUIPMENT CO.，LTD., NO.91, INDUSTRY ROAD 6TH, NEW & HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE, TEL:+86-13311099286",
+  "CONSIGNEE_INFO": "AICHELIN UNITHERM HEAT TREATMENT, GAT NO.38,, B.M. KAKADE INDUSTRIAL PARK,JADHAVWADI ROAD,VILLAGE NAVALAKH UMBRE,,NEXT TO TALEGAON MIDC,TAL.:MAVAL,DIST.:PUNE,410 507, MAHARASHTRA, INDIA",
+  "ORIGIN_NAME": "BEIJING",
+  "TO1": "BOM",
+  "TO2": "",
+  "TO3": "",
+  "DEST_NAME": "MUMBAI",
+  "GOODS_INFO": "SCREW JACK Model:SLA150UM-R-V1-350 -P2 VOL: DIM:",
+  "PIECES": 1,
+  "WEIGHT": 0.0,
+  "SLAC": 1,
+  "CREATE_TIME": "2026-09-22",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "LIM-TEC（BEIJING）TRANSMISSION　EQUIPMENT CO.，LTD.",
+  "SHIPPER_INFO_COMP_ADDRESS": "NO.91, INDUSTRY ROAD 6TH, NEW & HIGH-TECH INDUSTRIAL DEVELOPMENT ZONE,",
+  "SHIPPER_INFO_CITY": "",
+  "SHIPPER_INFO_COUNTRY": "",
+  "SHIPPER_INFO_STATE": "",
+  "SHIPPER_INFO_POSTAL": "",
+  "SHIPPER_INFO_TEL": "+86-13311099286",
+  "SHIPPER_INFO_FAX": "",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "EXPORT@LIM-TEC.COM",
+  "CONSIGNEE_INFO_COMP_NAME": "AICHELIN UNITHERM HEAT TREATMENT",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "GAT NO.38,, B.M. KAKADE INDUSTRIAL PARK,JADHAVWADI ROAD,VILLAGE NAVALAKH UMBRE,,NEXT TO TALEGAON MIDC,TAL.:MAVAL,DIST.:PUNE,410 507, MAHARASHTRA, INDIA",
+  "CONSIGNEE_INFO_CITTY": "PUNE",
+  "CONSIGNEE_INFO_COUNTRY": "INDIA",
+  "CONSIGNEE_INFO_STATE": "MAHARASHTRA",
+  "CONSIGNEE_INFO_POSTAL": "410 507",
+  "CONSIGNEE_INFO_TEL": "",
+  "CONSIGNEE_INFO_FAX": "",
+  "CONSIGNEE_INFO_EORI": "",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": ""
+ }
+}

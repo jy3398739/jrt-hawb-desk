@@ -1,0 +1,3515 @@
+{
+ "source_name": "DRAFT - HAWB No_ TSN10359645.XLSX",
+ "raw": {
+  "MAWB_NO": "999-95765541",
+  "HAWB_NO": "TSN10359645",
+  "SHIPPER_INFO": "PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD, NO 21 HONGYUAN ROAD XIQING ECONOMIC DEVELOPMENT AREA TIANJIN TIANJIN 300385 CN, TEL/FAX: +862258388999",
+  "CONSIGNEE_INFO": "CALZONI HYDRAULICS ITALY SRL, VIA CASTELDEBOLE 10 ZOLA PREDOSA BO BO 40069 IT, TEL: +390516501611",
+  "ORIGIN_NAME": "BEIJING SHOUDU INTERNATIONAL APT",
+  "TO1": "MXP",
+  "TO2": "",
+  "TO3": "",
+  "DEST_NAME": "MALPENSA APT/MILANO",
+  "GOODS_INFO": "MOTOR DIM 68*63*67CM/1 HS Codes: 8412291000 VOL 0.288 M3",
+  "PIECES": 1,
+  "WEIGHT": 205.0,
+  "SLAC": 1,
+  "CREATE_TIME": "2026-09-20",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
+  "SHIPPER_INFO_COMP_ADDRESS": "NO 21 HONGYUAN ROAD XIQING ECONOMIC DEVELOPMENT AREA TIANJIN TIANJIN 300385 CN",
+  "SHIPPER_INFO_CITY": "TIANJIN",
+  "SHIPPER_INFO_COUNTRY": "CN",
+  "SHIPPER_INFO_STATE": "",
+  "SHIPPER_INFO_POSTAL": "300385",
+  "SHIPPER_INFO_TEL": "+862258388999",
+  "SHIPPER_INFO_FAX": "+862258388999",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "",
+  "CONSIGNEE_INFO_COMP_NAME": "CALZONI HYDRAULICS ITALY SRL",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "VIA CASTELDEBOLE 10 ZOLA PREDOSA BO BO 40069 IT",
+  "CONSIGNEE_INFO_CITTY": "ZOLA PREDOSA",
+  "CONSIGNEE_INFO_COUNTRY": "IT",
+  "CONSIGNEE_INFO_STATE": "BO",
+  "CONSIGNEE_INFO_POSTAL": "40069",
+  "CONSIGNEE_INFO_TEL": "+390516501611",
+  "CONSIGNEE_INFO_FAX": "",
+  "CONSIGNEE_INFO_EORI": "",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": ""
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "999 PEK 95765541",
+    "bbox": [
+     49,
+     45,
+     221,
+     61
+    ],
+    "page": 1
+   },
+   {
+    "i": 2,
+    "text": "HAWB No: TSN10359645",
+    "bbox": [
+     700,
+     45,
+     933,
+     61
+    ],
+    "page": 1
+   },
+   {
+    "i": 3,
+    "text": "Shipper's Name and Address",
+    "bbox": [
+     37,
+     65,
+     157,
+     72
+    ],
+    "page": 1
+   },
+   {
+    "i": 4,
+    "text": "Shipper's Account Number",
+    "bbox": [
+     303,
+     65,
+     413,
+     72
+    ],
+    "page": 1
+   },
+   {
+    "i": 5,
+    "text": "PARHANTSN",
+    "bbox": [
+     306,
+     78,
+     410,
+     91
+    ],
+    "page": 1
+   },
+   {
+    "i": 6,
+    "text": "PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
+    "bbox": [
+     37,
+     93,
+     366,
+     104
+    ],
+    "page": 1
+   },
+   {
+    "i": 7,
+    "text": "Issued by",
+    "bbox": [
+     470,
+     95,
+     509,
+     103
+    ],
+    "page": 1
+   },
+   {
+    "i": 8,
+    "text": "NO 21 HONGYUAN ROAD",
+    "bbox": [
+     37,
+     105,
+     199,
+     116
+    ],
+    "page": 1
+   },
+   {
+    "i": 9,
+    "text": "(kg): 0.00",
+    "bbox": [
+     809,
+     105,
+     873,
+     114
+    ],
+    "page": 1
+   },
+   {
+    "i": 10,
+    "text": "XIQING ECONOMIC DEVELOPMENT AREA",
+    "bbox": [
+     37,
+     117,
+     307,
+     127
+    ],
+    "page": 1
+   },
+   {
+    "i": 11,
+    "text": "TIANJIN TIANJIN 300385 CN",
+    "bbox": [
+     37,
+     128,
+     214,
+     139
+    ],
+    "page": 1
+   },
+   {
+    "i": 12,
+    "text": "TE +862258388999 USCI: 911201117706402073",
+    "bbox": [
+     37,
+     140,
+     333,
+     150
+    ],
+    "page": 1
+   },
+   {
+    "i": 13,
+    "text": "Copies 1, 2 and 3 of this Air Waybill are originals and have the same validity.",
+    "bbox": [
+     470,
+     152,
+     783,
+     159
+    ],
+    "page": 1
+   },
+   {
+    "i": 14,
+    "text": "Consignee's Name and Address",
+    "bbox": [
+     37,
+     163,
+     169,
+     170
+    ],
+    "page": 1
+   },
+   {
+    "i": 15,
+    "text": "Consignee's Account Number",
+    "bbox": [
+     297,
+     163,
+     419,
+     170
+    ],
+    "page": 1
+   },
+   {
+    "i": 16,
+    "text": "CALHYDZOL1",
+    "bbox": [
+     303,
+     169,
+     413,
+     182
+    ],
+    "page": 1
+   },
+   {
+    "i": 17,
+    "text": "CALZONI HYDRAULICS ITALY SRL",
+    "bbox": [
+     37,
+     184,
+     256,
+     195
+    ],
+    "page": 1
+   },
+   {
+    "i": 18,
+    "text": "VIA CASTELDEBOLE 10",
+    "bbox": [
+     37,
+     195,
+     188,
+     205
+    ],
+    "page": 1
+   },
+   {
+    "i": 19,
+    "text": "ZOLA PREDOSA BO BO 40069 IT",
+    "bbox": [
+     37,
+     216,
+     244,
+     227
+    ],
+    "page": 1
+   },
+   {
+    "i": 20,
+    "text": "TE +390516501611 SIMONA AMATO",
+    "bbox": [
+     37,
+     227,
+     263,
+     237
+    ],
+    "page": 1
+   },
+   {
+    "i": 21,
+    "text": "Issuing Carrier's Agent Name and City",
+    "bbox": [
+     37,
+     249,
+     194,
+     256
+    ],
+    "page": 1
+   },
+   {
+    "i": 22,
+    "text": "Accounting Information",
+    "bbox": [
+     470,
+     249,
+     564,
+     256
+    ],
+    "page": 1
+   },
+   {
+    "i": 23,
+    "text": "N Y NY",
+    "bbox": [
+     541,
+     248,
+     616,
+     261
+    ],
+    "page": 1
+   },
+   {
+    "i": 24,
+    "text": "JAS FORWARDING(CHINA) CO.LTD",
+    "bbox": [
+     37,
+     265,
+     262,
+     276
+    ],
+    "page": 1
+   },
+   {
+    "i": 25,
+    "text": "TIANJIN",
+    "bbox": [
+     37,
+     281,
+     88,
+     291
+    ],
+    "page": 1
+   },
+   {
+    "i": 26,
+    "text": "Agent's IATA Code",
+    "bbox": [
+     37,
+     308,
+     115,
+     315
+    ],
+    "page": 1
+   },
+   {
+    "i": 27,
+    "text": "Account No.",
+    "bbox": [
+     253,
+     308,
+     303,
+     315
+    ],
+    "page": 1
+   },
+   {
+    "i": 28,
+    "text": "91-3 6083/1133",
+    "bbox": [
+     37,
+     322,
+     155,
+     336
+    ],
+    "page": 1
+   },
+   {
+    "i": 29,
+    "text": "Airport of Departure (Addr. of First Carrier) and Requested Routing",
+    "bbox": [
+     37,
+     338,
+     310,
+     345
+    ],
+    "page": 1
+   },
+   {
+    "i": 30,
+    "text": "Reference Number",
+    "bbox": [
+     507,
+     338,
+     585,
+     345
+    ],
+    "page": 1
+   },
+   {
+    "i": 31,
+    "text": "Optional Shipping Information",
+    "bbox": [
+     643,
+     338,
+     765,
+     345
+    ],
+    "page": 1
+   },
+   {
+    "i": 32,
+    "text": "BEIJING SHOUDU INTERNATIONAL APT",
+    "bbox": [
+     37,
+     348,
+     356,
+     361
+    ],
+    "page": 1
+   },
+   {
+    "i": 33,
+    "text": "C6904225979",
+    "bbox": [
+     499,
+     348,
+     604,
+     361
+    ],
+    "page": 1
+   },
+   {
+    "i": 34,
+    "text": "TERMS: EXW",
+    "bbox": [
+     657,
+     348,
+     763,
+     361
+    ],
+    "page": 1
+   },
+   {
+    "i": 35,
+    "text": "To",
+    "bbox": [
+     37,
+     364,
+     48,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 36,
+    "text": "By First Carrier",
+    "bbox": [
+     86,
+     364,
+     148,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 37,
+    "text": "Routing and Destination",
+    "bbox": [
+     184,
+     364,
+     273,
+     370
+    ],
+    "page": 1
+   },
+   {
+    "i": 38,
+    "text": "to",
+    "bbox": [
+     291,
+     364,
+     299,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 39,
+    "text": "by",
+    "bbox": [
+     340,
+     364,
+     350,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 40,
+    "text": "to",
+    "bbox": [
+     375,
+     364,
+     383,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 41,
+    "text": "by",
+    "bbox": [
+     423,
+     364,
+     433,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 42,
+    "text": "Currency",
+    "bbox": [
+     471,
+     364,
+     509,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 43,
+    "text": "CHGS",
+    "bbox": [
+     515,
+     364,
+     537,
+     370
+    ],
+    "page": 1
+   },
+   {
+    "i": 44,
+    "text": "WT/VAL",
+    "bbox": [
+     550,
+     364,
+     578,
+     370
+    ],
+    "page": 1
+   },
+   {
+    "i": 45,
+    "text": "Other",
+    "bbox": [
+     603,
+     364,
+     622,
+     370
+    ],
+    "page": 1
+   },
+   {
+    "i": 46,
+    "text": "Declared Value for Carriage",
+    "bbox": [
+     653,
+     364,
+     767,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 47,
+    "text": "Declared Value for Customs",
+    "bbox": [
+     802,
+     364,
+     917,
+     371
+    ],
+    "page": 1
+   },
+   {
+    "i": 48,
+    "text": "Code",
+    "bbox": [
+     520,
+     374,
+     532,
+     378
+    ],
+    "page": 1
+   },
+   {
+    "i": 49,
+    "text": "PPD",
+    "bbox": [
+     546,
+     374,
+     558,
+     378
+    ],
+    "page": 1
+   },
+   {
+    "i": 50,
+    "text": "COLL",
+    "bbox": [
+     569,
+     374,
+     585,
+     378
+    ],
+    "page": 1
+   },
+   {
+    "i": 51,
+    "text": "PPD",
+    "bbox": [
+     595,
+     374,
+     607,
+     378
+    ],
+    "page": 1
+   },
+   {
+    "i": 52,
+    "text": "COLL",
+    "bbox": [
+     616,
+     374,
+     632,
+     378
+    ],
+    "page": 1
+   },
+   {
+    "i": 53,
+    "text": "MXP",
+    "bbox": [
+     42,
+     378,
+     78,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 54,
+    "text": "CA",
+    "bbox": [
+     175,
+     378,
+     199,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 55,
+    "text": "CNY CC",
+    "bbox": [
+     472,
+     378,
+     538,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 56,
+    "text": "X",
+    "bbox": [
+     567,
+     378,
+     578,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 57,
+    "text": "X",
+    "bbox": [
+     614,
+     378,
+     626,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 58,
+    "text": "NVD",
+    "bbox": [
+     692,
+     378,
+     728,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 59,
+    "text": "NCV",
+    "bbox": [
+     842,
+     378,
+     877,
+     392
+    ],
+    "page": 1
+   },
+   {
+    "i": 60,
+    "text": "Airport of Destination",
+    "bbox": [
+     100,
+     394,
+     186,
+     401
+    ],
+    "page": 1
+   },
+   {
+    "i": 61,
+    "text": "Requested Flight/Date",
+    "bbox": [
+     309,
+     394,
+     401,
+     401
+    ],
+    "page": 1
+   },
+   {
+    "i": 62,
+    "text": "Amount of insurance",
+    "bbox": [
+     470,
+     394,
+     554,
+     401
+    ],
+    "page": 1
+   },
+   {
+    "i": 63,
+    "text": "MALPENSA APT/MILANO",
+    "bbox": [
+     37,
+     408,
+     235,
+     421
+    ],
+    "page": 1
+   },
+   {
+    "i": 64,
+    "text": "CA 949 / 22  /",
+    "bbox": [
+     253,
+     408,
+     371,
+     421
+    ],
+    "page": 1
+   },
+   {
+    "i": 65,
+    "text": "XXX",
+    "bbox": [
+     519,
+     408,
+     552,
+     421
+    ],
+    "page": 1
+   },
+   {
+    "i": 66,
+    "text": "Handling Information   PLEASE NOTIFY CONSIGNEE IMMEDIATELY UPON ARRIVAL",
+    "bbox": [
+     37,
+     423,
+     563,
+     434
+    ],
+    "page": 1
+   },
+   {
+    "i": 67,
+    "text": "SCI",
+    "bbox": [
+     857,
+     452,
+     873,
+     459
+    ],
+    "page": 1
+   },
+   {
+    "i": 68,
+    "text": "Rate Class",
+    "bbox": [
+     191,
+     481,
+     236,
+     489
+    ],
+    "page": 1
+   },
+   {
+    "i": 69,
+    "text": "Total",
+    "bbox": [
+     563,
+     492,
+     584,
+     499
+    ],
+    "page": 1
+   },
+   {
+    "i": 70,
+    "text": "1",
+    "bbox": [
+     37,
+     512,
+     46,
+     525
+    ],
+    "page": 1
+   },
+   {
+    "i": 71,
+    "text": "205.000 K",
+    "bbox": [
+     103,
+     512,
+     178,
+     525
+    ],
+    "page": 1
+   },
+   {
+    "i": 72,
+    "text": "Q",
+    "bbox": [
+     190,
+     512,
+     202,
+     524
+    ],
+    "page": 1
+   },
+   {
+    "i": 73,
+    "text": "205.0",
+    "bbox": [
+     330,
+     512,
+     372,
+     525
+    ],
+    "page": 1
+   },
+   {
+    "i": 74,
+    "text": "MOTOR",
+    "bbox": [
+     662,
+     511,
+     719,
+     523
+    ],
+    "page": 1
+   },
+   {
+    "i": 75,
+    "text": "DIM 68*63*67CM/1",
+    "bbox": [
+     662,
+     527,
+     793,
+     539
+    ],
+    "page": 1
+   },
+   {
+    "i": 76,
+    "text": "HS Codes: 8412291000",
+    "bbox": [
+     662,
+     542,
+     824,
+     554
+    ],
+    "page": 1
+   },
+   {
+    "i": 77,
+    "text": "VOL 0.288 M3",
+    "bbox": [
+     662,
+     557,
+     760,
+     569
+    ],
+    "page": 1
+   },
+   {
+    "i": 78,
+    "text": "1",
+    "bbox": [
+     55,
+     694,
+     65,
+     708
+    ],
+    "page": 1
+   },
+   {
+    "i": 79,
+    "text": "205.000",
+    "bbox": [
+     95,
+     694,
+     155,
+     708
+    ],
+    "page": 1
+   },
+   {
+    "i": 80,
+    "text": "Prepaid",
+    "bbox": [
+     78,
+     718,
+     110,
+     725
+    ],
+    "page": 1
+   },
+   {
+    "i": 81,
+    "text": "Weight Charge",
+    "bbox": [
+     159,
+     718,
+     221,
+     725
+    ],
+    "page": 1
+   },
+   {
+    "i": 82,
+    "text": "Collect",
+    "bbox": [
+     281,
+     718,
+     309,
+     725
+    ],
+    "page": 1
+   },
+   {
+    "i": 83,
+    "text": "Other Charges",
+    "bbox": [
+     363,
+     718,
+     424,
+     725
+    ],
+    "page": 1
+   },
+   {
+    "i": 84,
+    "text": "Valuation Charge",
+    "bbox": [
+     174,
+     744,
+     245,
+     751
+    ],
+    "page": 1
+   },
+   {
+    "i": 85,
+    "text": "Tax",
+    "bbox": [
+     190,
+     774,
+     205,
+     781
+    ],
+    "page": 1
+   },
+   {
+    "i": 86,
+    "text": "Total Other Charges Due Agent",
+    "bbox": [
+     121,
+     804,
+     250,
+     812
+    ],
+    "page": 1
+   },
+   {
+    "i": 87,
+    "text": "Total Other Charges Due Carrier",
+    "bbox": [
+     119,
+     834,
+     253,
+     842
+    ],
+    "page": 1
+   },
+   {
+    "i": 88,
+    "text": "LEXI LI",
+    "bbox": [
+     621,
+     863,
+     676,
+     877
+    ],
+    "page": 1
+   },
+   {
+    "i": 89,
+    "text": "Signature of Shipper or his Agent",
+    "bbox": [
+     580,
+     881,
+     716,
+     888
+    ],
+    "page": 1
+   },
+   {
+    "i": 90,
+    "text": "Total Prepaid",
+    "bbox": [
+     92,
+     891,
+     147,
+     898
+    ],
+    "page": 1
+   },
+   {
+    "i": 91,
+    "text": "Total Collect",
+    "bbox": [
+     257,
+     891,
+     308,
+     898
+    ],
+    "page": 1
+   },
+   {
+    "i": 92,
+    "text": "Currency Conversion Rates",
+    "bbox": [
+     61,
+     917,
+     174,
+     925
+    ],
+    "page": 1
+   },
+   {
+    "i": 93,
+    "text": "CC. Charges in Dest. Currency",
+    "bbox": [
+     219,
+     917,
+     346,
+     925
+    ],
+    "page": 1
+   },
+   {
+    "i": 94,
+    "text": "20-Sep-26",
+    "bbox": [
+     363,
+     919,
+     430,
+     930
+    ],
+    "page": 1
+   },
+   {
+    "i": 95,
+    "text": "TIANJIN",
+    "bbox": [
+     605,
+     919,
+     659,
+     930
+    ],
+    "page": 1
+   },
+   {
+    "i": 96,
+    "text": "JAS FORWARDING(CHINA) CO.LTD",
+    "bbox": [
+     690,
+     919,
+     933,
+     930
+    ],
+    "page": 1
+   },
+   {
+    "i": 97,
+    "text": "Executed on (date)",
+    "bbox": [
+     363,
+     937,
+     444,
+     944
+    ],
+    "page": 1
+   },
+   {
+    "i": 98,
+    "text": "at (place)",
+    "bbox": [
+     591,
+     937,
+     629,
+     944
+    ],
+    "page": 1
+   },
+   {
+    "i": 99,
+    "text": "Signature of Issuing Carrier or its Agent",
+    "bbox": [
+     766,
+     937,
+     933,
+     944
+    ],
+    "page": 1
+   },
+   {
+    "i": 100,
+    "text": "Charges at Destination",
+    "bbox": [
+     236,
+     951,
+     330,
+     958
+    ],
+    "page": 1
+   },
+   {
+    "i": 101,
+    "text": "Total Collect Charges",
+    "bbox": [
+     404,
+     951,
+     493,
+     958
+    ],
+    "page": 1
+   },
+   {
+    "i": 102,
+    "text": "999-95765541",
+    "bbox": [
+     803,
+     952,
+     933,
+     967
+    ],
+    "page": 1
+   },
+   {
+    "i": 103,
+    "text": "JAS FORWARDING (CHINA) CO LTD -",
+    "bbox": [
+     526,
+     93,
+     766,
+     104
+    ],
+    "page": 1
+   },
+   {
+    "i": 104,
+    "text": "CORPORATE",
+    "bbox": [
+     526,
+     104,
+     611,
+     115
+    ],
+    "page": 1
+   },
+   {
+    "i": 105,
+    "text": "10/F, TOWER 1, CRYSTAL PLAZA",
+    "bbox": [
+     526,
+     115,
+     737,
+     125
+    ],
+    "page": 1
+   },
+   {
+    "i": 106,
+    "text": "1359 YAOLONG ROAD, PUDONG",
+    "bbox": [
+     526,
+     125,
+     738,
+     136
+    ],
+    "page": 1
+   },
+   {
+    "i": 107,
+    "text": "DISTRICT, 200124, SHANGH",
+    "bbox": [
+     526,
+     136,
+     704,
+     146
+    ],
+    "page": 1
+   },
+   {
+    "i": 108,
+    "text": "Estimated CO2e1)",
+    "bbox": [
+     809,
+     93,
+     915,
+     103
+    ],
+    "page": 1
+   },
+   {
+    "i": 109,
+    "text": "It is agreed that the goods described herein are accepted in apparent good order and condition (except as",
+    "bbox": [
+     470,
+     163,
+     928,
+     171
+    ],
+    "page": 1
+   },
+   {
+    "i": 110,
+    "text": "noted) for carriage SUBJECT TO THE CONDITIONS OF CONTRACT ON THE REVERSE HEREOF. ALL",
+    "bbox": [
+     470,
+     171,
+     930,
+     178
+    ],
+    "page": 1
+   },
+   {
+    "i": 111,
+    "text": "GOODS MAY BE CARRIED BY ANY OTHER MEANS INCLUDING ROAD OR ANY OTHER CARRIER",
+    "bbox": [
+     470,
+     178,
+     918,
+     186
+    ],
+    "page": 1
+   },
+   {
+    "i": 112,
+    "text": "UNLESS SPECIFIC CONTRARY INSTRUCTIONS ARE GIVEN HEREON BY THE  SHIPPER, AND",
+    "bbox": [
+     470,
+     186,
+     905,
+     194
+    ],
+    "page": 1
+   },
+   {
+    "i": 113,
+    "text": "SHIPPER AGREES THAT THE SHIPMENT MAY BE CARRIED VIA INTERMEDIATE STOPPING PLACES",
+    "bbox": [
+     470,
+     194,
+     936,
+     201
+    ],
+    "page": 1
+   },
+   {
+    "i": 114,
+    "text": "WHICH THE CARRIER DEEMS APPROPRIATE. THE SHIPPER'S ATTENTION IS DRAWN TO THE",
+    "bbox": [
+     470,
+     201,
+     910,
+     209
+    ],
+    "page": 1
+   },
+   {
+    "i": 115,
+    "text": "NOTICE CONCERNING CARRIER'S LIMITATION OF LIABILITY. Shipper may increase such limitation of",
+    "bbox": [
+     470,
+     209,
+     929,
+     217
+    ],
+    "page": 1
+   },
+   {
+    "i": 116,
+    "text": "liability by declaring a higher value for carriage and paying a supplemental charge if required.",
+    "bbox": [
+     470,
+     217,
+     870,
+     225
+    ],
+    "page": 1
+   },
+   {
+    "i": 117,
+    "text": ". Agent",
+    "bbox": [
+     649,
+     248,
+     706,
+     261
+    ],
+    "page": 1
+   },
+   {
+    "i": 118,
+    "text": "INSURANCE - If Carrier offers Insurance, and such Insurance is",
+    "bbox": [
+     605,
+     394,
+     870,
+     401
+    ],
+    "page": 1
+   },
+   {
+    "i": 119,
+    "text": "requested in accordance with the conditions thereof, indicate amount to be",
+    "bbox": [
+     605,
+     401,
+     912,
+     409
+    ],
+    "page": 1
+   },
+   {
+    "i": 120,
+    "text": "insured in figures in box marked \"amount of insurance\".",
+    "bbox": [
+     605,
+     409,
+     831,
+     416
+    ],
+    "page": 1
+   },
+   {
+    "i": 121,
+    "text": "No. Of",
+    "bbox": [
+     47,
+     487,
+     73,
+     494
+    ],
+    "page": 1
+   },
+   {
+    "i": 122,
+    "text": "Pieces",
+    "bbox": [
+     46,
+     494,
+     74,
+     502
+    ],
+    "page": 1
+   },
+   {
+    "i": 123,
+    "text": "RCP",
+    "bbox": [
+     50,
+     502,
+     70,
+     509
+    ],
+    "page": 1
+   },
+   {
+    "i": 124,
+    "text": "Gross",
+    "bbox": [
+     113,
+     481,
+     140,
+     489
+    ],
+    "page": 1
+   },
+   {
+    "i": 125,
+    "text": "Weight",
+    "bbox": [
+     111,
+     489,
+     139,
+     496
+    ],
+    "page": 1
+   },
+   {
+    "i": 126,
+    "text": "kg",
+    "bbox": [
+     169,
+     481,
+     177,
+     487
+    ],
+    "page": 1
+   },
+   {
+    "i": 127,
+    "text": "lb",
+    "bbox": [
+     170,
+     487,
+     176,
+     492
+    ],
+    "page": 1
+   },
+   {
+    "i": 128,
+    "text": "Chargeable",
+    "bbox": [
+     308,
+     481,
+     355,
+     489
+    ],
+    "page": 1
+   },
+   {
+    "i": 129,
+    "text": "Weight",
+    "bbox": [
+     317,
+     489,
+     346,
+     496
+    ],
+    "page": 1
+   },
+   {
+    "i": 130,
+    "text": "Rate",
+    "bbox": [
+     387,
+     481,
+     419,
+     489
+    ],
+    "page": 1
+   },
+   {
+    "i": 131,
+    "text": "Charge",
+    "bbox": [
+     387,
+     498,
+     479,
+     505
+    ],
+    "page": 1
+   },
+   {
+    "i": 132,
+    "text": "Nature and Quantity of Goods",
+    "bbox": [
+     736,
+     488,
+     859,
+     495
+    ],
+    "page": 1
+   },
+   {
+    "i": 133,
+    "text": "(incl. Dimensions or Volume)",
+    "bbox": [
+     739,
+     495,
+     857,
+     503
+    ],
+    "page": 1
+   },
+   {
+    "i": 134,
+    "text": "Commodity",
+    "bbox": [
+     219,
+     496,
+     261,
+     502
+    ],
+    "page": 1
+   },
+   {
+    "i": 135,
+    "text": "Item No.",
+    "bbox": [
+     224,
+     503,
+     256,
+     509
+    ],
+    "page": 1
+   },
+   {
+    "i": 136,
+    "text": "Shipper certifies that the particulars on the face hereof are correct and that insofar as any part of the consignment",
+    "bbox": [
+     363,
+     804,
+     842,
+     812
+    ],
+    "page": 1
+   },
+   {
+    "i": 137,
+    "text": "contains dangerous goods, such part is properly described by name and is in proper condition for carriage by air according to",
+    "bbox": [
+     363,
+     812,
+     920,
+     819
+    ],
+    "page": 1
+   },
+   {
+    "i": 138,
+    "text": "the applicable Dangerous Goods Regulations.",
+    "bbox": [
+     363,
+     819,
+     565,
+     826
+    ],
+    "page": 1
+   },
+   {
+    "i": 139,
+    "text": "For Carrier's use only",
+    "bbox": [
+     75,
+     959,
+     163,
+     966
+    ],
+    "page": 1
+   },
+   {
+    "i": 140,
+    "text": "at Destination",
+    "bbox": [
+     91,
+     966,
+     147,
+     973
+    ],
+    "page": 1
+   },
+   {
+    "i": 141,
+    "text": "NOTICE CONCERNING CARRIERS' LIMITATION OF LIABILITY",
+    "bbox": [
+     239,
+     48,
+     731,
+     61
+    ],
+    "page": 3
+   },
+   {
+    "i": 142,
+    "text": "CONDITIONS OF CONTRACT",
+    "bbox": [
+     380,
+     185,
+     590,
+     197
+    ],
+    "page": 3
+   },
+   {
+    "i": 143,
+    "text": "If the carriage involves an ultimate destination or stop in a country other than the country of departure, the Montreal Convention or the Warsaw",
+    "bbox": [
+     37,
+     78,
+     935,
+     89
+    ],
+    "page": 3
+   },
+   {
+    "i": 144,
+    "text": "Convention may be applicable to the liability of the Carrier in respect of loss of, damage or delay to cargo. Carrier's limitation of liability in accordance",
+    "bbox": [
+     37,
+     89,
+     935,
+     99
+    ],
+    "page": 3
+   },
+   {
+    "i": 145,
+    "text": "with those Conventions shall be as set forth in subparagraph 4 unless a higher value is declared.",
+    "bbox": [
+     37,
+     99,
+     611,
+     110
+    ],
+    "page": 3
+   },
+   {
+    "i": 146,
+    "text": "1.",
+    "bbox": [
+     37,
+     214,
+     45,
+     222
+    ],
+    "page": 3
+   },
+   {
+    "i": 147,
+    "text": "In this contract and the Notices appearing hereon:",
+    "bbox": [
+     71,
+     214,
+     294,
+     222
+    ],
+    "page": 3
+   },
+   {
+    "i": 148,
+    "text": "CARRIER includes the air carrier issuing this air waybill and all carriers that carry or undertake",
+    "bbox": [
+     37,
+     222,
+     468,
+     230
+    ],
+    "page": 3
+   },
+   {
+    "i": 149,
+    "text": "to carry the cargo or perform any other services related to such carriage.",
+    "bbox": [
+     37,
+     230,
+     360,
+     238
+    ],
+    "page": 3
+   },
+   {
+    "i": 150,
+    "text": "SPECIAL DRAWING RIGHT (SDR) is a Special Drawing Right as defined by the International",
+    "bbox": [
+     37,
+     238,
+     468,
+     246
+    ],
+    "page": 3
+   },
+   {
+    "i": 151,
+    "text": "Monetary Fund.",
+    "bbox": [
+     37,
+     246,
+     108,
+     254
+    ],
+    "page": 3
+   },
+   {
+    "i": 152,
+    "text": "WARSAW CONVENTION means whichever of the following instruments is applicable to the",
+    "bbox": [
+     37,
+     254,
+     468,
+     262
+    ],
+    "page": 3
+   },
+   {
+    "i": 153,
+    "text": "contract of carriage:",
+    "bbox": [
+     37,
+     262,
+     126,
+     270
+    ],
+    "page": 3
+   },
+   {
+    "i": 154,
+    "text": "the Convention for the Unification of Certain Rules Relating to International Carriage by Air,",
+    "bbox": [
+     37,
+     270,
+     468,
+     278
+    ],
+    "page": 3
+   },
+   {
+    "i": 155,
+    "text": "signed at Warsaw, 12 October 1929;",
+    "bbox": [
+     37,
+     278,
+     200,
+     286
+    ],
+    "page": 3
+   },
+   {
+    "i": 156,
+    "text": "that Convention as amended at The Hague on 28 September 1955;",
+    "bbox": [
+     37,
+     286,
+     338,
+     294
+    ],
+    "page": 3
+   },
+   {
+    "i": 157,
+    "text": "that Convention as amended at The Hague 1955 and by Montreal Protocol No. 1, 2, or 4 (1975)",
+    "bbox": [
+     37,
+     294,
+     467,
+     302
+    ],
+    "page": 3
+   },
+   {
+    "i": 158,
+    "text": "as the case may be.",
+    "bbox": [
+     37,
+     302,
+     127,
+     310
+    ],
+    "page": 3
+   },
+   {
+    "i": 159,
+    "text": "MONTREAL CONVENTION means the Convention for the Unification of Certain Rules for",
+    "bbox": [
+     37,
+     310,
+     468,
+     318
+    ],
+    "page": 3
+   },
+   {
+    "i": 160,
+    "text": "International Carriage by Air, done at Montreal on 28 May 1999.",
+    "bbox": [
+     37,
+     318,
+     322,
+     326
+    ],
+    "page": 3
+   },
+   {
+    "i": 161,
+    "text": "2.",
+    "bbox": [
+     37,
+     326,
+     45,
+     334
+    ],
+    "page": 3
+   },
+   {
+    "i": 162,
+    "text": "/2.1 Carriage is subject to the rules relating to liability established by the Warsaw",
+    "bbox": [
+     71,
+     326,
+     468,
+     334
+    ],
+    "page": 3
+   },
+   {
+    "i": 163,
+    "text": "Convention or the Montreal Convention unless such carriage is not “international carriage” as",
+    "bbox": [
+     37,
+     334,
+     468,
+     342
+    ],
+    "page": 3
+   },
+   {
+    "i": 164,
+    "text": "defined by the applicable Conventions.",
+    "bbox": [
+     37,
+     342,
+     210,
+     350
+    ],
+    "page": 3
+   },
+   {
+    "i": 165,
+    "text": "2.2",
+    "bbox": [
+     37,
+     350,
+     51,
+     358
+    ],
+    "page": 3
+   },
+   {
+    "i": 166,
+    "text": "To the extent not in conflict with the foregoing, carriage and other related services",
+    "bbox": [
+     71,
+     350,
+     468,
+     358
+    ],
+    "page": 3
+   },
+   {
+    "i": 167,
+    "text": "performed by each Carrier are subject to:",
+    "bbox": [
+     37,
+     358,
+     221,
+     366
+    ],
+    "page": 3
+   },
+   {
+    "i": 168,
+    "text": "2.2.1",
+    "bbox": [
+     37,
+     366,
+     59,
+     374
+    ],
+    "page": 3
+   },
+   {
+    "i": 169,
+    "text": "applicable laws and government regulations;",
+    "bbox": [
+     71,
+     366,
+     270,
+     374
+    ],
+    "page": 3
+   },
+   {
+    "i": 170,
+    "text": "2.2.2",
+    "bbox": [
+     37,
+     374,
+     59,
+     382
+    ],
+    "page": 3
+   },
+   {
+    "i": 171,
+    "text": "provisions contained in the air waybill, Carrier’s conditions of carriage and related rules,",
+    "bbox": [
+     71,
+     374,
+     468,
+     382
+    ],
+    "page": 3
+   },
+   {
+    "i": 172,
+    "text": "regulations, and timetables (but not the times of departure and arrival stated therein) and",
+    "bbox": [
+     37,
+     382,
+     468,
+     390
+    ],
+    "page": 3
+   },
+   {
+    "i": 173,
+    "text": "applicable tariffs of such Carrier, which are made part hereof, and which may be inspected at",
+    "bbox": [
+     37,
+     390,
+     468,
+     398
+    ],
+    "page": 3
+   },
+   {
+    "i": 174,
+    "text": "any airports or other cargo sales offices from which it operates regular services. When carriage",
+    "bbox": [
+     37,
+     398,
+     468,
+     406
+    ],
+    "page": 3
+   },
+   {
+    "i": 175,
+    "text": "is to/from the USA, the shipper and the consignee are entitled, upon request, to receive a free",
+    "bbox": [
+     37,
+     406,
+     467,
+     414
+    ],
+    "page": 3
+   },
+   {
+    "i": 176,
+    "text": "copy of the Carrier’s conditions of carriage. The Carrier’s conditions of carriage include, but are",
+    "bbox": [
+     37,
+     414,
+     468,
+     422
+    ],
+    "page": 3
+   },
+   {
+    "i": 177,
+    "text": "not limited to:",
+    "bbox": [
+     37,
+     422,
+     97,
+     430
+    ],
+    "page": 3
+   },
+   {
+    "i": 178,
+    "text": "2.2.2.1 limits on the Carrier’s liability for loss, damage or delay of goods, including fragile or",
+    "bbox": [
+     37,
+     430,
+     468,
+     438
+    ],
+    "page": 3
+   },
+   {
+    "i": 179,
+    "text": "perishable goods;",
+    "bbox": [
+     37,
+     438,
+     117,
+     446
+    ],
+    "page": 3
+   },
+   {
+    "i": 180,
+    "text": "2.2.2.2 claims restrictions, including time periods within which shippers or consignees must file",
+    "bbox": [
+     37,
+     446,
+     468,
+     454
+    ],
+    "page": 3
+   },
+   {
+    "i": 181,
+    "text": "a claim or bring an action against the Carrier for its acts or omissions, or those of its agents;",
+    "bbox": [
+     37,
+     454,
+     445,
+     462
+    ],
+    "page": 3
+   },
+   {
+    "i": 182,
+    "text": "2.2.2.3 rights, if any, of the Carrier to change the terms of the contract;",
+    "bbox": [
+     37,
+     462,
+     351,
+     470
+    ],
+    "page": 3
+   },
+   {
+    "i": 183,
+    "text": "2.2.2.4 rules about Carrier’s right to refuse to carry;",
+    "bbox": [
+     37,
+     470,
+     266,
+     478
+    ],
+    "page": 3
+   },
+   {
+    "i": 184,
+    "text": "2.2.2.5 rights of the Carrier and limitations concerning delay or failure to perform service,",
+    "bbox": [
+     37,
+     478,
+     468,
+     486
+    ],
+    "page": 3
+   },
+   {
+    "i": 185,
+    "text": "including schedule changes, substitution of alternate Carrier or aircraft and rerouting.",
+    "bbox": [
+     37,
+     486,
+     414,
+     494
+    ],
+    "page": 3
+   },
+   {
+    "i": 186,
+    "text": "3.",
+    "bbox": [
+     37,
+     494,
+     45,
+     502
+    ],
+    "page": 3
+   },
+   {
+    "i": 187,
+    "text": "The agreed stopping places (which may be altered by Carrier in case of necessity) are",
+    "bbox": [
+     71,
+     494,
+     468,
+     502
+    ],
+    "page": 3
+   },
+   {
+    "i": 188,
+    "text": "those places, except the place of departure and place of destination, set forth on the face",
+    "bbox": [
+     37,
+     502,
+     468,
+     510
+    ],
+    "page": 3
+   },
+   {
+    "i": 189,
+    "text": "hereof or shown in Carrier’s timetables as scheduled stopping places for the route. Carriage to",
+    "bbox": [
+     37,
+     510,
+     467,
+     518
+    ],
+    "page": 3
+   },
+   {
+    "i": 190,
+    "text": "be performed hereunder by several successive Carriers is regarded as a single operation.",
+    "bbox": [
+     37,
+     518,
+     437,
+     526
+    ],
+    "page": 3
+   },
+   {
+    "i": 191,
+    "text": "4.",
+    "bbox": [
+     37,
+     526,
+     45,
+     534
+    ],
+    "page": 3
+   },
+   {
+    "i": 192,
+    "text": "For carriage to which the Montreal Convention does not apply, Carrier’s liability",
+    "bbox": [
+     71,
+     526,
+     468,
+     534
+    ],
+    "page": 3
+   },
+   {
+    "i": 193,
+    "text": "limitation for cargo lost, damaged or delayed shall be 26 SDRs per kilogram unless a greater",
+    "bbox": [
+     37,
+     534,
+     468,
+     542
+    ],
+    "page": 3
+   },
+   {
+    "i": 194,
+    "text": "per kilogram monetary limit is provided in any applicable Convention or in Carrier’s tariffs or",
+    "bbox": [
+     37,
+     542,
+     468,
+     550
+    ],
+    "page": 3
+   },
+   {
+    "i": 195,
+    "text": "general conditions of carriage.",
+    "bbox": [
+     37,
+     550,
+     172,
+     558
+    ],
+    "page": 3
+   },
+   {
+    "i": 196,
+    "text": "5.",
+    "bbox": [
+     37,
+     558,
+     45,
+     565
+    ],
+    "page": 3
+   },
+   {
+    "i": 197,
+    "text": "/5.1 Except when the Carrier has extended credit to the consignee without the written",
+    "bbox": [
+     71,
+     558,
+     467,
+     565
+    ],
+    "page": 3
+   },
+   {
+    "i": 198,
+    "text": "consent of the shipper, the shipper guarantees payment of all charges for the carriage due in",
+    "bbox": [
+     37,
+     565,
+     468,
+     573
+    ],
+    "page": 3
+   },
+   {
+    "i": 199,
+    "text": "accordance with Carrier’s tariff, conditions of carriage and related regulations, applicable laws",
+    "bbox": [
+     37,
+     573,
+     468,
+     581
+    ],
+    "page": 3
+   },
+   {
+    "i": 200,
+    "text": "(including national laws implementing the Warsaw Convention and the Montreal Convention),",
+    "bbox": [
+     37,
+     581,
+     468,
+     589
+    ],
+    "page": 3
+   },
+   {
+    "i": 201,
+    "text": "government regulations, orders and requirements.",
+    "bbox": [
+     37,
+     589,
+     260,
+     597
+    ],
+    "page": 3
+   },
+   {
+    "i": 202,
+    "text": "5.2",
+    "bbox": [
+     37,
+     597,
+     51,
+     605
+    ],
+    "page": 3
+   },
+   {
+    "i": 203,
+    "text": "When no part of the consignment is delivered, a claim with respect to such consignment",
+    "bbox": [
+     71,
+     597,
+     467,
+     605
+    ],
+    "page": 3
+   },
+   {
+    "i": 204,
+    "text": "will be considered even though transportation charges thereon are unpaid.",
+    "bbox": [
+     37,
+     605,
+     369,
+     613
+    ],
+    "page": 3
+   },
+   {
+    "i": 205,
+    "text": "6.",
+    "bbox": [
+     491,
+     223,
+     498,
+     230
+    ],
+    "page": 3
+   },
+   {
+    "i": 206,
+    "text": "/6.1 For cargo accepted for carriage, the Warsaw Convention and the Montreal Convention permit shipper to",
+    "bbox": [
+     525,
+     223,
+     934,
+     230
+    ],
+    "page": 3
+   },
+   {
+    "i": 207,
+    "text": "increase the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if required.",
+    "bbox": [
+     491,
+     230,
+     928,
+     236
+    ],
+    "page": 3
+   },
+   {
+    "i": 208,
+    "text": "6.2",
+    "bbox": [
+     491,
+     236,
+     503,
+     243
+    ],
+    "page": 3
+   },
+   {
+    "i": 209,
+    "text": "In carriage to which neither the Warsaw Convention nor the Montreal Convention applies Carrier shall, in",
+    "bbox": [
+     525,
+     236,
+     934,
+     243
+    ],
+    "page": 3
+   },
+   {
+    "i": 210,
+    "text": "accordance with the procedures set forth in its general conditions of carriage and applicable tariffs, permit shipper to",
+    "bbox": [
+     491,
+     243,
+     934,
+     250
+    ],
+    "page": 3
+   },
+   {
+    "i": 211,
+    "text": "increase the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if so",
+    "bbox": [
+     491,
+     250,
+     934,
+     256
+    ],
+    "page": 3
+   },
+   {
+    "i": 212,
+    "text": "required.",
+    "bbox": [
+     491,
+     256,
+     524,
+     263
+    ],
+    "page": 3
+   },
+   {
+    "i": 213,
+    "text": "7.",
+    "bbox": [
+     491,
+     263,
+     498,
+     270
+    ],
+    "page": 3
+   },
+   {
+    "i": 214,
+    "text": "/7.1 In cases of loss of, damage or delay to part of the cargo, the weight to be taken into account in",
+    "bbox": [
+     525,
+     263,
+     934,
+     270
+    ],
+    "page": 3
+   },
+   {
+    "i": 215,
+    "text": "determining Carrier’s limit of liability shall be only the weight of the package or packages concerned.",
+    "bbox": [
+     491,
+     270,
+     861,
+     276
+    ],
+    "page": 3
+   },
+   {
+    "i": 216,
+    "text": "7.2",
+    "bbox": [
+     491,
+     276,
+     503,
+     283
+    ],
+    "page": 3
+   },
+   {
+    "i": 217,
+    "text": "Notwithstanding any other provisions, for “foreign air transportation” as defined by the U.S. Transportation",
+    "bbox": [
+     525,
+     276,
+     934,
+     283
+    ],
+    "page": 3
+   },
+   {
+    "i": 218,
+    "text": "Code:",
+    "bbox": [
+     491,
+     283,
+     513,
+     290
+    ],
+    "page": 3
+   },
+   {
+    "i": 219,
+    "text": "7.2.1",
+    "bbox": [
+     491,
+     290,
+     510,
+     296
+    ],
+    "page": 3
+   },
+   {
+    "i": 220,
+    "text": "in the case of loss of, damage or delay to a shipment, the weight to be used in determining Carrier’s limit of",
+    "bbox": [
+     525,
+     290,
+     934,
+     296
+    ],
+    "page": 3
+   },
+   {
+    "i": 221,
+    "text": "liability shall be the weight which is used to determine the charge for carriage of such shipment; and",
+    "bbox": [
+     491,
+     296,
+     860,
+     303
+    ],
+    "page": 3
+   },
+   {
+    "i": 222,
+    "text": "7.2.2",
+    "bbox": [
+     491,
+     303,
+     510,
+     310
+    ],
+    "page": 3
+   },
+   {
+    "i": 223,
+    "text": "in the case of loss of, damage or delay to a part of a shipment, the shipment weight in 7.2.1 shall be prorated",
+    "bbox": [
+     525,
+     303,
+     934,
+     310
+    ],
+    "page": 3
+   },
+   {
+    "i": 224,
+    "text": "to the packages covered by the same air waybill whose value is affected by the loss, damage or delay. The weight",
+    "bbox": [
+     491,
+     310,
+     934,
+     316
+    ],
+    "page": 3
+   },
+   {
+    "i": 225,
+    "text": "applicable in the case of loss or damage to one or more articles in a package shall be the weight of the entire package.",
+    "bbox": [
+     491,
+     316,
+     930,
+     323
+    ],
+    "page": 3
+   },
+   {
+    "i": 226,
+    "text": "8.",
+    "bbox": [
+     491,
+     323,
+     498,
+     330
+    ],
+    "page": 3
+   },
+   {
+    "i": 227,
+    "text": "Any exclusion or limitation of liability applicable to Carrier shall apply to Carrier’s agents, employees, and",
+    "bbox": [
+     525,
+     323,
+     934,
+     330
+    ],
+    "page": 3
+   },
+   {
+    "i": 228,
+    "text": "representatives and to any person whose aircraft or equipment is used by Carrier for carriage and such person’s",
+    "bbox": [
+     491,
+     330,
+     934,
+     336
+    ],
+    "page": 3
+   },
+   {
+    "i": 229,
+    "text": "agents, employees and representatives.",
+    "bbox": [
+     491,
+     336,
+     639,
+     343
+    ],
+    "page": 3
+   },
+   {
+    "i": 230,
+    "text": "9.",
+    "bbox": [
+     491,
+     343,
+     498,
+     350
+    ],
+    "page": 3
+   },
+   {
+    "i": 231,
+    "text": "Carrier undertakes to complete the carriage with reasonable dispatch. Where permitted by applicable laws,",
+    "bbox": [
+     525,
+     343,
+     934,
+     350
+    ],
+    "page": 3
+   },
+   {
+    "i": 232,
+    "text": "tariffs and government regulations, Carrier may use alternative carriers, aircraft or modes of transport without notice",
+    "bbox": [
+     491,
+     350,
+     934,
+     356
+    ],
+    "page": 3
+   },
+   {
+    "i": 233,
+    "text": "but with due regard to the interests of the shipper. Carrier is authorised by the shipper to select the routing and all",
+    "bbox": [
+     491,
+     356,
+     934,
+     363
+    ],
+    "page": 3
+   },
+   {
+    "i": 234,
+    "text": "intermediate stopping places that it deems appropriate or to change or deviate from the routing shown on the face",
+    "bbox": [
+     491,
+     363,
+     934,
+     370
+    ],
+    "page": 3
+   },
+   {
+    "i": 235,
+    "text": "hereof.",
+    "bbox": [
+     491,
+     370,
+     517,
+     376
+    ],
+    "page": 3
+   },
+   {
+    "i": 236,
+    "text": "10.",
+    "bbox": [
+     491,
+     376,
+     503,
+     383
+    ],
+    "page": 3
+   },
+   {
+    "i": 237,
+    "text": "Receipt by the person entitled to delivery of the cargo without complaint shall be prima facie evidence that the",
+    "bbox": [
+     525,
+     376,
+     934,
+     383
+    ],
+    "page": 3
+   },
+   {
+    "i": 238,
+    "text": "cargo has been delivered in good condition and in accordance with the contract of carriage.",
+    "bbox": [
+     491,
+     383,
+     829,
+     390
+    ],
+    "page": 3
+   },
+   {
+    "i": 239,
+    "text": "10.1",
+    "bbox": [
+     491,
+     390,
+     507,
+     396
+    ],
+    "page": 3
+   },
+   {
+    "i": 240,
+    "text": "In the case of loss of, damage or delay to cargo a written complaint must be made to Carrier by the person",
+    "bbox": [
+     525,
+     390,
+     934,
+     396
+    ],
+    "page": 3
+   },
+   {
+    "i": 241,
+    "text": "entitled to delivery. Such complaint must be made:",
+    "bbox": [
+     491,
+     396,
+     678,
+     403
+    ],
+    "page": 3
+   },
+   {
+    "i": 242,
+    "text": "10.1.1",
+    "bbox": [
+     491,
+     403,
+     514,
+     410
+    ],
+    "page": 3
+   },
+   {
+    "i": 243,
+    "text": "in the case of damage to the cargo, immediately after discovery of the damage and at the latest within 14",
+    "bbox": [
+     525,
+     403,
+     934,
+     410
+    ],
+    "page": 3
+   },
+   {
+    "i": 244,
+    "text": "days from the date of receipt of the cargo;",
+    "bbox": [
+     491,
+     410,
+     646,
+     416
+    ],
+    "page": 3
+   },
+   {
+    "i": 245,
+    "text": "10.1.2",
+    "bbox": [
+     491,
+     416,
+     514,
+     423
+    ],
+    "page": 3
+   },
+   {
+    "i": 246,
+    "text": "in the case of delay, within 21 days from the date on which the cargo was placed at the disposal of the person",
+    "bbox": [
+     525,
+     416,
+     934,
+     423
+    ],
+    "page": 3
+   },
+   {
+    "i": 247,
+    "text": "entitled to delivery.",
+    "bbox": [
+     491,
+     423,
+     561,
+     430
+    ],
+    "page": 3
+   },
+   {
+    "i": 248,
+    "text": "10.1.3",
+    "bbox": [
+     491,
+     430,
+     514,
+     436
+    ],
+    "page": 3
+   },
+   {
+    "i": 249,
+    "text": "in the case of non-delivery of the cargo, within 120 days from the date of issue of the air waybill, or if an air",
+    "bbox": [
+     525,
+     430,
+     934,
+     436
+    ],
+    "page": 3
+   },
+   {
+    "i": 250,
+    "text": "waybill has not been issued, within 120 days from the date of receipt of the cargo for transportation by the Carrier.",
+    "bbox": [
+     491,
+     436,
+     912,
+     443
+    ],
+    "page": 3
+   },
+   {
+    "i": 251,
+    "text": "10.2",
+    "bbox": [
+     491,
+     443,
+     507,
+     450
+    ],
+    "page": 3
+   },
+   {
+    "i": 252,
+    "text": "Such complaint may be made to the Carrier whose air waybill was used, or to the first Carrier or to the last",
+    "bbox": [
+     525,
+     443,
+     934,
+     450
+    ],
+    "page": 3
+   },
+   {
+    "i": 253,
+    "text": "Carrier or to the Carrier, which performed the carriage during which the loss, damage or delay took place.",
+    "bbox": [
+     491,
+     450,
+     881,
+     456
+    ],
+    "page": 3
+   },
+   {
+    "i": 254,
+    "text": "10.3",
+    "bbox": [
+     491,
+     456,
+     507,
+     463
+    ],
+    "page": 3
+   },
+   {
+    "i": 255,
+    "text": "Unless a written complaint is made within the time limits specified in 10.1 no action may be brought against",
+    "bbox": [
+     525,
+     456,
+     934,
+     463
+    ],
+    "page": 3
+   },
+   {
+    "i": 256,
+    "text": "Carrier.",
+    "bbox": [
+     491,
+     463,
+     519,
+     470
+    ],
+    "page": 3
+   },
+   {
+    "i": 257,
+    "text": "10.4",
+    "bbox": [
+     491,
+     470,
+     507,
+     476
+    ],
+    "page": 3
+   },
+   {
+    "i": 258,
+    "text": "Any rights to damages against Carrier shall be extinguished unless an action is brought within two years from",
+    "bbox": [
+     525,
+     470,
+     934,
+     476
+    ],
+    "page": 3
+   },
+   {
+    "i": 259,
+    "text": "the date of arrival at the destination, or from the date on which the aircraft ought to have arrived, or from the date on",
+    "bbox": [
+     491,
+     476,
+     934,
+     483
+    ],
+    "page": 3
+   },
+   {
+    "i": 260,
+    "text": "which the carriage stopped.",
+    "bbox": [
+     491,
+     483,
+     593,
+     490
+    ],
+    "page": 3
+   },
+   {
+    "i": 261,
+    "text": "11.",
+    "bbox": [
+     491,
+     490,
+     503,
+     496
+    ],
+    "page": 3
+   },
+   {
+    "i": 262,
+    "text": "Shipper shall comply with all applicable laws and government regulations of any country to or from which the",
+    "bbox": [
+     525,
+     490,
+     934,
+     496
+    ],
+    "page": 3
+   },
+   {
+    "i": 263,
+    "text": "cargo may be carried, including those relating to the packing, carriage or delivery of the cargo, and shall furnish such",
+    "bbox": [
+     491,
+     496,
+     934,
+     503
+    ],
+    "page": 3
+   },
+   {
+    "i": 264,
+    "text": "information and attach such documents to the air waybill as may be necessary to comply with such laws and",
+    "bbox": [
+     491,
+     503,
+     934,
+     510
+    ],
+    "page": 3
+   },
+   {
+    "i": 265,
+    "text": "regulations. Carrier is not liable to shipper and shipper shall indemnify Carrier for loss or expense due to shipper’s",
+    "bbox": [
+     491,
+     510,
+     934,
+     516
+    ],
+    "page": 3
+   },
+   {
+    "i": 266,
+    "text": "failure to comply with this provision.",
+    "bbox": [
+     491,
+     516,
+     623,
+     523
+    ],
+    "page": 3
+   },
+   {
+    "i": 267,
+    "text": "12.",
+    "bbox": [
+     491,
+     523,
+     503,
+     530
+    ],
+    "page": 3
+   },
+   {
+    "i": 268,
+    "text": "No agent, employee or representative of Carrier has authority to alter, modify or waive any provisions of this",
+    "bbox": [
+     525,
+     523,
+     934,
+     530
+    ],
+    "page": 3
+   },
+   {
+    "i": 269,
+    "text": "contract.",
+    "bbox": [
+     491,
+     530,
+     523,
+     536
+    ],
+    "page": 3
+   },
+   {
+    "i": 270,
+    "text": "6./6.1 For cargo accepted for carriage, the Warsaw Convention and the Montreal Convention permit shipper to",
+    "bbox": [
+     491,
+     536,
+     934,
+     543
+    ],
+    "page": 3
+   },
+   {
+    "i": 271,
+    "text": "increase the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if required.",
+    "bbox": [
+     491,
+     543,
+     928,
+     550
+    ],
+    "page": 3
+   },
+   {
+    "i": 272,
+    "text": "6.2 In carriage to which neither the Warsaw Convention nor the Montreal Convention applies Carrier shall, in",
+    "bbox": [
+     491,
+     558,
+     934,
+     565
+    ],
+    "page": 3
+   },
+   {
+    "i": 273,
+    "text": "accordance with the procedures set forth in its general conditions of carriage and applicable tariffs, permit shipper to",
+    "bbox": [
+     491,
+     565,
+     934,
+     571
+    ],
+    "page": 3
+   },
+   {
+    "i": 274,
+    "text": "increase the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if so",
+    "bbox": [
+     491,
+     572,
+     934,
+     578
+    ],
+    "page": 3
+   },
+   {
+    "i": 275,
+    "text": "required.",
+    "bbox": [
+     491,
+     578,
+     524,
+     585
+    ],
+    "page": 3
+   },
+   {
+    "i": 276,
+    "text": "7./7.1 In cases of loss of, damage or delay to part of the cargo, the weight to be taken into account in determining",
+    "bbox": [
+     491,
+     593,
+     934,
+     600
+    ],
+    "page": 3
+   },
+   {
+    "i": 277,
+    "text": "Carrier’s limit of liability shall be only the weight of the package or packages concerned.",
+    "bbox": [
+     491,
+     600,
+     815,
+     607
+    ],
+    "page": 3
+   },
+   {
+    "i": 278,
+    "text": "7.2 Notwithstanding any other provisions, for “foreign air transportation” as defined by the U.S. Transportation Code:",
+    "bbox": [
+     491,
+     615,
+     921,
+     622
+    ],
+    "page": 3
+   },
+   {
+    "i": 279,
+    "text": "7.2.1 in the case of loss of, damage or delay to a shipment, the weight to be used in determining Carrier’s limit of",
+    "bbox": [
+     491,
+     630,
+     934,
+     637
+    ],
+    "page": 3
+   },
+   {
+    "i": 280,
+    "text": "liability shall be the weight which is used to determine the charge for carriage of such shipment; and",
+    "bbox": [
+     491,
+     637,
+     860,
+     644
+    ],
+    "page": 3
+   },
+   {
+    "i": 281,
+    "text": "7.2.2 in the case of loss of, damage or delay to a part of a shipment, the shipment weight in 7.2.1 shall be prorated to",
+    "bbox": [
+     491,
+     652,
+     934,
+     659
+    ],
+    "page": 3
+   },
+   {
+    "i": 282,
+    "text": "the packages covered by the same air waybill whose value is affected by the loss, damage or delay. The weight",
+    "bbox": [
+     491,
+     659,
+     934,
+     666
+    ],
+    "page": 3
+   },
+   {
+    "i": 283,
+    "text": "applicable in the case of loss or damage to one or more articles in a package shall be the weight of the entire package.",
+    "bbox": [
+     491,
+     666,
+     930,
+     672
+    ],
+    "page": 3
+   },
+   {
+    "i": 284,
+    "text": "8. Any exclusion or limitation of liability applicable to Carrier shall apply to Carrier’s agents, employees, and",
+    "bbox": [
+     491,
+     681,
+     934,
+     688
+    ],
+    "page": 3
+   },
+   {
+    "i": 285,
+    "text": "representatives and to any person whose aircraft or equipment is used by Carrier for carriage and such person’s",
+    "bbox": [
+     491,
+     688,
+     934,
+     694
+    ],
+    "page": 3
+   },
+   {
+    "i": 286,
+    "text": "agents, employees and representatives.",
+    "bbox": [
+     491,
+     694,
+     639,
+     701
+    ],
+    "page": 3
+   },
+   {
+    "i": 287,
+    "text": "9. Carrier undertakes to complete the carriage with reasonable dispatch. Where permitted by applicable laws, tariffs",
+    "bbox": [
+     491,
+     709,
+     934,
+     716
+    ],
+    "page": 3
+   },
+   {
+    "i": 288,
+    "text": "and government regulations, Carrier may use alternative carriers, aircraft or modes of transport without notice but with",
+    "bbox": [
+     491,
+     716,
+     934,
+     723
+    ],
+    "page": 3
+   },
+   {
+    "i": 289,
+    "text": "due regard to the interests of the shipper. Carrier is authorised by the shipper to select the routing and all intermediate",
+    "bbox": [
+     491,
+     723,
+     934,
+     729
+    ],
+    "page": 3
+   },
+   {
+    "i": 290,
+    "text": "stopping places that it deems appropriate or to change or deviate from the routing shown on the face hereof.",
+    "bbox": [
+     491,
+     729,
+     892,
+     736
+    ],
+    "page": 3
+   },
+   {
+    "i": 291,
+    "text": "10. Receipt by the person entitled to delivery of the cargo without complaint shall be prima facie evidence that the",
+    "bbox": [
+     491,
+     745,
+     934,
+     751
+    ],
+    "page": 3
+   },
+   {
+    "i": 292,
+    "text": "cargo has been delivered in good condition and in accordance with the contract of carriage.",
+    "bbox": [
+     491,
+     751,
+     829,
+     758
+    ],
+    "page": 3
+   },
+   {
+    "i": 293,
+    "text": "10.1 In the case of loss of, damage or delay to cargo a written complaint must be made to Carrier by the person",
+    "bbox": [
+     491,
+     767,
+     934,
+     773
+    ],
+    "page": 3
+   },
+   {
+    "i": 294,
+    "text": "entitled to delivery. Such complaint must be made:",
+    "bbox": [
+     491,
+     773,
+     678,
+     780
+    ],
+    "page": 3
+   },
+   {
+    "i": 295,
+    "text": "10.1.1 in the case of damage to the cargo, immediately after discovery of the damage and at the latest within 14 days",
+    "bbox": [
+     491,
+     788,
+     934,
+     795
+    ],
+    "page": 3
+   },
+   {
+    "i": 296,
+    "text": "from the date of receipt of the cargo;",
+    "bbox": [
+     491,
+     795,
+     626,
+     802
+    ],
+    "page": 3
+   },
+   {
+    "i": 297,
+    "text": "10.1.2 in the case of delay, within 21 days from the date on which the cargo was placed at the disposal of the person",
+    "bbox": [
+     491,
+     810,
+     934,
+     817
+    ],
+    "page": 3
+   },
+   {
+    "i": 298,
+    "text": "entitled to delivery.",
+    "bbox": [
+     491,
+     817,
+     561,
+     824
+    ],
+    "page": 3
+   },
+   {
+    "i": 299,
+    "text": "10.1.3 in the case of non-delivery of the cargo, within 120 days from the date of issue of the air waybill, or if an air",
+    "bbox": [
+     491,
+     832,
+     934,
+     839
+    ],
+    "page": 3
+   },
+   {
+    "i": 300,
+    "text": "waybill has not been issued, within 120 days from the date of receipt of the cargo for transportation by the Carrier.",
+    "bbox": [
+     491,
+     839,
+     912,
+     846
+    ],
+    "page": 3
+   },
+   {
+    "i": 301,
+    "text": "10.2 Such complaint may be made to the Carrier whose air waybill was used, or to the first Carrier or to the last Carrier",
+    "bbox": [
+     491,
+     854,
+     934,
+     861
+    ],
+    "page": 3
+   },
+   {
+    "i": 302,
+    "text": "or to the Carrier, which performed the carriage during which the loss, damage or delay took place.",
+    "bbox": [
+     491,
+     861,
+     853,
+     867
+    ],
+    "page": 3
+   },
+   {
+    "i": 303,
+    "text": "10.3 Unless a written complaint is made within the time limits specified in 10.1 no action may be brought against",
+    "bbox": [
+     491,
+     876,
+     934,
+     883
+    ],
+    "page": 3
+   },
+   {
+    "i": 304,
+    "text": "Carrier.",
+    "bbox": [
+     491,
+     883,
+     519,
+     889
+    ],
+    "page": 3
+   },
+   {
+    "i": 305,
+    "text": "10.4 Any rights to damages against Carrier shall be extinguished unless an action is brought within two years from the",
+    "bbox": [
+     491,
+     898,
+     934,
+     905
+    ],
+    "page": 3
+   },
+   {
+    "i": 306,
+    "text": "date of arrival at the destination, or from the date on which the aircraft ought to have arrived, or from the date on which",
+    "bbox": [
+     491,
+     905,
+     934,
+     911
+    ],
+    "page": 3
+   },
+   {
+    "i": 307,
+    "text": "the carriage stopped.",
+    "bbox": [
+     491,
+     911,
+     570,
+     918
+    ],
+    "page": 3
+   },
+   {
+    "i": 308,
+    "text": "11. Shipper shall comply with all applicable laws and government regulations of any country to or from which the cargo",
+    "bbox": [
+     491,
+     926,
+     934,
+     933
+    ],
+    "page": 3
+   },
+   {
+    "i": 309,
+    "text": "may be carried, including those relating to the packing, carriage or delivery of the cargo, and shall furnish such",
+    "bbox": [
+     491,
+     933,
+     934,
+     940
+    ],
+    "page": 3
+   },
+   {
+    "i": 310,
+    "text": "information and attach such documents to the air waybill as may be necessary to comply with such laws and",
+    "bbox": [
+     491,
+     940,
+     934,
+     946
+    ],
+    "page": 3
+   },
+   {
+    "i": 311,
+    "text": "regulations. Carrier is not liable to shipper and shipper shall indemnify Carrier for loss or expense due to shipper’s",
+    "bbox": [
+     491,
+     946,
+     934,
+     953
+    ],
+    "page": 3
+   },
+   {
+    "i": 312,
+    "text": "failure to comply with this provision.",
+    "bbox": [
+     491,
+     953,
+     623,
+     960
+    ],
+    "page": 3
+   },
+   {
+    "i": 313,
+    "text": "12. No agent, employee or representative of Carrier has authority to alter, modify or waive any provisions of this",
+    "bbox": [
+     491,
+     968,
+     934,
+     975
+    ],
+    "page": 3
+   },
+   {
+    "i": 314,
+    "text": "contract.",
+    "bbox": [
+     491,
+     975,
+     523,
+     982
+    ],
+    "page": 3
+   }
+  ],
+  "full_text": "999 PEK 95765541\nHAWB No: TSN10359645\nShipper's Name and Address\nShipper's Account Number\nPARHANTSN\nPARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD\nIssued by\nNO 21 HONGYUAN ROAD\n(kg): 0.00\nXIQING ECONOMIC DEVELOPMENT AREA\nTIANJIN TIANJIN 300385 CN\nTE +862258388999 USCI: 911201117706402073\nCopies 1, 2 and 3 of this Air Waybill are originals and have the same validity.\nConsignee's Name and Address\nConsignee's Account Number\nCALHYDZOL1\nCALZONI HYDRAULICS ITALY SRL\nVIA CASTELDEBOLE 10\nZOLA PREDOSA BO BO 40069 IT\nTE +390516501611 SIMONA AMATO\nIssuing Carrier's Agent Name and City\nAccounting Information\nN Y NY\nJAS FORWARDING(CHINA) CO.LTD\nTIANJIN\nAgent's IATA Code\nAccount No.\n91-3 6083/1133\nAirport of Departure (Addr. of First Carrier) and Requested Routing\nReference Number\nOptional Shipping Information\nBEIJING SHOUDU INTERNATIONAL APT\nC6904225979\nTERMS: EXW\nTo\nBy First Carrier\nRouting and Destination\nto\nby\nto\nby\nCurrency\nCHGS\nWT/VAL\nOther\nDeclared Value for Carriage\nDeclared Value for Customs\nCode\nPPD\nCOLL\nPPD\nCOLL\nMXP\nCA\nCNY CC\nX\nX\nNVD\nNCV\nAirport of Destination\nRequested Flight/Date\nAmount of insurance\nMALPENSA APT/MILANO\nCA 949 / 22  /\nXXX\nHandling Information   PLEASE NOTIFY CONSIGNEE IMMEDIATELY UPON ARRIVAL\nSCI\nRate Class\nTotal\n1\n205.000 K\nQ\n205.0\nMOTOR\nDIM 68*63*67CM/1\nHS Codes: 8412291000\nVOL 0.288 M3\n1\n205.000\nPrepaid\nWeight Charge\nCollect\nOther Charges\nValuation Charge\nTax\nTotal Other Charges Due Agent\nTotal Other Charges Due Carrier\nLEXI LI\nSignature of Shipper or his Agent\nTotal Prepaid\nTotal Collect\nCurrency Conversion Rates\nCC. Charges in Dest. Currency\n20-Sep-26\nTIANJIN\nJAS FORWARDING(CHINA) CO.LTD\nExecuted on (date)\nat (place)\nSignature of Issuing Carrier or its Agent\nCharges at Destination\nTotal Collect Charges\n999-95765541\nJAS FORWARDING (CHINA) CO LTD -\nCORPORATE\n10/F, TOWER 1, CRYSTAL PLAZA\n1359 YAOLONG ROAD, PUDONG\nDISTRICT, 200124, SHANGH\nEstimated CO2e1)\nIt is agreed that the goods described herein are accepted in apparent good order and condition (except as\nnoted) for carriage SUBJECT TO THE CONDITIONS OF CONTRACT ON THE REVERSE HEREOF. ALL\nGOODS MAY BE CARRIED BY ANY OTHER MEANS INCLUDING ROAD OR ANY OTHER CARRIER\nUNLESS SPECIFIC CONTRARY INSTRUCTIONS ARE GIVEN HEREON BY THE  SHIPPER, AND\nSHIPPER AGREES THAT THE SHIPMENT MAY BE CARRIED VIA INTERMEDIATE STOPPING PLACES\nWHICH THE CARRIER DEEMS APPROPRIATE. THE SHIPPER'S ATTENTION IS DRAWN TO THE\nNOTICE CONCERNING CARRIER'S LIMITATION OF LIABILITY. Shipper may increase such limitation of\nliability by declaring a higher value for carriage and paying a supplemental charge if required.\n. Agent\nINSURANCE - If Carrier offers Insurance, and such Insurance is\nrequested in accordance with the conditions thereof, indicate amount to be\ninsured in figures in box marked \"amount of insurance\".\nNo. Of\nPieces\nRCP\nGross\nWeight\nkg\nlb\nChargeable\nWeight\nRate\nCharge\nNature and Quantity of Goods\n(incl. Dimensions or Volume)\nCommodity\nItem No.\nShipper certifies that the particulars on the face hereof are correct and that insofar as any part of the consignment\ncontains dangerous goods, such part is properly described by name and is in proper condition for carriage by air according to\nthe applicable Dangerous Goods Regulations.\nFor Carrier's use only\nat Destination\nNOTICE CONCERNING CARRIERS' LIMITATION OF LIABILITY\nCONDITIONS OF CONTRACT\nIf the carriage involves an ultimate destination or stop in a country other than the country of departure, the Montreal Convention or the Warsaw\nConvention may be applicable to the liability of the Carrier in respect of loss of, damage or delay to cargo. Carrier's limitation of liability in accordance\nwith those Conventions shall be as set forth in subparagraph 4 unless a higher value is declared.\n1.\nIn this contract and the Notices appearing hereon:\nCARRIER includes the air carrier issuing this air waybill and all carriers that carry or undertake\nto carry the cargo or perform any other services related to such carriage.\nSPECIAL DRAWING RIGHT (SDR) is a Special Drawing Right as defined by the International\nMonetary Fund.\nWARSAW CONVENTION means whichever of the following instruments is applicable to the\ncontract of carriage:\nthe Convention for the Unification of Certain Rules Relating to International Carriage by Air,\nsigned at Warsaw, 12 October 1929;\nthat Convention as amended at The Hague on 28 September 1955;\nthat Convention as amended at The Hague 1955 and by Montreal Protocol No. 1, 2, or 4 (1975)\nas the case may be.\nMONTREAL CONVENTION means the Convention for the Unification of Certain Rules for\nInternational Carriage by Air, done at Montreal on 28 May 1999.\n2.\n/2.1 Carriage is subject to the rules relating to liability established by the Warsaw\nConvention or the Montreal Convention unless such carriage is not “international carriage” as\ndefined by the applicable Conventions.\n2.2\nTo the extent not in conflict with the foregoing, carriage and other related services\nperformed by each Carrier are subject to:\n2.2.1\napplicable laws and government regulations;\n2.2.2\nprovisions contained in the air waybill, Carrier’s conditions of carriage and related rules,\nregulations, and timetables (but not the times of departure and arrival stated therein) and\napplicable tariffs of such Carrier, which are made part hereof, and which may be inspected at\nany airports or other cargo sales offices from which it operates regular services. When carriage\nis to/from the USA, the shipper and the consignee are entitled, upon request, to receive a free\ncopy of the Carrier’s conditions of carriage. The Carrier’s conditions of carriage include, but are\nnot limited to:\n2.2.2.1 limits on the Carrier’s liability for loss, damage or delay of goods, including fragile or\nperishable goods;\n2.2.2.2 claims restrictions, including time periods within which shippers or consignees must file\na claim or bring an action against the Carrier for its acts or omissions, or those of its agents;\n2.2.2.3 rights, if any, of the Carrier to change the terms of the contract;\n2.2.2.4 rules about Carrier’s right to refuse to carry;\n2.2.2.5 rights of the Carrier and limitations concerning delay or failure to perform service,\nincluding schedule changes, substitution of alternate Carrier or aircraft and rerouting.\n3.\nThe agreed stopping places (which may be altered by Carrier in case of necessity) are\nthose places, except the place of departure and place of destination, set forth on the face\nhereof or shown in Carrier’s timetables as scheduled stopping places for the route. Carriage to\nbe performed hereunder by several successive Carriers is regarded as a single operation.\n4.\nFor carriage to which the Montreal Convention does not apply, Carrier’s liability\nlimitation for cargo lost, damaged or delayed shall be 26 SDRs per kilogram unless a greater\nper kilogram monetary limit is provided in any applicable Convention or in Carrier’s tariffs or\ngeneral conditions of carriage.\n5.\n/5.1 Except when the Carrier has extended credit to the consignee without the written\nconsent of the shipper, the shipper guarantees payment of all charges for the carriage due in\naccordance with Carrier’s tariff, conditions of carriage and related regulations, applicable laws\n(including national laws implementing the Warsaw Convention and the Montreal Convention),\ngovernment regulations, orders and requirements.\n5.2\nWhen no part of the consignment is delivered, a claim with respect to such consignment\nwill be considered even though transportation charges thereon are unpaid.\n6.\n/6.1 For cargo accepted for carriage, the Warsaw Convention and the Montreal Convention permit shipper to\nincrease the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if required.\n6.2\nIn carriage to which neither the Warsaw Convention nor the Montreal Convention applies Carrier shall, in\naccordance with the procedures set forth in its general conditions of carriage and applicable tariffs, permit shipper to\nincrease the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if so\nrequired.\n7.\n/7.1 In cases of loss of, damage or delay to part of the cargo, the weight to be taken into account in\ndetermining Carrier’s limit of liability shall be only the weight of the package or packages concerned.\n7.2\nNotwithstanding any other provisions, for “foreign air transportation” as defined by the U.S. Transportation\nCode:\n7.2.1\nin the case of loss of, damage or delay to a shipment, the weight to be used in determining Carrier’s limit of\nliability shall be the weight which is used to determine the charge for carriage of such shipment; and\n7.2.2\nin the case of loss of, damage or delay to a part of a shipment, the shipment weight in 7.2.1 shall be prorated\nto the packages covered by the same air waybill whose value is affected by the loss, damage or delay. The weight\napplicable in the case of loss or damage to one or more articles in a package shall be the weight of the entire package.\n8.\nAny exclusion or limitation of liability applicable to Carrier shall apply to Carrier’s agents, employees, and\nrepresentatives and to any person whose aircraft or equipment is used by Carrier for carriage and such person’s\nagents, employees and representatives.\n9.\nCarrier undertakes to complete the carriage with reasonable dispatch. Where permitted by applicable laws,\ntariffs and government regulations, Carrier may use alternative carriers, aircraft or modes of transport without notice\nbut with due regard to the interests of the shipper. Carrier is authorised by the shipper to select the routing and all\nintermediate stopping places that it deems appropriate or to change or deviate from the routing shown on the face\nhereof.\n10.\nReceipt by the person entitled to delivery of the cargo without complaint shall be prima facie evidence that the\ncargo has been delivered in good condition and in accordance with the contract of carriage.\n10.1\nIn the case of loss of, damage or delay to cargo a written complaint must be made to Carrier by the person\nentitled to delivery. Such complaint must be made:\n10.1.1\nin the case of damage to the cargo, immediately after discovery of the damage and at the latest within 14\ndays from the date of receipt of the cargo;\n10.1.2\nin the case of delay, within 21 days from the date on which the cargo was placed at the disposal of the person\nentitled to delivery.\n10.1.3\nin the case of non-delivery of the cargo, within 120 days from the date of issue of the air waybill, or if an air\nwaybill has not been issued, within 120 days from the date of receipt of the cargo for transportation by the Carrier.\n10.2\nSuch complaint may be made to the Carrier whose air waybill was used, or to the first Carrier or to the last\nCarrier or to the Carrier, which performed the carriage during which the loss, damage or delay took place.\n10.3\nUnless a written complaint is made within the time limits specified in 10.1 no action may be brought against\nCarrier.\n10.4\nAny rights to damages against Carrier shall be extinguished unless an action is brought within two years from\nthe date of arrival at the destination, or from the date on which the aircraft ought to have arrived, or from the date on\nwhich the carriage stopped.\n11.\nShipper shall comply with all applicable laws and government regulations of any country to or from which the\ncargo may be carried, including those relating to the packing, carriage or delivery of the cargo, and shall furnish such\ninformation and attach such documents to the air waybill as may be necessary to comply with such laws and\nregulations. Carrier is not liable to shipper and shipper shall indemnify Carrier for loss or expense due to shipper’s\nfailure to comply with this provision.\n12.\nNo agent, employee or representative of Carrier has authority to alter, modify or waive any provisions of this\ncontract.\n6./6.1 For cargo accepted for carriage, the Warsaw Convention and the Montreal Convention permit shipper to\nincrease the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if required.\n6.2 In carriage to which neither the Warsaw Convention nor the Montreal Convention applies Carrier shall, in\naccordance with the procedures set forth in its general conditions of carriage and applicable tariffs, permit shipper to\nincrease the limitation of liability by declaring a higher value for carriage and paying a supplemental charge if so\nrequired.\n7./7.1 In cases of loss of, damage or delay to part of the cargo, the weight to be taken into account in determining\nCarrier’s limit of liability shall be only the weight of the package or packages concerned.\n7.2 Notwithstanding any other provisions, for “foreign air transportation” as defined by the U.S. Transportation Code:\n7.2.1 in the case of loss of, damage or delay to a shipment, the weight to be used in determining Carrier’s limit of\nliability shall be the weight which is used to determine the charge for carriage of such shipment; and\n7.2.2 in the case of loss of, damage or delay to a part of a shipment, the shipment weight in 7.2.1 shall be prorated to\nthe packages covered by the same air waybill whose value is affected by the loss, damage or delay. The weight\napplicable in the case of loss or damage to one or more articles in a package shall be the weight of the entire package.\n8. Any exclusion or limitation of liability applicable to Carrier shall apply to Carrier’s agents, employees, and\nrepresentatives and to any person whose aircraft or equipment is used by Carrier for carriage and such person’s\nagents, employees and representatives.\n9. Carrier undertakes to complete the carriage with reasonable dispatch. Where permitted by applicable laws, tariffs\nand government regulations, Carrier may use alternative carriers, aircraft or modes of transport without notice but with\ndue regard to the interests of the shipper. Carrier is authorised by the shipper to select the routing and all intermediate\nstopping places that it deems appropriate or to change or deviate from the routing shown on the face hereof.\n10. Receipt by the person entitled to delivery of the cargo without complaint shall be prima facie evidence that the\ncargo has been delivered in good condition and in accordance with the contract of carriage.\n10.1 In the case of loss of, damage or delay to cargo a written complaint must be made to Carrier by the person\nentitled to delivery. Such complaint must be made:\n10.1.1 in the case of damage to the cargo, immediately after discovery of the damage and at the latest within 14 days\nfrom the date of receipt of the cargo;\n10.1.2 in the case of delay, within 21 days from the date on which the cargo was placed at the disposal of the person\nentitled to delivery.\n10.1.3 in the case of non-delivery of the cargo, within 120 days from the date of issue of the air waybill, or if an air\nwaybill has not been issued, within 120 days from the date of receipt of the cargo for transportation by the Carrier.\n10.2 Such complaint may be made to the Carrier whose air waybill was used, or to the first Carrier or to the last Carrier\nor to the Carrier, which performed the carriage during which the loss, damage or delay took place.\n10.3 Unless a written complaint is made within the time limits specified in 10.1 no action may be brought against\nCarrier.\n10.4 Any rights to damages against Carrier shall be extinguished unless an action is brought within two years from the\ndate of arrival at the destination, or from the date on which the aircraft ought to have arrived, or from the date on which\nthe carriage stopped.\n11. Shipper shall comply with all applicable laws and government regulations of any country to or from which the cargo\nmay be carried, including those relating to the packing, carriage or delivery of the cargo, and shall furnish such\ninformation and attach such documents to the air waybill as may be necessary to comply with such laws and\nregulations. Carrier is not liable to shipper and shipper shall indemnify Carrier for loss or expense due to shipper’s\nfailure to comply with this provision.\n12. No agent, employee or representative of Carrier has authority to alter, modify or waive any provisions of this\ncontract."
+ },
+ "expect": {
+  "checked": 22,
+  "passed": 21,
+  "failed_fields": [
+   "TAX_ID"
+  ],
+  "missing_mawb": [],
+  "missing_tax": [
+   [
+    "USCI",
+    "911201117706402073"
+   ]
+  ]
+ }
+}

@@ -1,0 +1,20 @@
+# 部署到 efreight-vm：sudo cp deploy/hawb-desk.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now hawb-desk
+[Unit]
+Description=HAWB 分单审核台（PDF/Excel → 结构化字段）
+After=network.target
+
+[Service]
+# 仅绑定本机回环，配合 SSH 隧道访问，不暴露到网络
+WorkingDirectory=/home/ubuntu/jrt-hawb/release/hawb_extractor
+ExecStart=/home/ubuntu/jrt-hawb/release/hawb_extractor/.venv/bin/python server.py --host 127.0.0.1 --port 8020
+Restart=always
+RestartSec=3
+User=ubuntu
+# INTERNLM_API_KEY 等走工作目录下的 .env（config.py 用 python-dotenv 读）
+Environment=PYTHONIOENCODING=utf-8
+# 内存资源闸：机器 3.7G 内存，ccsp 峰值 1.9G；本服务含 LibreOffice 子进程
+MemoryHigh=900M
+MemoryMax=1300M
+
+[Install]
+WantedBy=multi-user.target

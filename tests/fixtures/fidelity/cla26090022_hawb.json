@@ -1,0 +1,1534 @@
+{
+ "source_name": "CLA26090022 HAWB",
+ "expect": {
+  "checked": 21,
+  "passed": 21,
+  "failed_fields": [],
+  "missing_mawb": [],
+  "missing_tax": []
+ },
+ "transcript": {
+  "lines": [
+   {
+    "i": 1,
+    "text": "Shipper's Name and Address",
+    "bbox": [
+     28,
+     51,
+     181,
+     59
+    ]
+   },
+   {
+    "i": 2,
+    "text": "Consignee's Name and Address",
+    "bbox": [
+     28,
+     142,
+     196,
+     150
+    ]
+   },
+   {
+    "i": 3,
+    "text": "Issuing Carrier's Agent Name and City",
+    "bbox": [
+     28,
+     233,
+     228,
+     241
+    ]
+   },
+   {
+    "i": 4,
+    "text": "Agent's IATA Code",
+    "bbox": [
+     28,
+     307,
+     128,
+     315
+    ]
+   },
+   {
+    "i": 5,
+    "text": "Account Number",
+    "bbox": [
+     262,
+     307,
+     349,
+     315
+    ]
+   },
+   {
+    "i": 6,
+    "text": "Airport of Departure(Addr.of First Carrier)and Requested Routing",
+    "bbox": [
+     28,
+     335,
+     366,
+     344
+    ]
+   },
+   {
+    "i": 7,
+    "text": "to",
+    "bbox": [
+     28,
+     369,
+     38,
+     377
+    ]
+   },
+   {
+    "i": 8,
+    "text": "By First Carrier",
+    "bbox": [
+     76,
+     369,
+     155,
+     377
+    ]
+   },
+   {
+    "i": 9,
+    "text": "Rounting and Destination",
+    "bbox": [
+     185,
+     369,
+     298,
+     376
+    ]
+   },
+   {
+    "i": 10,
+    "text": "to",
+    "bbox": [
+     326,
+     369,
+     336,
+     377
+    ]
+   },
+   {
+    "i": 11,
+    "text": "by",
+    "bbox": [
+     373,
+     369,
+     386,
+     377
+    ]
+   },
+   {
+    "i": 12,
+    "text": "to",
+    "bbox": [
+     409,
+     369,
+     419,
+     377
+    ]
+   },
+   {
+    "i": 13,
+    "text": "by",
+    "bbox": [
+     457,
+     369,
+     469,
+     377
+    ]
+   },
+   {
+    "i": 14,
+    "text": "Airport of Destination",
+    "bbox": [
+     76,
+     403,
+     186,
+     411
+    ]
+   },
+   {
+    "i": 15,
+    "text": "Requested Flight/Date",
+    "bbox": [
+     305,
+     403,
+     422,
+     411
+    ]
+   },
+   {
+    "i": 16,
+    "text": "Handing Information",
+    "bbox": [
+     28,
+     436,
+     134,
+     445
+    ]
+   },
+   {
+    "i": 17,
+    "text": "No.of",
+    "bbox": [
+     40,
+     493,
+     68,
+     501
+    ]
+   },
+   {
+    "i": 18,
+    "text": "Pieces",
+    "bbox": [
+     36,
+     502,
+     71,
+     511
+    ]
+   },
+   {
+    "i": 19,
+    "text": "RCP",
+    "bbox": [
+     41,
+     512,
+     66,
+     520
+    ]
+   },
+   {
+    "i": 20,
+    "text": "Gross",
+    "bbox": [
+     103,
+     497,
+     135,
+     506
+    ]
+   },
+   {
+    "i": 21,
+    "text": "Weight",
+    "bbox": [
+     101,
+     507,
+     137,
+     515
+    ]
+   },
+   {
+    "i": 22,
+    "text": "KG",
+    "bbox": [
+     159,
+     500,
+     172,
+     506
+    ]
+   },
+   {
+    "i": 23,
+    "text": "LB",
+    "bbox": [
+     160,
+     507,
+     171,
+     513
+    ]
+   },
+   {
+    "i": 24,
+    "text": "Rate Class",
+    "bbox": [
+     192,
+     492,
+     256,
+     500
+    ]
+   },
+   {
+    "i": 25,
+    "text": "Commodity",
+    "bbox": [
+     214,
+     502,
+     273,
+     510
+    ]
+   },
+   {
+    "i": 26,
+    "text": "item No.",
+    "bbox": [
+     214,
+     511,
+     258,
+     520
+    ]
+   },
+   {
+    "i": 27,
+    "text": "Chargeable",
+    "bbox": [
+     316,
+     497,
+     377,
+     506
+    ]
+   },
+   {
+    "i": 28,
+    "text": "Weight",
+    "bbox": [
+     328,
+     507,
+     364,
+     515
+    ]
+   },
+   {
+    "i": 29,
+    "text": "Rate",
+    "bbox": [
+     404,
+     493,
+     429,
+     501
+    ]
+   },
+   {
+    "i": 30,
+    "text": "Charge",
+    "bbox": [
+     446,
+     512,
+     484,
+     520
+    ]
+   },
+   {
+    "i": 31,
+    "text": "Total",
+    "bbox": [
+     541,
+     502,
+     567,
+     511
+    ]
+   },
+   {
+    "i": 32,
+    "text": "Nature and Quantity of Goods",
+    "bbox": [
+     720,
+     497,
+     876,
+     506
+    ]
+   },
+   {
+    "i": 33,
+    "text": "(incl.Dimensions or Volume)",
+    "bbox": [
+     724,
+     507,
+     871,
+     515
+    ]
+   },
+   {
+    "i": 34,
+    "text": "Prepaid",
+    "bbox": [
+     57,
+     671,
+     98,
+     679
+    ]
+   },
+   {
+    "i": 35,
+    "text": "Weight Charge",
+    "bbox": [
+     169,
+     671,
+     247,
+     679
+    ]
+   },
+   {
+    "i": 36,
+    "text": "Collect",
+    "bbox": [
+     321,
+     671,
+     357,
+     679
+    ]
+   },
+   {
+    "i": 37,
+    "text": "Valuation Charge",
+    "bbox": [
+     163,
+     704,
+     254,
+     713
+    ]
+   },
+   {
+    "i": 38,
+    "text": "Tax",
+    "bbox": [
+     199,
+     738,
+     218,
+     746
+    ]
+   },
+   {
+    "i": 39,
+    "text": "Total Other Charges Due Agent",
+    "bbox": [
+     126,
+     772,
+     291,
+     780
+    ]
+   },
+   {
+    "i": 40,
+    "text": "Total Other Charges Due Carrier",
+    "bbox": [
+     123,
+     805,
+     294,
+     814
+    ]
+   },
+   {
+    "i": 41,
+    "text": "Total Prepaid",
+    "bbox": [
+     81,
+     873,
+     150,
+     881
+    ]
+   },
+   {
+    "i": 42,
+    "text": "Currency Conversion Rate",
+    "bbox": [
+     46,
+     906,
+     185,
+     915
+    ]
+   },
+   {
+    "i": 43,
+    "text": "Total Collect",
+    "bbox": [
+     267,
+     873,
+     333,
+     881
+    ]
+   },
+   {
+    "i": 44,
+    "text": "CC Charges in Dest.Currency",
+    "bbox": [
+     222,
+     906,
+     378,
+     915
+    ]
+   },
+   {
+    "i": 45,
+    "text": "Charges at Destination",
+    "bbox": [
+     240,
+     940,
+     360,
+     948
+    ]
+   },
+   {
+    "i": 46,
+    "text": "For Carrie's Use Only",
+    "bbox": [
+     59,
+     944,
+     172,
+     952
+    ]
+   },
+   {
+    "i": 47,
+    "text": "at Destination",
+    "bbox": [
+     73,
+     953,
+     158,
+     962
+    ]
+   },
+   {
+    "i": 48,
+    "text": "Total Collection Charges",
+    "bbox": [
+     421,
+     940,
+     550,
+     948
+    ]
+   },
+   {
+    "i": 49,
+    "text": "Executed on(date)",
+    "bbox": [
+     397,
+     923,
+     493,
+     931
+    ]
+   },
+   {
+    "i": 50,
+    "text": "at(place)",
+    "bbox": [
+     576,
+     923,
+     622,
+     931
+    ]
+   },
+   {
+    "i": 51,
+    "text": "Signature of Issuing Carrier or Its Agent",
+    "bbox": [
+     726,
+     923,
+     932,
+     931
+    ]
+   },
+   {
+    "i": 52,
+    "text": "Signature of Shipper or his Agent",
+    "bbox": [
+     598,
+     856,
+     771,
+     864
+    ]
+   },
+   {
+    "i": 53,
+    "text": "Shipper certifies that the particulars on the face hereof are correct and that insofar as any part of the",
+    "bbox": [
+     397,
+     778,
+     918,
+     786
+    ]
+   },
+   {
+    "i": 54,
+    "text": "consignment contains dangerous goods,such part is properly described by name and is in proper condition",
+    "bbox": [
+     397,
+     787,
+     952,
+     795
+    ]
+   },
+   {
+    "i": 55,
+    "text": "for carriage by air according to the applicable Dangerous Goods Regulations.",
+    "bbox": [
+     397,
+     797,
+     799,
+     805
+    ]
+   },
+   {
+    "i": 56,
+    "text": "Other Charges",
+    "bbox": [
+     397,
+     671,
+     474,
+     679
+    ]
+   },
+   {
+    "i": 57,
+    "text": "Amount of Insurance",
+    "bbox": [
+     499,
+     403,
+     608,
+     411
+    ]
+   },
+   {
+    "i": 58,
+    "text": "INSURANCE - if carrier offers insurance,and such insurance is",
+    "bbox": [
+     623,
+     406,
+     926,
+     414
+    ]
+   },
+   {
+    "i": 59,
+    "text": "requested in accordance with the conditions thereof, indicate amount",
+    "bbox": [
+     623,
+     415,
+     956,
+     423
+    ]
+   },
+   {
+    "i": 60,
+    "text": "to be insured in figures in box marked\"Amount of Insurance\".",
+    "bbox": [
+     623,
+     424,
+     917,
+     432
+    ]
+   },
+   {
+    "i": 61,
+    "text": "Currency",
+    "bbox": [
+     494,
+     369,
+     542,
+     377
+    ]
+   },
+   {
+    "i": 62,
+    "text": "WT/VAL",
+    "bbox": [
+     589,
+     368,
+     632,
+     377
+    ]
+   },
+   {
+    "i": 63,
+    "text": "PPD",
+    "bbox": [
+     587,
+     378,
+     604,
+     384
+    ]
+   },
+   {
+    "i": 64,
+    "text": "COLL",
+    "bbox": [
+     614,
+     378,
+     636,
+     384
+    ]
+   },
+   {
+    "i": 65,
+    "text": "Declared Value for Carriage",
+    "bbox": [
+     704,
+     369,
+     829,
+     376
+    ]
+   },
+   {
+    "i": 66,
+    "text": "Declared Value for Customs",
+    "bbox": [
+     842,
+     369,
+     968,
+     376
+    ]
+   },
+   {
+    "i": 67,
+    "text": "For delivery of",
+    "bbox": [
+     502,
+     323,
+     577,
+     332
+    ]
+   },
+   {
+    "i": 68,
+    "text": "goods, please",
+    "bbox": [
+     503,
+     333,
+     576,
+     341
+    ]
+   },
+   {
+    "i": 69,
+    "text": "apply to",
+    "bbox": [
+     519,
+     343,
+     560,
+     351
+    ]
+   },
+   {
+    "i": 70,
+    "text": "Accounting Information",
+    "bbox": [
+     493,
+     233,
+     613,
+     241
+    ]
+   },
+   {
+    "i": 71,
+    "text": "It is agreed that the goods described herein are accepted for carriage in apparent good",
+    "bbox": [
+     493,
+     154,
+     944,
+     162
+    ]
+   },
+   {
+    "i": 72,
+    "text": "order and condition(except as noted)and SUBJECT TO THE CONDITION OF",
+    "bbox": [
+     493,
+     163,
+     896,
+     172
+    ]
+   },
+   {
+    "i": 73,
+    "text": "CONTRACT ON THE REVERSE HEREOF.ALL GOODS MAY BE CARRIED BY AND",
+    "bbox": [
+     493,
+     173,
+     939,
+     181
+    ]
+   },
+   {
+    "i": 74,
+    "text": "OTHER MEANS INCLUDING ROAD OR ANY OTHER CARRIER UNLESS SPECIFIC",
+    "bbox": [
+     493,
+     182,
+     941,
+     191
+    ]
+   },
+   {
+    "i": 75,
+    "text": "CONTRARY INSTRUCTION AREIS DRAWN TO THE NOTICE CONCERNING",
+    "bbox": [
+     493,
+     192,
+     906,
+     200
+    ]
+   },
+   {
+    "i": 76,
+    "text": "CARRIER'S LIMTATION OF LIABILITY.Shipper may increase such limitation of liability by",
+    "bbox": [
+     493,
+     201,
+     960,
+     210
+    ]
+   },
+   {
+    "i": 77,
+    "text": "declaring higher value for carriage and paying a supplemental charge if required.",
+    "bbox": [
+     493,
+     211,
+     912,
+     219
+    ]
+   },
+   {
+    "i": 78,
+    "text": "Copies 1,2 and 3 of this Air Waybill are originals and have the same validity.",
+    "bbox": [
+     493,
+     128,
+     888,
+     137
+    ]
+   },
+   {
+    "i": 79,
+    "text": "TIANJIN TREND THERMAL MATERIALS CO.,LTD.",
+    "bbox": [
+     29,
+     63,
+     367,
+     74
+    ]
+   },
+   {
+    "i": 80,
+    "text": "NO.39 BAOZHONG ROAD, ENERGY SAVING AND",
+    "bbox": [
+     29,
+     75,
+     364,
+     86
+    ]
+   },
+   {
+    "i": 81,
+    "text": "ENVIRONMENTAL INDUSTRIAL ZONE, BAODI TIANJIN, 301800.",
+    "bbox": [
+     29,
+     87,
+     465,
+     98
+    ]
+   },
+   {
+    "i": 82,
+    "text": "TEL.: +86‐022‐60359588 FAX: +86‐022‐60359588",
+    "bbox": [
+     29,
+     100,
+     342,
+     110
+    ]
+   },
+   {
+    "i": 83,
+    "text": "REFRATECHNIK CERAMICS GMBH",
+    "bbox": [
+     29,
+     154,
+     271,
+     164
+    ]
+   },
+   {
+    "i": 84,
+    "text": "BARKHAUSENER STRASSE 55",
+    "bbox": [
+     29,
+     166,
+     234,
+     177
+    ]
+   },
+   {
+    "i": 85,
+    "text": "49328 MELLE, GERMANY",
+    "bbox": [
+     29,
+     178,
+     203,
+     189
+    ]
+   },
+   {
+    "i": 86,
+    "text": "TEL.: +49 5427 81-175",
+    "bbox": [
+     29,
+     191,
+     172,
+     201
+    ]
+   },
+   {
+    "i": 87,
+    "text": "EMAIL: KRISTIN.WEBER@REFRA.COM",
+    "bbox": [
+     29,
+     203,
+     298,
+     214
+    ]
+   },
+   {
+    "i": 88,
+    "text": "EORI NO. : DE703515338017257",
+    "bbox": [
+     29,
+     215,
+     239,
+     226
+    ]
+   },
+   {
+    "i": 89,
+    "text": "PEK",
+    "bbox": [
+     29,
+     352,
+     57,
+     363
+    ]
+   },
+   {
+    "i": 90,
+    "text": "HAM",
+    "bbox": [
+     29,
+     388,
+     62,
+     399
+    ]
+   },
+   {
+    "i": 91,
+    "text": "HU",
+    "bbox": [
+     76,
+     388,
+     98,
+     399
+    ]
+   },
+   {
+    "i": 92,
+    "text": "HU0489",
+    "bbox": [
+     243,
+     422,
+     295,
+     433
+    ]
+   },
+   {
+    "i": 93,
+    "text": "2026-09-23",
+    "bbox": [
+     369,
+     422,
+     440,
+     433
+    ]
+   },
+   {
+    "i": 94,
+    "text": "7",
+    "bbox": [
+     50,
+     535,
+     57,
+     545
+    ]
+   },
+   {
+    "i": 95,
+    "text": "2806.000",
+    "bbox": [
+     91,
+     535,
+     147,
+     545
+    ]
+   },
+   {
+    "i": 96,
+    "text": "0",
+    "bbox": [
+     115,
+     547,
+     123,
+     558
+    ]
+   },
+   {
+    "i": 97,
+    "text": "K",
+    "bbox": [
+     161,
+     536,
+     170,
+     548
+    ]
+   },
+   {
+    "i": 98,
+    "text": "2806.0000",
+    "bbox": [
+     314,
+     535,
+     379,
+     545
+    ]
+   },
+   {
+    "i": 99,
+    "text": "REACTION BONDED SILICON CARBIDE",
+    "bbox": [
+     624,
+     535,
+     897,
+     545
+    ]
+   },
+   {
+    "i": 100,
+    "text": "SUPPORT",
+    "bbox": [
+     624,
+     547,
+     690,
+     558
+    ]
+   },
+   {
+    "i": 101,
+    "text": "REACTION BONDED SILICON CARBIDE CAP",
+    "bbox": [
+     624,
+     559,
+     929,
+     570
+    ]
+   },
+   {
+    "i": 102,
+    "text": "DIMS(CM): 187*61*53/2; 187*61*58/1;",
+    "bbox": [
+     624,
+     596,
+     875,
+     607
+    ]
+   },
+   {
+    "i": 103,
+    "text": "225*69*79/2; 165*67*71/1; 225*83*79/1",
+    "bbox": [
+     624,
+     609,
+     879,
+     619
+    ]
+   },
+   {
+    "i": 104,
+    "text": "VOL:6.5800 CBM",
+    "bbox": [
+     741,
+     649,
+     855,
+     659
+    ]
+   },
+   {
+    "i": 105,
+    "text": "CLA26090022",
+    "bbox": [
+     697,
+     32,
+     849,
+     46
+    ]
+   },
+   {
+    "i": 106,
+    "text": "FREIGHT PREPAID",
+    "bbox": [
+     493,
+     272,
+     622,
+     283
+    ]
+   },
+   {
+    "i": 107,
+    "text": "HAMBURG, GERMANY",
+    "bbox": [
+     29,
+     419,
+     187,
+     429
+    ]
+   },
+   {
+    "i": 108,
+    "text": "AS ARRANGED",
+    "bbox": [
+     62,
+     686,
+     164,
+     697
+    ]
+   },
+   {
+    "i": 109,
+    "text": "AS ARRANGED",
+    "bbox": [
+     62,
+     888,
+     164,
+     899
+    ]
+   },
+   {
+    "i": 110,
+    "text": "2026-09-20",
+    "bbox": [
+     398,
+     905,
+     468,
+     916
+    ]
+   },
+   {
+    "i": 111,
+    "text": "SHENZHEN, CHINA",
+    "bbox": [
+     576,
+     905,
+     710,
+     916
+    ]
+   },
+   {
+    "i": 112,
+    "text": "Other",
+    "bbox": [
+     656,
+     368,
+     685,
+     377
+    ]
+   },
+   {
+    "i": 113,
+    "text": "PP",
+    "bbox": [
+     587,
+     388,
+     604,
+     399
+    ]
+   },
+   {
+    "i": 114,
+    "text": "PP",
+    "bbox": [
+     646,
+     388,
+     663,
+     399
+    ]
+   },
+   {
+    "i": 115,
+    "text": "PPD",
+    "bbox": [
+     646,
+     378,
+     663,
+     384
+    ]
+   },
+   {
+    "i": 116,
+    "text": "COLL",
+    "bbox": [
+     673,
+     378,
+     695,
+     384
+    ]
+   },
+   {
+    "i": 117,
+    "text": "NOSTA LOGISTICS GMBH",
+    "bbox": [
+     595,
+     290,
+     774,
+     301
+    ]
+   },
+   {
+    "i": 118,
+    "text": "BUCHENBRINK 1,49086 OSNABRUECK,LOWER",
+    "bbox": [
+     595,
+     302,
+     919,
+     313
+    ]
+   },
+   {
+    "i": 119,
+    "text": "SAXONY,GERMANY",
+    "bbox": [
+     595,
+     315,
+     735,
+     325
+    ]
+   },
+   {
+    "i": 120,
+    "text": "MR. MATTHIAS EXNER",
+    "bbox": [
+     595,
+     327,
+     755,
+     338
+    ]
+   },
+   {
+    "i": 121,
+    "text": "PHONE: +49 5419333416",
+    "bbox": [
+     595,
+     339,
+     757,
+     350
+    ]
+   },
+   {
+    "i": 122,
+    "text": "EMAIL: MEXNER@NOSTA.DE",
+    "bbox": [
+     595,
+     352,
+     800,
+     362
+    ]
+   },
+   {
+    "i": 123,
+    "text": "N.V.D",
+    "bbox": [
+     705,
+     388,
+     745,
+     399
+    ]
+   },
+   {
+    "i": 124,
+    "text": "N.C.V",
+    "bbox": [
+     843,
+     388,
+     883,
+     399
+    ]
+   },
+   {
+    "i": 125,
+    "text": "AS",
+    "bbox": [
+     544,
+     535,
+     562,
+     545
+    ]
+   },
+   {
+    "i": 126,
+    "text": "ARRANGED",
+    "bbox": [
+     512,
+     547,
+     592,
+     558
+    ]
+   },
+   {
+    "i": 127,
+    "text": "NOT NEGOTIABLE",
+    "bbox": [
+     493,
+     54,
+     596,
+     63
+    ]
+   },
+   {
+    "i": 128,
+    "text": "AIR WAYBILL",
+    "bbox": [
+     493,
+     70,
+     589,
+     81
+    ]
+   },
+   {
+    "i": 129,
+    "text": "ISSUED BY",
+    "bbox": [
+     493,
+     88,
+     555,
+     96
+    ]
+   },
+   {
+    "i": 130,
+    "text": "880-51074785",
+    "bbox": [
+     30,
+     32,
+     185,
+     46
+    ]
+   },
+   {
+    "i": 131,
+    "text": "COASTLINE FREIGHT LIMITED",
+    "bbox": [
+     657,
+     110,
+     964,
+     123
+    ]
+   },
+   {
+    "i": 132,
+    "text": "Consignee's Account Number",
+    "bbox": [
+     315,
+     142,
+     470,
+     150
+    ]
+   },
+   {
+    "i": 133,
+    "text": "Shipper's Account Number",
+    "bbox": [
+     323,
+     51,
+     463,
+     59
+    ]
+   },
+   {
+    "i": 134,
+    "text": "CHGS",
+    "bbox": [
+     552,
+     370,
+     576,
+     376
+    ]
+   },
+   {
+    "i": 135,
+    "text": "Code",
+    "bbox": [
+     554,
+     377,
+     574,
+     383
+    ]
+   },
+   {
+    "i": 136,
+    "text": "SCI",
+    "bbox": [
+     912,
+     465,
+     931,
+     473
+    ]
+   },
+   {
+    "i": 137,
+    "text": "Notify Party",
+    "bbox": [
+     503,
+     420,
+     578,
+     430
+    ]
+   },
+   {
+    "i": 138,
+    "text": "KELLER HCW GMBH",
+    "bbox": [
+     503,
+     432,
+     648,
+     443
+    ]
+   },
+   {
+    "i": 139,
+    "text": "CARL-KELLER-STR. 2-10",
+    "bbox": [
+     503,
+     444,
+     672,
+     455
+    ]
+   },
+   {
+    "i": 140,
+    "text": "49479 IBBENBUEREN-LAGGENBECK",
+    "bbox": [
+     503,
+     457,
+     756,
+     467
+    ]
+   },
+   {
+    "i": 141,
+    "text": "PHONE: +49 5451 85-526",
+    "bbox": [
+     503,
+     469,
+     665,
+     480
+    ]
+   },
+   {
+    "i": 142,
+    "text": "PHONE: +49 5451 85-321",
+    "bbox": [
+     503,
+     481,
+     665,
+     492
+    ]
+   },
+   {
+    "i": 143,
+    "text": "FAX: +49 5451 85-458",
+    "bbox": [
+     503,
+     494,
+     643,
+     504
+    ]
+   },
+   {
+    "i": 144,
+    "text": "CLA26090022",
+    "bbox": [
+     697,
+     943,
+     849,
+     957
+    ]
+   },
+   {
+    "i": 145,
+    "text": "Q",
+    "bbox": [
+     194,
+     536,
+     204,
+     548
+    ]
+   },
+   {
+    "i": 146,
+    "text": "REFRATECHNIK ORDER CONFIRMATION NUMBER 2026/416625",
+    "bbox": [
+     41,
+     580,
+     479,
+     590
+    ]
+   },
+   {
+    "i": 147,
+    "text": "KELLER HCW ORDER NUMBER 456020 – PROJEKT BROOMFLEET",
+    "bbox": [
+     41,
+     592,
+     494,
+     603
+    ]
+   },
+   {
+    "i": 148,
+    "text": "REFRATECHNIK ORDER NUMBER 2026/495049",
+    "bbox": [
+     41,
+     604,
+     361,
+     615
+    ]
+   }
+  ],
+  "full_text": "Shipper's Name and Address\nConsignee's Name and Address\nIssuing Carrier's Agent Name and City\nAgent's IATA Code\nAccount Number\nAirport of Departure(Addr.of First Carrier)and Requested Routing\nto\nBy First Carrier\nRounting and Destination\nto\nby\nto\nby\nAirport of Destination\nRequested Flight/Date\nHanding Information\nNo.of\nPieces\nRCP\nGross\nWeight\nKG\nLB\nRate Class\nCommodity\nitem No.\nChargeable\nWeight\nRate\nCharge\nTotal\nNature and Quantity of Goods\n(incl.Dimensions or Volume)\nPrepaid\nWeight Charge\nCollect\nValuation Charge\nTax\nTotal Other Charges Due Agent\nTotal Other Charges Due Carrier\nTotal Prepaid\nCurrency Conversion Rate\nTotal Collect\nCC Charges in Dest.Currency\nCharges at Destination\nFor Carrie's Use Only\nat Destination\nTotal Collection Charges\nExecuted on(date)\nat(place)\nSignature of Issuing Carrier or Its Agent\nSignature of Shipper or his Agent\nShipper certifies that the particulars on the face hereof are correct and that insofar as any part of the\nconsignment contains dangerous goods,such part is properly described by name and is in proper condition\nfor carriage by air according to the applicable Dangerous Goods Regulations.\nOther Charges\nAmount of Insurance\nINSURANCE - if carrier offers insurance,and such insurance is\nrequested in accordance with the conditions thereof, indicate amount\nto be insured in figures in box marked\"Amount of Insurance\".\nCurrency\nWT/VAL\nPPD\nCOLL\nDeclared Value for Carriage\nDeclared Value for Customs\nFor delivery of\ngoods, please\napply to\nAccounting Information\nIt is agreed that the goods described herein are accepted for carriage in apparent good\norder and condition(except as noted)and SUBJECT TO THE CONDITION OF\nCONTRACT ON THE REVERSE HEREOF.ALL GOODS MAY BE CARRIED BY AND\nOTHER MEANS INCLUDING ROAD OR ANY OTHER CARRIER UNLESS SPECIFIC\nCONTRARY INSTRUCTION AREIS DRAWN TO THE NOTICE CONCERNING\nCARRIER'S LIMTATION OF LIABILITY.Shipper may increase such limitation of liability by\ndeclaring higher value for carriage and paying a supplemental charge if required.\nCopies 1,2 and 3 of this Air Waybill are originals and have the same validity.\nTIANJIN TREND THERMAL MATERIALS CO.,LTD.\nNO.39 BAOZHONG ROAD, ENERGY SAVING AND\nENVIRONMENTAL INDUSTRIAL ZONE, BAODI TIANJIN, 301800.\nTEL.: +86‐022‐60359588 FAX: +86‐022‐60359588\nREFRATECHNIK CERAMICS GMBH\nBARKHAUSENER STRASSE 55\n49328 MELLE, GERMANY\nTEL.: +49 5427 81-175\nEMAIL: KRISTIN.WEBER@REFRA.COM\nEORI NO. : DE703515338017257\nPEK\nHAM\nHU\nHU0489\n2026-09-23\n7\n2806.000\n0\nK\n2806.0000\nREACTION BONDED SILICON CARBIDE\nSUPPORT\nREACTION BONDED SILICON CARBIDE CAP\nDIMS(CM): 187*61*53/2; 187*61*58/1;\n225*69*79/2; 165*67*71/1; 225*83*79/1\nVOL:6.5800 CBM\nCLA26090022\nFREIGHT PREPAID\nHAMBURG, GERMANY\nAS ARRANGED\nAS ARRANGED\n2026-09-20\nSHENZHEN, CHINA\nOther\nPP\nPP\nPPD\nCOLL\nNOSTA LOGISTICS GMBH\nBUCHENBRINK 1,49086 OSNABRUECK,LOWER\nSAXONY,GERMANY\nMR. MATTHIAS EXNER\nPHONE: +49 5419333416\nEMAIL: MEXNER@NOSTA.DE\nN.V.D\nN.C.V\nAS\nARRANGED\nNOT NEGOTIABLE\nAIR WAYBILL\nISSUED BY\n880-51074785\nCOASTLINE FREIGHT LIMITED\nConsignee's Account Number\nShipper's Account Number\nCHGS\nCode\nSCI\nNotify Party\nKELLER HCW GMBH\nCARL-KELLER-STR. 2-10\n49479 IBBENBUEREN-LAGGENBECK\nPHONE: +49 5451 85-526\nPHONE: +49 5451 85-321\nFAX: +49 5451 85-458\nCLA26090022\nQ\nREFRATECHNIK ORDER CONFIRMATION NUMBER 2026/416625\nKELLER HCW ORDER NUMBER 456020 – PROJEKT BROOMFLEET\nREFRATECHNIK ORDER NUMBER 2026/495049"
+ },
+ "raw": {
+  "MAWB_NO": "880-51074785",
+  "HAWB_NO": "CLA26090022",
+  "SHIPPER_INFO": "TIANJIN TREND THERMAL MATERIALS CO.,LTD., NO.39 BAOZHONG ROAD, ENERGY SAVING AND ENVIRONMENTAL INDUSTRIAL ZONE, BAODI TIANJIN, 301800., TEL./FAX: +86‐022‐60359588",
+  "CONSIGNEE_INFO": "REFRATECHNIK CERAMICS GMBH, BARKHAUSENER STRASSE 55, 49328 MELLE, GERMANY, TEL.: +49 5427 81-175, EMAIL: KRISTIN.WEBER@REFRA.COM, EORI NO. : DE703515338017257",
+  "ORIGIN_NAME": "PEK",
+  "TO1": "HAM",
+  "TO2": "",
+  "TO3": "",
+  "DEST_NAME": "HAMBURG, GERMANY",
+  "GOODS_INFO": "REACTION BONDED SILICON CARBIDE SUPPORT REACTION BONDED SILICON CARBIDE CAP DIMS(CM): 187*61*53/2; 187*61*58/1; 225*69*79/2; 165*67*71/1; 225*83*79/1 VOL:6.5800 CBM",
+  "PIECES": 7,
+  "WEIGHT": 2806.0,
+  "SLAC": 7,
+  "CREATE_TIME": "2026-09-20",
+  "SEND_STATUS": "PENDING",
+  "SHIPPER_INFO_COMP_NAME": "TIANJIN TREND THERMAL MATERIALS CO.,LTD.",
+  "SHIPPER_INFO_COMP_ADDRESS": "NO.39 BAOZHONG ROAD, ENERGY SAVING AND ENVIRONMENTAL INDUSTRIAL ZONE, BAODI TIANJIN, 301800.",
+  "SHIPPER_INFO_CITY": "TIANJIN",
+  "SHIPPER_INFO_COUNTRY": "",
+  "SHIPPER_INFO_STATE": "",
+  "SHIPPER_INFO_POSTAL": "301800",
+  "SHIPPER_INFO_TEL": "+86‐022‐60359588",
+  "SHIPPER_INFO_FAX": "+86‐022‐60359588",
+  "SHIPPER_INFO_EORI": "",
+  "SHIPPER_INFO_AEO": "",
+  "SHIPPER_INFO_EMAIL": "",
+  "CONSIGNEE_INFO_COMP_NAME": "REFRATECHNIK CERAMICS GMBH",
+  "CONSIGNEE_INFO_COMP_ADDRESS": "BARKHAUSENER STRASSE 55, 49328 MELLE, GERMANY",
+  "CONSIGNEE_INFO_CITTY": "MELLE",
+  "CONSIGNEE_INFO_COUNTRY": "GERMANY",
+  "CONSIGNEE_INFO_STATE": "",
+  "CONSIGNEE_INFO_POSTAL": "49328",
+  "CONSIGNEE_INFO_TEL": "+49 5427 81-175",
+  "CONSIGNEE_INFO_FAX": "",
+  "CONSIGNEE_INFO_EORI": "DE703515338017257",
+  "CONSIGNEE_INFO_AEO": "",
+  "CONSIGNEE_INFO_EMAIL": "KRISTIN.WEBER@REFRA.COM"
+ }
+}
