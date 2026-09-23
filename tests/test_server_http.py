@@ -191,7 +191,7 @@ def test_desk_page_is_served_without_login():
     with _stubbed():
         r = client.get("/")
         assert r.status_code == 200, r.status_code
-        assert "分单审核台" in r.text and 'charset="utf-8"' in r.text
+        assert "主分单审核台" in r.text and 'charset="utf-8"' in r.text
         assert "text/html" in r.headers["content-type"]
 
 

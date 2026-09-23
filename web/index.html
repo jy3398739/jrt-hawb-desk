@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>分单审核台 · 票面浏览 / 航空口径</title>
+<title>主分单审核台 · 票面浏览 / 航空口径</title>
 <style>
 :root{
   --bg:#f4f6f9; --panel:#fff; --line:#e2e7ee; --ink:#1c2430; --ink2:#5b6879; --ink3:#8d99a9;
@@ -182,7 +182,7 @@ td.k.loc:hover .kk{color:var(--edit)}
 <body>
 
 <header class="hdr">
-  <h1>分单审核台</h1>
+  <h1>主分单审核台 · 制单台</h1>
   <span class="svc"><span class="dot" id="svcDot"></span><span id="svcTxt">正在连接提取服务…</span></span>
   <span class="sp"></span>
   <label class="f" id="fModel" title="提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
@@ -197,7 +197,7 @@ td.k.loc:hover .kk{color:var(--edit)}
 
 <div class="gate" id="gate">
   <div class="card login">
-    <div class="t">分单审核台 · 登录</div>
+    <div class="t">主分单审核台 · 登录</div>
     <div class="body">
       <form id="loginForm" autocomplete="on">
         <label class="lf">账号<input id="lgName" type="text" autocomplete="username" placeholder="管理员 admin / 制单员姓名"></label>
