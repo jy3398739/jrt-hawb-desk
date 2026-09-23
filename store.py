@@ -161,13 +161,16 @@ def _write_ledger(data: dict) -> None:
     os.replace(tmp, config.SUBMIT_LEDGER)
 
 
-def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None) -> dict:
-    """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。"""
+def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
+                   acked_flags: list = None) -> dict:
+    """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。
+    acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。"""
     with _LEDGER_LOCK:
         data = _load_ledger()
         entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
                  "key": number_key(mawb, hawb), "reviewer": reviewer,
                  "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "acked_flags": [str(a) for a in (acked_flags or [])],
                  "receipt": receipt or {}}
         data[stem] = entry
         _write_ledger(data)

@@ -268,8 +268,9 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
         if not store.norm_no(mawb) or not store.norm_no(hawb):
             raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
         receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem})
+        acked = tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else []
         entry = store.mark_submitted(stem, mawb, hawb,
-                                     str(tk.get("reviewer", "") or ""), receipt)
+                                     str(tk.get("reviewer", "") or ""), receipt, acked_flags=acked)
         results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
     return {"ok": True, "results": results}
 

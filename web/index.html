@@ -63,6 +63,9 @@ input,textarea{font:inherit;color:inherit}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#fff8f1;border-bottom:1px solid #f3e3d3}
 .chip{font-size:12px;background:var(--chip);border:1px solid var(--line);border-radius:99px;padding:2px 9px;
   color:var(--ink2);cursor:pointer;max-width:100%}
+.chip .ackb{cursor:pointer;margin-left:6px;padding:0 7px;font-size:11px;border:1px solid currentColor;
+  border-radius:99px;background:transparent;color:inherit;opacity:.7}
+.chip .ackb:hover{opacity:1;background:#fff}
 .chip:hover{border-color:#c8b39a}
 .chip.warn{background:#fdf1e6;border-color:#eccdb0;color:#8c4a17}
 .chip.bad{background:#fdeceb;border-color:#eec7c3;color:#9c2b20}
@@ -433,8 +436,9 @@ function taxFlagCleared(t, f){
   return cur !== "" && cur === cleanTaxJs(m[1]);
 }
 function effectiveFlags(t){
-  const filled = awbFilled(t);
+  const filled = awbFilled(t), ack = t.ackF || [];
   return ((t.qc && t.qc.flags) || []).filter(f => {
+    if (ack.includes(f)) return false;              // 复核员已确认无误的旗（留痕在 acked_flags）
     if (isMissingAwbFlag(f)){
       const okM = !f.includes("MAWB_NO") || filled.MAWB_NO;
       const okH = !f.includes("HAWB_NO") || filled.HAWB_NO;
@@ -451,14 +455,14 @@ function saveDraft(t){
   if (!t.stem) return;
   const d = drafts();
   d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
-               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, submitted:t.submitted};
+               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], submitted:t.submitted};
   localStorage.setItem(LS.draft, JSON.stringify(d));
 }
 function loadDraft(stem){
   const d = drafts()[stem]; if (!d) return null;
   return {file:null, filename:d.filename || d.stem, stem:d.stem, state:"done", restored:true,
           channel:d.channel, elapsed:d.elapsed, qc:d.qc, raw:d.raw || {}, air:d.air || {},
-          airE:d.airE || {}, submitted:d.submitted || null};
+          airE:d.airE || {}, ackF:d.ackF || [], submitted:d.submitted || null};
 }
 
 /* ── 票据模型：页面只展示/编辑航空口径，原文口径留在数据里做保真追溯 ──────── */
@@ -469,6 +473,8 @@ function airVal(t, k){
 function setEdit(t, k, v){
   const orig = txt(t.air, k);
   if (v === orig) delete t.airE[k]; else t.airE[k] = v;
+  const fl = flagsByField(t.qc).map[k] || [];
+  if (fl.length && (t.ackF || []).length) t.ackF = t.ackF.filter(f => !fl.includes(f));
   saveDraft(t);
 }
 function editedList(t){
@@ -484,6 +490,7 @@ function payloadFor(t, who){
     filename: t.filename, stem: t.stem, channel: t.channel, elapsed: t.elapsed,
     reviewer: who, reviewed_at: nowTxt(),
     needs_review: effectiveFlags(t).length > 0, flags: effectiveFlags(t),
+    acked_flags: (t.ackF || []).slice(),
     edited_fields: editedList(t),
     raw_original: t.raw, air_original: t.air,
     air_reviewed: reviewed(t),
@@ -816,7 +823,7 @@ async function runQueue(){
     try{
       const j = await extract(t);
       Object.assign(t, {state:"done", stem:j.stem, channel:j.channel, elapsed:j.elapsed,
-                        qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ll:j.transcript || null});
+                        qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ll:j.transcript || null});
       if (S.sel === t.filename) S.sel = t.stem;
       saveDraft(t);
     }catch(e){
@@ -969,7 +976,7 @@ function renderMain(){
     const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
                               f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
     const hard = f.startsWith("保真") || f.includes("缺失");
-    return `<span class="chip ${hard ? "bad" : "warn"}" data-jump="${k || ""}" title="${esc(f)}">${esc(f)}</span>`;
+    return `<span class="chip ${hard ? "bad" : "warn"}" data-jump="${k || ""}" title="${esc(f)}">${esc(f)}<button class="ackb" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button></span>`;
   }).join("");
   let rows = "", last = "";
   for (const [k, lab, g] of FIELDS){
@@ -1055,6 +1062,14 @@ function wireMain(t){
     row.scrollIntoView({behavior:"smooth", block:"center"});
     row.style.background = "#fff3d6"; setTimeout(() => row.style.background = "", 1500);
     const inp = row.querySelector("[data-k]"); if (inp) inp.focus();
+  }));
+  $("#main").querySelectorAll(".chip [data-ack]").forEach(b => b.addEventListener("click", e => {
+    e.stopPropagation();                          // 别触发 chip 本身的定位跳转
+    const f = b.dataset.ack;
+    t.ackF = t.ackF || [];
+    if (!t.ackF.includes(f)) t.ackF.push(f);
+    saveDraft(t); render();
+    toast("已确认：" + f.slice(0, 40) + (f.length > 40 ? "…" : "") + "（提交时留痕进台账）", "ok");
   }));
   $("#jumpFirst").addEventListener("click", () => {
     const fm = flagsByField(t.qc);

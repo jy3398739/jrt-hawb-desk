@@ -127,8 +127,38 @@ def test_submit_rejects_missing_mawb_or_hawb():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_submit_records_acked_flags_in_ledger():
+    """/submit 收到 acked_flags（复核员点『确认无误』放行的旗）要原样进台账留痕；不传则为空表。"""
+    old_ledger = config.SUBMIT_LEDGER
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    old_users = auth.USERS_FILE
+    try:
+        client = _logged_client(tmp)
+        acked = ['CONSIGNEE 电话区号 +39(IT) 与国家 IS 不一致，疑似电话串边']
+        r = client.post("/submit", json={"tickets": [dict(_clean_ticket(), acked_flags=acked)]})
+        assert r.status_code == 200, r.text
+        led = store.ledger()["CLA26090022"]
+        assert led["acked_flags"] == acked, "确认过的红旗原文要进台账备查"
+        # 再提交一票不带 acked_flags → 空表，不出错
+        r = client.post("/submit", json={"tickets": [_clean_ticket(stem="TAO2", hawb="TAO2")]})
+        assert r.status_code == 200, r.text
+        assert store.ledger()["TAO2"]["acked_flags"] == []
+    finally:
+        auth.USERS_FILE = old_users
+        config.SUBMIT_LEDGER = old_ledger
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_desk_has_submit_gate_on_flags_and_numbers():
     """/submit 之外，前端也得有提交门：缺号或未清红旗时拦住，别让人点了才吃 400。"""
     html = WEB.read_text(encoding="utf-8")
     assert "主单号、分单号都得填上才能提交回传公司" in html
     assert "还有未清的红旗" in html
+
+
+def test_desk_has_flag_ack_button_and_payload():
+    """存疑类红旗的出口是人工确认：chip 上有『确认无误』按钮，payload 带 acked_flags。"""
+    html = WEB.read_text(encoding="utf-8")
+    assert "确认无误" in html
+    assert "acked_flags" in html
