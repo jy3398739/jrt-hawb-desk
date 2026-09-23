@@ -833,6 +833,11 @@ async function runQueue(){
   }
   S.running = false;
 }
+async function retryParse(t){
+  if (!t.file){ toast("这张票没有原始文件可重试（可能是载入的历史暂存），请重新上传", "bad"); return; }
+  t.state = "queued"; t.error = null;
+  render(); runQueue();        // 队列在跑就只是补进队列，runQueue 自身幂等
+}
 function addFiles(files){
   const bad = [];
   for (const f of files){
@@ -966,8 +971,10 @@ function renderMain(){
   if (t.state === "failed"){
     el.innerHTML = `<div class="hd"><span class="nm">${esc(t.filename)}</span></div>
       <div class="empty" style="color:var(--bad)">解析失败：${esc(t.error || "未知错误")}<br><br>
-      <span style="color:var(--ink3);font-size:12px">常见原因：登录已过期（401，请重新登录）、
-      文件超上限（413）、原件读不出。</span></div>`;
+      <button class="btn pri" id="retryParse">重试解析</button><br><br>
+      <span style="color:var(--ink3);font-size:12px">Request timed out 多是模型服务临时拥堵，等一会儿点上面按钮重试即可，不用重新上传。
+      其它常见原因：登录已过期（401，请重新登录）、文件超上限（413）、原件读不出。</span></div>`;
+    $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
   }
   const ef = effectiveFlags(t);

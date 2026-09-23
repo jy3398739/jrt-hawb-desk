@@ -162,3 +162,10 @@ def test_desk_has_flag_ack_button_and_payload():
     html = WEB.read_text(encoding="utf-8")
     assert "确认无误" in html
     assert "acked_flags" in html
+
+
+def test_desk_has_retry_for_failed_parse():
+    """解析失败不能逼用户重新上传：失败面板要有『重试解析』按钮和对应逻辑。"""
+    html = WEB.read_text(encoding="utf-8")
+    assert "重试解析" in html
+    assert "async function retryParse" in html
