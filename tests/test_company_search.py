@@ -173,3 +173,74 @@ def test_inputter_page_is_served():
         html = WEB_INPUTTER.read_text(encoding="utf-8")
         assert "/company/mawb" in html and "查看原件" in html
         _restore(ou, ol, tmp)
+
+
+# === 主单原件口子（/mawb/source）：不依赖公司接口，先把"录入员能打开主单原件对票面"跑通 ===
+
+def _use_mawb_source(tmp: Path):
+    """把主单原件目录指到临时目录，返回旧值。"""
+    old = config.MAWB_SOURCE_DIR
+    config.MAWB_SOURCE_DIR = tmp / "mawb_source"
+    return old
+
+
+def _put_mawb_pdf(mawb: str) -> Path:
+    d = config.MAWB_SOURCE_DIR / store.norm_no(mawb)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "mawb.pdf").write_bytes(b"%PDF-1.4 test")
+    return d
+
+
+def test_mawb_source_dir_normalizes_and_blocks_traversal():
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_msrc_"))
+    old = _use_mawb_source(tmp)
+    try:
+        _put_mawb_pdf("235-96146363")
+        assert store.mawb_source_dir("235 96146363") == config.MAWB_SOURCE_DIR / "23596146363", \
+            "写法差异（连字符/空格）归一后应指向同一目录"
+        assert store.mawb_source_dir("235-00000000") is None, "没放过原件的主单应报没有"
+        assert store.mawb_source_dir("") is None
+        assert store.mawb_source_key("  - ") == "", "纯符号主单号归一后为空，不该当目录名用"
+        for bad in ("../..", "a/../../etc", "a/../../../../etc/passwd"):
+            d = store.mawb_source_dir(bad)
+            assert d is None or d.parent == config.MAWB_SOURCE_DIR, \
+                "归一化会把符号剥光，剩什么字母数字都只可能落在主单原件目录下面"
+    finally:
+        config.MAWB_SOURCE_DIR = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_mawb_source_route_guards_roles_and_serves_pdf():
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_msrc_"))
+    ou, ol = _isolate(tmp)
+    old_src, old_prev = _use_mawb_source(tmp), config.PREVIEW_DIR
+    config.PREVIEW_DIR = tmp / "preview"
+    try:
+        auth.ensure_seed()
+        auth.set_password("郭旭", "in-123456", "inputter")
+        auth.set_password("宛平", "rv-123456", "reviewer")
+        assert TestClient(server.app).get("/mawb/source/235-96146363").status_code == 401, "要登录会话"
+        rv = TestClient(server.app)
+        _login(rv, "宛平", "rv-123456")
+        assert rv.get("/mawb/source/235-96146363").status_code == 403, "制单员没有主单原件权限"
+        inp = TestClient(server.app)
+        _login(inp, "郭旭", "in-123456")
+        miss = inp.get("/mawb/source/235-96146363")
+        assert miss.status_code == 404, "本机没放过这张主单的原件应 404"
+        _put_mawb_pdf("235-96146363")
+        r = inp.get("/mawb/source/235-96146363")
+        assert r.status_code == 200 and "application/pdf" in r.headers["content-type"], "PDF 原件直接发回预览"
+        assert inp.get("/mawb/source/12345").status_code == 400, "位数不够的主单号应 400，不去拼路径"
+        store.mark_submitted("CLA1", "235-96146363", "CLA001", "马殿齐", {"mode": "mock"})
+        assert company_api.search_mawb("235-96146363")["source_available"] is True
+        assert company_api.search_mawb("176-22222222")["source_available"] is False
+    finally:
+        config.PREVIEW_DIR, config.MAWB_SOURCE_DIR = old_prev, old_src
+        _restore(ou, ol, tmp)
+
+
+def test_inputter_page_has_mawb_source_entry_and_generic_fields():
+    html = WEB_INPUTTER.read_text(encoding="utf-8")
+    assert "查看主单原件" in html and "/mawb/source/" in html
+    assert "mawb_order" in html and "Object.keys" in html, \
+        "主单业务字段按接口返回的 key 通用渲染：真接口一通就自动出字段，不用改前端"

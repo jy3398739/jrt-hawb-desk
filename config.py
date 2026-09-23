@@ -163,6 +163,10 @@ PREVIEW_DIR = Path(os.getenv("PREVIEW_DIR", str(BASE_DIR / "output" / "preview")
 # 提交台账：制单员点提交、回传公司成功后逐张记一笔（stem→{主单号,分单号,复合键,复核人,时间,回执}）。
 # "仅人工提交才回传"，机批/监控/站点都只落盘不进这里；(主单号|分单号)↔原件 的索引也只从这张表构建。
 SUBMIT_LEDGER = Path(os.getenv("SUBMIT_LEDGER", str(BASE_DIR / "output" / "submitted.json")))
+# 主单(MAWB)原件落盘处：按归一化主单号建子目录，里面放公司给的主单 PDF/电子单。
+# 公司主单原件接口待 IT——先支持人工放入同一目录跑通录入员"对票面核对"，真接口到位后
+# 由 company_api 把取回的主单原件缓存进这里，路由与前端一行都不用改。
+MAWB_SOURCE_DIR = Path(os.getenv("MAWB_SOURCE_DIR", str(BASE_DIR / "output" / "mawb_source")))
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))

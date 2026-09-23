@@ -137,6 +137,27 @@ def number_key(mawb: str, hawb: str) -> str:
     return f"{norm_no(mawb)}|{norm_no(hawb)}"
 
 
+_MAWB_DIR_RE = re.compile(r"[0-9A-Z]{6,20}")
+
+
+def mawb_source_dir(mawb: str):
+    """主单原件在本机的目录：output/mawb_source/<归一化主单号>/。
+
+    主单号先归一化再校验字符集与长度，非法（含 '..'、斜杠、纯符号）一律当"没有"返回 None——
+    目录名直接拼进路径就是穿越口子，不能只靠"目录存在"兜底。"""
+    key = norm_no(mawb)
+    if not _MAWB_DIR_RE.fullmatch(key):
+        return None
+    d = config.MAWB_SOURCE_DIR / key
+    return d if d.is_dir() else None
+
+
+def mawb_source_key(mawb: str) -> str:
+    """归一化后可作目录名的主单号；不合格返回空串（检索结果里告诉前端有没有原件）。"""
+    key = norm_no(mawb)
+    return key if _MAWB_DIR_RE.fullmatch(key) else ""
+
+
 def _load_ledger() -> dict:
     if not config.SUBMIT_LEDGER.is_file():
         return {}

@@ -21,6 +21,7 @@
   GET  /company/mawb       需录入员(或管理员)会话；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)，现走 mock
   GET  /results            已落盘条数（需登录会话）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
+  GET  /mawb/source/{mawb} 回看主单原件（需录入员或管理员会话）；原件在 output/mawb_source/<归一化主单号>/
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
   GET  /render/{stem}      把归档票面按页转成 PNG（?page=&scale=），定位模式的底图（需登录会话）
 """
@@ -413,6 +414,27 @@ def source(stem: str, raw: bool = Query(False, description="true=发原件本身
         original = _archive_files(d)[0]
         return FileResponse(original, media_type="application/octet-stream", filename=original.name)
     p = _preview_file(stem, d)
+    return FileResponse(p, media_type=_PREVIEW_TYPES[p.suffix.lower()])
+
+
+@app.get("/mawb/source/{mawb}")
+def mawb_source(mawb: str, raw: bool = Query(False, description="true=发原件本身（电子单下载用）"),
+                _: None = Depends(require_inputter)):
+    """主单(MAWB)原件预览：/source 的分单侧对应物，给录入员对票面核对用。
+
+    原件从 output/mawb_source/<归一化主单号>/ 取，格式处理与分单侧同一套（浏览器能渲染的直接发、
+    电子单现转 PDF 缓存）。主单原件接口待 IT——真接口到位后由 company_api 缓存进同一目录即可，
+    这条路由与前端都不用动。预览缓存的 stem 加 mawb- 前缀，避免与分单文件名撞车。"""
+    key = store.mawb_source_key(mawb)
+    if not key:
+        raise HTTPException(400, "主单号不合法：只认 6-20 位字母数字（连字符/空格会自动忽略）")
+    d = store.mawb_source_dir(mawb)
+    if d is None:
+        raise HTTPException(404, f"本机还没有这张主单的原件（公司主单原件接口待 IT；可先放到 output/mawb_source/{key}/）")
+    if raw:
+        original = _archive_files(d)[0]
+        return FileResponse(original, media_type="application/octet-stream", filename=original.name)
+    p = _preview_file("mawb-" + key, d)
     return FileResponse(p, media_type=_PREVIEW_TYPES[p.suffix.lower()])
 
 

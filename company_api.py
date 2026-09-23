@@ -30,7 +30,9 @@ def search_mawb(mawb: str) -> dict:
                "stem": e.get("stem"), "reviewer": e.get("reviewer", ""),
                "submitted_at": e.get("submitted_at", "")}
               for e in store.submitted_by_mawb(mawb)]
-    return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders}
+    # 主单原件：公司接口待 IT，本机按归一化主单号认 output/mawb_source/<主单号>/（人工放或日后缓存）
+    return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
+            "source_available": store.mawb_source_dir(mawb) is not None}
 
 
 def submit_order(payload: dict) -> dict:

@@ -19,6 +19,8 @@ input[type=text]{padding:7px 10px;border:1px solid var(--line);border-radius:6px
 button{padding:7px 14px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-size:13px}
 button.primary{background:var(--edit);color:#fff;border-color:var(--edit)}
 table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+.t2{font-size:14px;font-weight:600;margin:18px 0 4px}
+.j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
 th{color:var(--ink3);font-weight:500}
 a{color:var(--edit);text-decoration:none}
@@ -110,12 +112,34 @@ function render(j, m){
   const tag = j.mode === "mock" ? '<span class="hint">（mock：主单业务字段待公司接口，分单来自本机提交台账）</span>' : "";
   $("#status").textContent = "主单 " + m + " 下检索到 " + list.length + " 张分单 " + (list.length ? "" : "（本机暂无该主单号下已提交的分单）");
   $("#status").className = "hint";
-  if (!list.length){ $("#result").innerHTML = tag; return; }
+  $("#result").innerHTML = tag + mawbCard(j, m) + hawbTable(list);
+}
+/* 主单卡片：原件口子 + 业务字段通用渲染。字段清单待 IT 契约，所以按返回的 key 原样列，
+   公司接口一通就自动出全字段，前端不用再改一次。 */
+function mawbCard(j, m){
+  const src = j.source_available
+    ? '<a href="' + BASE + "/mawb/source/" + encodeURIComponent(m) + '" target="_blank">查看主单原件</a>'
+    : '<span class="hint">本机暂无主单原件（公司主单原件接口待 IT；也可把 PDF 放进 output/mawb_source/ 对应主单号目录）</span>';
+  const mo = j.mawb_order;
+  const keys = (mo && typeof mo === "object") ? Object.keys(mo) : [];
+  const fields = keys.length
+    ? "<table><thead><tr><th>字段</th><th>值</th></tr></thead><tbody>" +
+      keys.map(k => "<tr><td>" + esc(k) + "</td><td>" + fmtVal(mo[k]) + "</td></tr>").join("") + "</tbody></table>"
+    : '<div class="hint">主单业务字段待公司接口（当前 mock 只回连接数据：哪些分单挂在这个主单号下、原件在本机哪个 stem）。</div>';
+  return "<h2 class=\"t2\">主单 " + esc(m) + "　" + src + "</h2>" + fields;
+}
+function fmtVal(v){
+  if (v == null || v === "") return "—";
+  if (typeof v === "object") return '<span class="j">' + esc(JSON.stringify(v)) + "</span>";
+  return esc(v);
+}
+function hawbTable(list){
+  if (!list.length) return "";
   const rows = list.map(o => "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
     "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") + "</td><td>" +
     (o.stem ? '<a href="' + BASE + "/source/" + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
             : '<span class="bad">本机无归档</span>') + "</td></tr>").join("");
-  $("#result").innerHTML = tag + "<table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  return "<h2 class=\"t2\">名下分单</h2><table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th></tr></thead><tbody>" + rows + "</tbody></table>";
 }
 
 $("#loginForm").addEventListener("submit", async e => {
