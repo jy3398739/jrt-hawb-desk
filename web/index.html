@@ -399,6 +399,28 @@ function flagNote(f){
   return f;
 }
 
+/* 缺号类红旗按"当前值"动态判定：制单员手填主/分单号后，那条"XX_NO 缺失/均为空"就该消，
+   否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。 */
+function awbFilled(t){
+  const rev = reviewed(t);
+  return { MAWB_NO: String(rev.MAWB_NO || "").trim() !== "",
+           HAWB_NO: String(rev.HAWB_NO || "").trim() !== "" };
+}
+function isMissingAwbFlag(f){
+  return /缺失|均为空|都(?:为空|缺失)/.test(f) && (f.includes("MAWB_NO") || f.includes("HAWB_NO"));
+}
+function effectiveFlags(t){
+  const filled = awbFilled(t);
+  return ((t.qc && t.qc.flags) || []).filter(f => {
+    if (isMissingAwbFlag(f)){
+      const okM = !f.includes("MAWB_NO") || filled.MAWB_NO;
+      const okH = !f.includes("HAWB_NO") || filled.HAWB_NO;
+      if (okM && okH) return false;         // 缺的号都补上了 → 这条红旗视为已清
+    }
+    return true;
+  });
+}
+
 /* ── 本地暂存（防刷新丢编辑；接口未就绪时也是提交兜底） ────────────────── */
 function drafts(){ try { return JSON.parse(localStorage.getItem(LS.draft) || "{}"); } catch (e) { return {}; } }
 function saveDraft(t){
@@ -437,7 +459,7 @@ function payloadFor(t, who){
   return {
     filename: t.filename, stem: t.stem, channel: t.channel, elapsed: t.elapsed,
     reviewer: who, reviewed_at: nowTxt(),
-    needs_review: !!(t.qc && t.qc.needs_review), flags: (t.qc && t.qc.flags) || [],
+    needs_review: effectiveFlags(t).length > 0, flags: effectiveFlags(t),
     edited_fields: editedList(t),
     raw_original: t.raw, air_original: t.air,
     air_reviewed: reviewed(t),
@@ -804,8 +826,9 @@ async function submitTicket(t){
   if (!String(_air.MAWB_NO || "").trim() || !String(_air.HAWB_NO || "").trim()){
     toast("主单号、分单号都得填上才能提交回传公司", "bad"); return;
   }
-  if (t.qc && t.qc.needs_review){
-    toast("还有未清的红旗：先逐条处理完才能提交", "bad"); return;
+  const remaining = effectiveFlags(t);
+  if (remaining.length){
+    toast("还有未清的红旗：先逐条处理完才能提交（" + remaining[0] + (remaining.length > 1 ? " 等 " + remaining.length + " 条" : "") + "）", "bad"); return;
   }
   const body = {tickets:[payloadFor(t, who)], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
   t.state = "submitting"; render();
@@ -846,13 +869,13 @@ function statusOf(t){
   if (t.state === "submitting") return ["busy", "提交中…"];
   if (t.submitted && t.submitted.mode === "server") return ["ok", "已提交"];
   if (t.submitted) return ["warn", "待提交"];
-  if (t.qc && t.qc.needs_review) return ["warn", "需复核"];
+  if (effectiveFlags(t).length) return ["warn", "需复核"];
   return ["ok", "干净"];
 }
 function current(){ return S.tickets.find(t => t.stem === S.sel) || S.tickets.find(t => t.filename === S.sel); }
 function render(){
   const done = S.tickets.filter(t => t.state === "done").length;
-  const rev = S.tickets.filter(t => t.qc && t.qc.needs_review).length;
+  const rev = S.tickets.filter(t => effectiveFlags(t).length).length;
   $("#cnt").textContent = S.tickets.length + " 票 · 已解析 " + done + (rev ? " · 需复核 " + rev : "");
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
     const [c, label] = statusOf(t), n = editedList(t).length;
@@ -916,8 +939,9 @@ function renderMain(){
       文件超上限（413）、原件读不出。</span></div>`;
     return;
   }
-  const fm = flagsByField(t.qc), [c, label] = statusOf(t);
-  const chips = ((t.qc && t.qc.flags) || []).map(f => {
+  const ef = effectiveFlags(t);
+  const fm = flagsByField({flags: ef}), [c, label] = statusOf(t);
+  const chips = ef.map(f => {
     const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
                               f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
     const hard = f.startsWith("保真") || f.includes("缺失");
@@ -940,9 +964,8 @@ function renderMain(){
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
           ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}</div></div>
       <span class="sp"></span>
-      <span class="hint" id="editedHint">已改 ${editedList(t).length} 项 · 红旗 ${((t.qc && t.qc.flags) || []).length} 条</span>
+      <span class="hint" id="editedHint">已改 ${editedList(t).length} 项 · 红旗 ${ef.length} 条</span>
     </div>
-    ${chips ? `<div class="chips">${chips}</div>` : ""}
     ${chips ? `<div class="chips">${chips}</div>` : ""}
     <div class="ft top">
       <button class="btn pri" id="submit">提交本票</button>
@@ -969,11 +992,12 @@ function renderMain(){
 }
 function refreshRow(t, k){
   const tr = $("#f-" + CSS.escape(k)); if (!tr) return;
-  const fl = flagsByField(t.qc).map[k] || [];
+  const ef = effectiveFlags(t);
+  const fl = flagsByField({flags: ef}).map[k] || [];
   tr.querySelector("[data-st]").innerHTML = statusCell(t, k, fl);
   tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
   const hint = $("#editedHint");
-  if (hint) hint.textContent = `已改 ${editedList(t).length} 项 · 红旗 ${((t.qc && t.qc.flags) || []).length} 条`;
+  if (hint) hint.textContent = `已改 ${editedList(t).length} 项 · 红旗 ${ef.length} 条`;
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
   if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span style="color:var(--edit)">改 ${editedList(t).length} 项</span>` : "");
 }
