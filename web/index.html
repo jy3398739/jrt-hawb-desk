@@ -400,7 +400,8 @@ function flagNote(f){
 }
 
 /* 缺号类红旗按"当前值"动态判定：制单员手填主/分单号后，那条"XX_NO 缺失/均为空"就该消，
-   否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。 */
+   否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。
+   税号"混进了标签（航空口径已自动摘掉）"同理：值已被系统洗干净且未被人工改掉，纯提示不该卡提交。 */
 function awbFilled(t){
   const rev = reviewed(t);
   return { MAWB_NO: String(rev.MAWB_NO || "").trim() !== "",
@@ -408,6 +409,28 @@ function awbFilled(t){
 }
 function isMissingAwbFlag(f){
   return /缺失|均为空|都(?:为空|缺失)/.test(f) && (f.includes("MAWB_NO") || f.includes("HAWB_NO"));
+}
+/* 与后端 hawb2json.clean_tax 同口径：去空白转大写，摘开头标签词（VAT#/TAX ID/USCI…） */
+function cleanTaxJs(v){
+  let out = String(v || "").replace(/\s+/g, "").toUpperCase();
+  for (let i = 0; i < 2; i++){
+    const s = out.replace(/^(?:USCI|CNPJ|CPF|RFC|GSTIN|GST|TAXID|TAXNO|TAX|VAT(?:NO|NR|NUMBER|ID)?|统一社会信用代码)[#.:：]*/, "");
+    if (s === out) break;
+    out = s;
+  }
+  return out;
+}
+function isTaxLabelFlag(f){
+  return f.includes("混进了标签") && f.includes("已自动摘掉") &&
+         (f.includes("SHIPPER_INFO_TAX_ID") || f.includes("CONSIGNEE_INFO_TAX_ID"));
+}
+function taxFlagCleared(t, f){
+  const k = f.includes("SHIPPER_INFO_TAX_ID") ? "SHIPPER_INFO_TAX_ID" : "CONSIGNEE_INFO_TAX_ID";
+  const m = f.match(/: '(.*)'$/);
+  if (!m) return false;
+  const rev = reviewed(t);
+  const cur = cleanTaxJs(rev[k]);
+  return cur !== "" && cur === cleanTaxJs(m[1]);
 }
 function effectiveFlags(t){
   const filled = awbFilled(t);
@@ -417,6 +440,7 @@ function effectiveFlags(t){
       const okH = !f.includes("HAWB_NO") || filled.HAWB_NO;
       if (okM && okH) return false;         // 缺的号都补上了 → 这条红旗视为已清
     }
+    if (isTaxLabelFlag(f) && taxFlagCleared(t, f)) return false;   // 摘好的号没被动过 → 提示已确认
     return true;
   });
 }
