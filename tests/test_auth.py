@@ -64,6 +64,35 @@ def test_ensure_seed_creates_once_and_is_idempotent():
         assert auth.USERS_FILE.read_bytes() == first
 
 
+def test_backfill_seed_adds_missing_inputters_without_touching_existing():
+    """老 users.json（早于录入员角色生成）升级后应自动补进 3 位录入员，且不碰已有账号。"""
+    with _accounts():
+        auth.ensure_seed()
+        data = auth.load()
+        admin_hash = data["users"]["admin"]["pw"]
+        # 伪造一份"还没有录入员"的存量表
+        for n in auth.INPUTTERS:
+            data["users"].pop(n, None)
+        auth.save(data)
+        assert all(n not in auth.load()["users"] for n in auth.INPUTTERS)
+        added = auth.backfill_seed()
+        assert set(added) == set(auth.INPUTTERS), f"应补进 3 位录入员，实际：{added}"
+        users = auth.load()["users"]
+        for n in auth.INPUTTERS:
+            assert users[n]["role"] == "inputter" and not users[n]["pw"]
+        assert users["admin"]["pw"] == admin_hash, "补录绝不能动管理员已改的口令"
+        assert auth.backfill_seed() == [], "再跑一次无缺口应原样返回空、不改盘"
+
+
+def test_login_inputter_and_role():
+    with _accounts() as client:
+        auth.ensure_seed()
+        assert _login(client, "刘明", "whatever").status_code == 401, "种子录入员未设口令应进不去"
+        auth.set_password("刘明", "in-123456", "inputter")
+        r = _login(client, "刘明", "in-123456")
+        assert r.status_code == 200 and r.json()["user"]["role"] == "inputter"
+
+
 # === 会话 Cookie 与角色边界 ===
 def test_admin_login_unlocks_web_and_admin():
     with _accounts() as client:

@@ -121,6 +121,25 @@ def ensure_seed() -> bool:
     return True
 
 
+def backfill_seed() -> list:
+    """把"后来才加进种子的默认账号"（如 2026-09-23 新增的录入员）补进已存在的 users.json。
+    老部署的 users.json 早于新角色生成，ensure_seed 见文件已存在就跳过，新角色永远进不去——
+    这里只补当前缺失的种子账号（口令留空待管理员下发），绝不改动任何已有账号的口令/角色，
+    也没缺就原样不动。返回本次补进去的名字列表。"""
+    if not USERS_FILE.is_file():
+        return []                         # 还没建表，交给 ensure_seed（会带全种子）处理
+    data = load()
+    defaults = [(n, "reviewer") for n in REVIEWERS] + [(n, "inputter") for n in INPUTTERS]
+    added = []
+    for name, role in defaults:
+        if name not in data["users"]:
+            data["users"][name] = {"name": name, "role": role, "pw": None}
+            added.append(name)
+    if added:
+        save(data)
+    return added
+
+
 def list_users() -> list:
     """给「账号管理」用：只报名字/角色/有没有口令，绝不回哈希。按 admin→reviewer→inputter 排。"""
     users = load()["users"]

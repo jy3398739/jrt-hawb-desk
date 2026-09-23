@@ -212,12 +212,17 @@ td.k.loc:hover .kk{color:var(--edit)}
     <div class="t">账号管理<span class="sp"></span><button class="btn sm gh" id="acctClose">关闭</button></div>
     <div class="acctlist" id="acctList"></div>
     <div class="acctadd">
-      <input id="acName" type="text" placeholder="账号名（制单员姓名，或已存在账号名以重置）">
+      <input id="acName" type="text" placeholder="账号名（姓名，或已存在账号名以重置口令/改角色）">
       <input id="acPass" type="text" placeholder="新口令（≥6 位；留空=只改角色/占位）" autocomplete="new-password">
+      <select id="acRole" title="角色">
+        <option value="reviewer">制单员</option>
+        <option value="inputter">录入员</option>
+        <option value="admin">管理员</option>
+      </select>
       <button class="btn sm pri" id="acAdd">保存</button>
     </div>
     <div class="lgerr" id="acctErr" hidden></div>
-    <div class="lghint">制单员可上传、看票面、核对与提交；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
+    <div class="lghint">制单员可上传、看票面、核对与提交；录入员在 /inputter 检索台按主单号核对主↔分单；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
   </div>
 </div>
 
@@ -1081,6 +1086,9 @@ function applyRole(){
   $("#whoWrap").hidden = !ME;
   $("#btnLogout").hidden = !ME;
   if (!ME) return;
+  if (ME.role === "inputter"){           // 录入员不碰上传台：直接送去检索工作台
+    location.replace(BASE + "/inputter"); return;
+  }
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = admin ? "管理员" : "制单员";
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
@@ -1135,7 +1143,7 @@ async function loadAcct(){
   const j = await getAdmin("/admin/users"); if (!j) return;
   $("#acctList").innerHTML = (j.users || []).map(u => `<div class="arow">
       <span class="an">${esc(u.name)}</span>
-      <span class="tag ${u.role === "admin" ? "admin" : ""}">${u.role === "admin" ? "管理员" : "制单员"}</span>
+      <span class="tag ${u.role === "admin" ? "admin" : ""}">${{admin:"管理员", reviewer:"制单员", inputter:"录入员"}[u.role] || u.role}</span>
       <span class="${u.has_password ? "" : "nopw"}">${u.has_password ? "已设口令" : "未设口令"}</span>
       <button class="btn sm" data-pw="${esc(u.name)}">重置口令</button>
       <button class="btn sm gh" data-del="${esc(u.name)}">删除</button>
@@ -1154,9 +1162,9 @@ async function saveAcct(name, password, role){
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
 $("#acctClose").addEventListener("click", () => { $("#acct").hidden = true; });
 $("#acAdd").addEventListener("click", async () => {
-  const n = $("#acName").value.trim(), p = $("#acPass").value;
+  const n = $("#acName").value.trim(), p = $("#acPass").value, role = $("#acRole").value;
   if (!n){ acctErr("请填写账号名"); return; }
-  await saveAcct(n, p, ""); $("#acName").value = ""; $("#acPass").value = "";
+  await saveAcct(n, p, role); $("#acName").value = ""; $("#acPass").value = "";
 });
 $("#acctList").addEventListener("click", async e => {
   const pw = e.target.closest("[data-pw]"), del = e.target.closest("[data-del]");

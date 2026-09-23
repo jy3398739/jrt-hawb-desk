@@ -493,6 +493,10 @@ def main():
     if auth.ensure_seed():
         print(f"[账号] 已初始化 users.json：管理员 {auth.SEED_ADMIN_NAME}（默认口令 {auth.SEED_ADMIN_PASSWORD}，"
               f"请登录后立即在「账号管理」改密）；制单员 {len(auth.REVIEWERS)} 位待管理员下发口令")
+    added = auth.backfill_seed()
+    if added:
+        print(f"[账号] 已向现有 users.json 补录默认账号：{'、'.join(added)}"
+              f"（口令为空，请在「账号管理」下发；录入员在 /inputter 检索台使用）")
     public = args.host not in ("127.0.0.1", "localhost", "::1")
     if public:
         print(f"[提示] 已开放到 {args.host}：登录是唯一门槛，请务必先改掉管理员默认口令 {auth.SEED_ADMIN_PASSWORD}。")
