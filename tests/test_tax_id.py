@@ -17,15 +17,28 @@ FIX = Path(__file__).resolve().parent / "fixtures" / "fidelity"
 USCI = "911201117706402073"
 
 
-def test_field_contract_is_39_and_shared():
+def test_field_contract_is_40_and_shared():
     """字段清单只有一个真值源：后端契约、prompt 要抽的字段、前端表格行三处必须同集合。"""
-    assert len(h.TARGET_KEYS_OUT) == 39 and len(set(h.TARGET_KEYS_OUT)) == 39
+    assert len(h.TARGET_KEYS_OUT) == 40 and len(set(h.TARGET_KEYS_OUT)) == 40
     assert set(h.TARGET_KEYS_OUT) == set(vlm_fields()), (
         "prompt 的字段清单与后端契约不一致，模型抽出来的键会对不上列")
     assert set(h.TARGET_KEYS_OUT) == set(desk_keys()), (
         "审核台字段行与后端契约不一致，制单员看不到就是没审核")
-    for k in ("SHIPPER_INFO_TAX_ID", "CONSIGNEE_INFO_TAX_ID"):
+    for k in ("SHIPPER_INFO_TAX_ID", "CONSIGNEE_INFO_TAX_ID", "GOODS_HS_CODE"):
         assert k in h.TARGET_KEYS_OUT
+
+
+def test_hs_code_extracted_from_description():
+    """GOODS_HS_CODE：货物描述里 HS CODE(S) 标签后的号码，点号归一、多个逗号连、非纯数字丢弃。"""
+    def hs(desc):
+        return h._hs_code_text([{"description": desc}])
+    assert hs("HSCODE: 8471.30.00") == "84713000"
+    assert hs("HS Code: 8471.30, 8517.12") == "847130,851712"
+    assert hs("HS CODES: 8471300000, 8517120000") == "8471300000,8517120000"
+    assert hs("HS CODE 999999999999999") == "", "超过 12 位不是 HS 码，宁空勿错"
+    assert hs("玩具 TOYS") == "", "没标签绝不猜"
+    assert hs("HS CODE: AB1234") == "", "非纯数字丢弃"
+    assert h._hs_code_text([]) == ""
 
 
 def vlm_fields():

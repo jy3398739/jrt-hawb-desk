@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS hawb_raw (
   TO3                         VARCHAR(8),
   DEST_NAME                   VARCHAR(128),
   GOODS_INFO                  TEXT,
+  GOODS_HS_CODE               VARCHAR(64),
   PIECES                      INT,
   WEIGHT                      DOUBLE,
   SLAC                        INT,
@@ -72,3 +73,8 @@ ALTER TABLE hawb_air COMMENT='HAWB第二遍航空口径(ISO国家码/IATA城市�
 --        ADD COLUMN CONSIGNEE_INFO_TAX_ID VARCHAR(64);
 -- ALTER TABLE hawb_air ADD COLUMN SHIPPER_INFO_TAX_ID VARCHAR(64),
 --        ADD COLUMN CONSIGNEE_INFO_TAX_ID VARCHAR(64);
+
+-- === 老库升级（字段契约 39 -> 40：2026-09-23 之前建的表缺 HS 编码列时执行）===
+-- 不升级的话 db_writer 会报 Unknown column 'GOODS_HS_CODE'，失败清单里逐行可见。
+-- ALTER TABLE hawb_raw ADD COLUMN GOODS_HS_CODE VARCHAR(64) AFTER GOODS_INFO;
+-- ALTER TABLE hawb_air ADD COLUMN GOODS_HS_CODE VARCHAR(64) AFTER GOODS_INFO;

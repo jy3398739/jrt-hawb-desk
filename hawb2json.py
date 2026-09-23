@@ -1246,16 +1246,17 @@ def extract_image(path: Path):
     return doc
 
 
-# ------------------------------------------- 15 字段目标 Schema 投影 ---------
+# ------------------------------------------- 16 字段目标 Schema 投影 ---------
 
 TARGET_KEYS = ("MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_NAME",
-               "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "PIECES", "WEIGHT",
-               "SLAC", "CREATE_TIME", "SEND_STATUS")
+               "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "GOODS_HS_CODE",
+               "PIECES", "WEIGHT", "SLAC", "CREATE_TIME", "SEND_STATUS")
 
-# 39 字段 = 基础 15 + 发货人 12 项 + 收货人 12 项 (CITTY 为库表原拼写, 勿"修正")
+# 40 字段 = 基础 16 + 发货人 12 项 + 收货人 12 项 (CITTY 为库表原拼写, 勿"修正")
 # TAX_ID 是票面税号（中国 USCI/统一社会信用代码、巴西 CNPJ、RFC、VAT NO、TAX ID）的唯一落点：
 # 它按规则既不能进 TEL 也不能进 EORI，37 字段时代没有归处，模型直接丢弃且质检看不出来。
-TARGET_KEYS_OUT = TARGET_KEYS[:2] + ("SHIPPER_INFO", "CONSIGNEE_INFO") + TARGET_KEYS[4:15] + \
+# GOODS_HS_CODE 是货物描述里 HS CODE(S) 的唯一落点；GOODS_INFO 保持照抄不动（保真口径）。
+TARGET_KEYS_OUT = TARGET_KEYS[:2] + ("SHIPPER_INFO", "CONSIGNEE_INFO") + TARGET_KEYS[4:16] + \
     tuple(p + s for p in ("SHIPPER_INFO_", "CONSIGNEE_INFO_")
           for s in ("COMP_NAME", "COMP_ADDRESS", "CITY" if p == "SHIPPER_INFO_" else "CITTY",
                     "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "AEO", "EMAIL", "TAX_ID"))
@@ -1546,6 +1547,22 @@ def _goods_text(cargo):
                 continue
             descs.append(s)
     return " ".join(descs)
+
+
+_HS_CODE_RE = re.compile(r"H\.?\s*S\.?\s*(?:CODES?|码)\s*[:：]?\s*([0-9][0-9.,，;；/\s]{3,})", re.I)
+
+
+def _hs_code_text(cargo):
+    """货物描述里 HS CODE(S) 后面的号码（可能多个，逗号连接）；点/空格归一，非纯数字丢弃。
+    VLM 通道由模型直接填 GOODS_HS_CODE，这里兜 Excel/OCR 等结构化通道。"""
+    out = []
+    for c in cargo:
+        for m in _HS_CODE_RE.finditer(str(c.get("description") or "")):
+            for tok in re.split(r"[,，;；/]", m.group(1)):
+                t = re.sub(r"[.\s]", "", tok)
+                if t.isdigit() and 4 <= len(t) <= 12 and t not in out:
+                    out.append(t)
+    return ",".join(out)
 
 
 def _slac_value(cargo, doc=None):
@@ -1839,6 +1856,7 @@ def _target_base(doc: dict) -> dict:
         "DEST_NAME": (doc.get("airport_of_destination") or "").strip().splitlines()[0].strip()
         if (doc.get("airport_of_destination") or "").strip() else "",
         "GOODS_INFO": _goods_text(raw_cargo),
+        "GOODS_HS_CODE": _hs_code_text(raw_cargo),
         "PIECES": pieces,
         "WEIGHT": weight,
         "SLAC": slac,
