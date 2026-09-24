@@ -146,6 +146,23 @@ def test_validator_division_l2_vs_l3():
     assert any("承运人码" in w for w in lw) and any("航班号" in w for w in lw), lw
 
 
+def test_validator_warns_on_missing_first_routing_hop():
+    """航路第一跳留空是静默漏抄：实测 qwen3.8 关思考 10 票里 4 票只填了目的站、TO1 空着，
+    正向保真（L2⊆L1）与三字码反向核查都抓不到（后者会把公司名 AIR & SEA 里的 SEA 当成西雅图码误报）。
+    判据用结构事实：本票库 18 票无一路出栏 TO1 为空，且 TO1 与目的站同源。"""
+    base = {"MAWB_NO": "020-43605590", "HAWB_NO": "PEK1642839", "PIECES": 3, "WEIGHT": 16.0,
+            "CREATE_TIME": "2026-09-20", "TO1": "AMS", "TO2": "", "TO3": "", "DEST_NAME": "AMS"}
+    assert validator.validate_raw(dict(base)) == [], validator.validate_raw(dict(base))
+    w = validator.validate_raw(dict(base, TO1=""))
+    assert any("TO1" in x and "漏抄" in x for x in w), w
+    # 目的站也空着时无从推断，不凭猜测报（避免与"整栏没填"这种情形混在一起）
+    assert not any("TO1" in x for x in validator.validate_raw(dict(base, TO1="", DEST_NAME=""))), \
+        validator.validate_raw(dict(base, TO1="", DEST_NAME=""))
+    # 多跳票里 TO1 已填即不报，哪怕 TO2/TO3 空（本无中转点的票占多数）
+    assert not any("TO1" in x for x in validator.validate_raw(dict(base, TO1="FRA", DEST_NAME="CHI"))), \
+        validator.validate_raw(dict(base, TO1="FRA", DEST_NAME="CHI"))
+
+
 def test_validator_warns_on_missing_awb_numbers():
     """主/分单号分两格印时容易漏抄其中一格，缺哪个都要单独出声。"""
     base = {"MAWB_NO": "020-43605590", "HAWB_NO": "PEK1642839",

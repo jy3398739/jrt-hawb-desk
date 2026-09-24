@@ -33,6 +33,12 @@ def validate_raw(d: dict) -> list:
         elif re.fullmatch(r"[A-Za-z]{2}\d{3,4}", v):
             warns.append(f"{k} 疑似填成航班号: {v!r}")
 
+    # 1b) TO1 留空：本票库 18 票无一路出栏为空，且它与目的站同源——模型只填 DEST_NAME
+    #     把第一跳留空是静默漏抄，正向保真查不到（空值不参与），只能靠这条结构判据出声
+    dest = str(d.get("DEST_NAME", "")).strip()
+    if not str(d.get("TO1", "")).strip() and dest:
+        warns.append(f"TO1 疑似漏抄：目的站 {dest!r} 已取到而航路第一跳栏为空，需核票补 TO1")
+
     # 2) 主/分单号两栏独立，缺哪个都单独告警（历史 31 单 MAWB 全有、2 单票面确无 HAWB，
     #    但空缺更常见于两格分印时漏抄其中一格——如 MAWB_NO 有 fidelity 的反向核查兜底）
     mawb, hawb = str(d.get("MAWB_NO", "")).strip(), str(d.get("HAWB_NO", "")).strip()
