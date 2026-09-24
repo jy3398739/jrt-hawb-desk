@@ -47,15 +47,23 @@ MODEL_PRESETS = {
                            "base_url": "https://chat.intern-ai.org.cn/api/v1",
                            "api_key_env": "INTERNLM_API_KEY",
                            "key_hint": "https://internlm.intern-ai.org.cn/api/tokens"},
-    # 火山方舟 Doubao-Seed-2.1-Lite（2026-09-24 接入，用户给测试密钥）。三条实测事实：
-    # ① 密钥可直接用模型名调用（不需要建 ep- 接入点）；无日期的 "doubao-seed-2-1-lite" 报 404，
-    #    必须带版本后缀 -260915，所以这里钉死带日期的 id；② 真读图（420x120 小图两行字照抄无误）；
-    #    ③ 是思考型：那发 85 个输出 token 里 57 个是 reasoning，故与 Intern-S2 同待给 max_tokens 下限。
-    "doubao-seed-2-1-lite": {"model": "doubao-seed-2-1-lite-260915", "vision": True, "max_tokens": 32768,
-                             "label": "Doubao-Seed-2.1-Lite · 火山方舟 · 视觉",
-                             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-                             "api_key_env": "ARK_API_KEY",
-                             "key_hint": "方舟控制台 https://console.volcengine.com/ark（API Key 与模型开通在同一账号下）"},
+    # 阿里云百炼 Qwen3.8-Flash（OpenAI 兼容端点 https://dashscope.aliyuncs.com/compatible-mode/v1，
+    # 密钥在百炼控制台申请，按 token 计费）。2026-09-24 接入前三项实测：
+    # ① 模型清单里只有 qwen3.8-flash 这一个 id，qwen3.8-flash-next 之类写法回 404 ⇒ 钉死；
+    # ② 也是思考型：关思考前单票会多烧几千 reasoning token（同族 qwen3.8-27b 实测），
+    #    与 S2/MiMo 一样需要 max_tokens 下限，否则 finish_reason=length、content 空；
+    # ③ 关思考两种写法都有效：{"enable_thinking":false} 与 MiMo 那套 {"thinking":{"type":"disabled"}}
+    #    实测都能把 reasoning 归零，取文档通用的前者。
+    # 20 票（同一批 L1、各自会话内重跑）横评：保真 409/410 与红旗 9 条，均优于 S2 的 409/412 与 12 条；
+    # 解掉 S2 两处静默缺陷（FAX 槽塞电话号、漏主单号），零新增静默错，长尾比 MiMo 轻（MiMo 有 47s 那一档）；
+    # 代价：ANGB 两票丢 TO1=AMS（与 S2 关思考时同款，红旗会抓）+ 均值比 S2 慢约 3 秒/票。
+    # 用户 2026-09-24 定案：默认仍是 intern-s2-official，本渠道排第二供切换。
+    "qwen38-flash-bailian": {"model": "qwen3.8-flash", "vision": True, "max_tokens": 32768,
+                             "label": "Qwen3.8-Flash · 阿里云百炼 · 视觉（已关思考）",
+                             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                             "api_key_env": "DASHSCOPE_API_KEY",
+                             "key_hint": "百炼控制台 https://bailian.console.aliyun.com/?tab=model#/api-key（按 token 计费，余额不足会 4xx）",
+                             "extra_body": {"enable_thinking": False}},
     # 小米 MiMo API（https://api.xiaomimimo.com/v1，密钥在 https://platform.xiaomimimo.com/#/console/api-keys 申请，付费）。
     # 2026-09-24 接入前四项实测：① id 大小写敏感——文档示例里的 MiMo-V2.6-Flash 写法回 400 Unsupported model，
     # 清单（GET /models）给的是全小写 mimo-v2.6-flash，故钉小写；② 真读图（420x220 测试票面三行照出）；
@@ -69,6 +77,17 @@ MODEL_PRESETS = {
                         "api_key_env": "MIMO_API_KEY",
                         "key_hint": "https://platform.xiaomimimo.com/#/console/api-keys（该渠道按 token 计费，账户余额为 0 时所有调用回 402）",
                         "extra_body": {"thinking": {"type": "disabled"}}},
+    # 火山方舟 Doubao-Seed-2.1-Lite（2026-09-24 接入，用户给测试密钥）。三条实测事实：
+    # ① 密钥可直接用模型名调用（不需要建 ep- 接入点）；无日期的 "doubao-seed-2-1-lite" 报 404，
+    #    必须带版本后缀 -260915，所以这里钉死带日期的 id；② 真读图（420x120 小图两行字照抄无误）；
+    #    ③ 是思考型：那发 85 个输出 token 里 57 个是 reasoning，故与 Intern-S2 同待给 max_tokens 下限。
+    # 它仍然没有关思考版那么快：开思考 97~124s/票，实测只能当"第二只眼睛"（用户 2026-09-24 未接该流程）。
+    # 排在末位是因为用户 2026-09-24 点名的顺序是 S2 → qwen3.8-flash → 小米，没提它——不删除，只挪到最后。
+    "doubao-seed-2-1-lite": {"model": "doubao-seed-2-1-lite-260915", "vision": True, "max_tokens": 32768,
+                             "label": "Doubao-Seed-2.1-Lite · 火山方舟 · 视觉",
+                             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                             "api_key_env": "ARK_API_KEY",
+                             "key_hint": "方舟控制台 https://console.volcengine.com/ark（API Key 与模型开通在同一账号下）"},
 }
 DEFAULT_MODEL_KEY = "intern-s2-official"
 

@@ -85,8 +85,9 @@ def test_every_preset_carries_model_vision_and_label():
     # 剔除原因见 config 注释：纯文本模型收图不报错直接照编；北龙配额未开通（400）；
     # GLM-4V-Flash max_tokens 上限 1024 且难票上对调 MAWB/HAWB + 凭空编签发日期。
     # 纯文本链路机制仍保留：原始 id + VLM_VISION=0。预设表要变动请连同这条一起改。
-    assert list(config.MODEL_PRESETS) == ["intern-s2-official", "doubao-seed-2-1-lite",
-                                         "mimo-v2.6-flash"], "预设键或顺序变了"
+    # 2026-09-24 顺序 = 用户点名顺序：默认 S2，其后 qwen3.8-flash、小米 MiMo；未被点名的方舟留末位。
+    assert list(config.MODEL_PRESETS) == ["intern-s2-official", "qwen38-flash-bailian",
+                                          "mimo-v2.6-flash", "doubao-seed-2-1-lite"], "预设键或顺序变了"
     assert all(p["vision"] for p in config.MODEL_PRESETS.values()), "预设里不该再有纯文本模型"
     assert config.resolve_model("intern-s2-official")["model"] == "intern-s2-preview"
     assert config.resolve_model("doubao-seed-2-1-lite")["model"] == "doubao-seed-2-1-lite-260915", \
@@ -243,6 +244,29 @@ def test_mimo_preset_pins_id_and_carries_thinking_off():
             "预设没声明关思考参数——不带的(default)话 MiMo 会跑 49.6s/票那一档"
         config.set_model("intern-s2-official")
         assert config.model_extra_body() == {}, "没声明该参数的预设，请求里不该凭空多出东西"
+
+
+def test_qwen_preset_pins_id_and_carries_thinking_off():
+    """阿里云百炼 Qwen3.8-Flash 接入前实测（2026-09-24）：
+    ① 清单里的 id 就是 `qwen3.8-flash`，`qwen3.8-flash-next` 那类写法回 404 ⇒ 预设钉死这一个；
+    ② 真读图（测试票面照抄正确），也是思考型 ⇒ 与 S2/MiMo 同样要 max_tokens 下限；
+    ③ 关思考两种写法都认（{"enable_thinking":false} 与 {"thinking":{"type":"disabled"}}），
+       取文档里通用的 enable_thinking:false；关思考后 20 票实测与 S2 同速、比 MiMo 长尾轻。"""
+    with _ModelState():
+        config.set_model("qwen38-flash-bailian")
+        assert config.VLM_MODEL == "qwen3.8-flash", "百炼只服务这一个 id，写 qwen3.8-flash-next 会 404"
+        assert config.MODEL_VISION is True
+        assert config.vlm_base_url() == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        assert config.model_extra_body() == {"enable_thinking": False}, \
+            "预设没声明关思考——带思考那一档会在输出里多烧几千 reasoning token"
+        assert config.MODEL_PRESETS["qwen38-flash-bailian"]["max_tokens"] >= 32768, \
+            "它是思考型，没有下限会 finish_reason=length、content 空"
+        os.environ.pop("DASHSCOPE_API_KEY", None)
+        try:
+            config.require_vlm_api_key()
+            raise AssertionError("没配 DASHSCOPE_API_KEY 时居然放行了")
+        except SystemExit as e:
+            assert "DASHSCOPE_API_KEY" in str(e), f"报错要点名该配哪个变量: {e}"
 
 
 def test_preset_extra_body_reaches_every_model_call():
