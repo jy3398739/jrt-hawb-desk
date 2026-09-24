@@ -24,6 +24,7 @@ def ask(path, question: str, max_tokens=2000) -> str:
         model=config.VLM_MODEL,
         messages=[{"role": "user", "content": content}],
         max_tokens=max(max_tokens, config.model_max_tokens()), temperature=0.0,
+        extra_body=config.model_extra_body(),
     )
     return resp.choices[0].message.content
 

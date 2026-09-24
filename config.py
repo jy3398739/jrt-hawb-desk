@@ -56,6 +56,19 @@ MODEL_PRESETS = {
                              "base_url": "https://ark.cn-beijing.volces.com/api/v3",
                              "api_key_env": "ARK_API_KEY",
                              "key_hint": "方舟控制台 https://console.volcengine.com/ark（API Key 与模型开通在同一账号下）"},
+    # 小米 MiMo API（https://api.xiaomimimo.com/v1，密钥在 https://platform.xiaomimimo.com/#/console/api-keys 申请，付费）。
+    # 2026-09-24 接入前四项实测：① id 大小写敏感——文档示例里的 MiMo-V2.6-Flash 写法回 400 Unsupported model，
+    # 清单（GET /models）给的是全小写 mimo-v2.6-flash，故钉小写；② 真读图（420x220 测试票面三行照出）；
+    # ③ 默认开思考且很贵——同 5 票开思考 49.6s/票（单票最高 101s、9487 输出 token 里 8850 是 reasoning）
+    #    vs 关思考 7.5s/票，字段质量没有差别，所以预设直接把思考关掉；
+    # ④ 关思考只认 {"thinking":{"type":"disabled"}}（或 reasoning_effort:"none"），
+    #    官方文档那种 enable_thinking:false 的写法实测无效——照样烧 reasoning token。
+    "mimo-v2.6-flash": {"model": "mimo-v2.6-flash", "vision": True, "max_tokens": 32768,
+                        "label": "MiMo-V2.6-Flash · 小米MiMo · 视觉（已关思考）",
+                        "base_url": "https://api.xiaomimimo.com/v1",
+                        "api_key_env": "MIMO_API_KEY",
+                        "key_hint": "https://platform.xiaomimimo.com/#/console/api-keys（该渠道按 token 计费，账户余额为 0 时所有调用回 402）",
+                        "extra_body": {"thinking": {"type": "disabled"}}},
 }
 DEFAULT_MODEL_KEY = "intern-s2-official"
 
@@ -93,6 +106,13 @@ def model_max_tokens() -> int:
 def _active_preset() -> dict:
     """当前生效选择对应的预设；自定义 id 没有预设 → 空 dict → 走魔搭默认渠道。"""
     return MODEL_PRESETS.get(str(VLM_MODEL_CHOICE).lower()) or {}
+
+
+def model_extra_body() -> dict:
+    """预设声明的额外请求体参数（如 MiMo 关思考），随每次 create 原样发出。
+    没有则返回空 dict——不能给没声明的预设凭空塞参数，各家开关写法互不通用
+    （MiMo 认 thinking.type，豆包认同名写法，百炼两种都吃，官方书生压根不接受）。"""
+    return dict(_active_preset().get("extra_body") or {})
 
 
 def vlm_base_url() -> str:

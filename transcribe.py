@@ -82,6 +82,7 @@ def transcribe_one(path) -> dict:
                 messages=[{"role": "user", "content": content}],
                 max_tokens=config.model_max_tokens(),
                 temperature=0.0,
+                extra_body=config.model_extra_body(),
             )
             return _parse(resp.choices[0].message.content)
         except Exception as e:

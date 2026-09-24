@@ -159,6 +159,7 @@ def extract_one(path, transcript: dict | None = None) -> dict:
                 messages=[{"role": "user", "content": content}],
                 max_tokens=config.model_max_tokens(),
                 temperature=0.0,
+                extra_body=config.model_extra_body(),
             )
             text = resp.choices[0].message.content.strip()
             if text.startswith("```"):
