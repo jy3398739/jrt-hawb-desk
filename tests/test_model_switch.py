@@ -79,13 +79,19 @@ def test_every_preset_carries_model_vision_and_label():
             assert p.get("api_key_env"), f"{key} 换了端点就得声明独立密钥环境变量"
         else:
             assert p["model"].count("/") == 1, f"{key} 的魔搭模型 id 应是 org/模型 两段: {p['model']}"
-    # 契约：2026-09-21 用户定案删除魔搭三预设（intern-s2/qwen-flash/deepseek）与北龙
-    # （blsc-s2），只留官方书生API 这一个。剔除原因见 config 注释：纯文本模型收图不报错直接
-    # 照编；北龙 Intern-S2-Preview 配额未开通（400）；GLM-4V-Flash max_tokens 上限 1024
-    # 且难票上对调 MAWB/HAWB + 凭空编签发日期。纯文本链路机制仍保留：原始 id + VLM_VISION=0。
-    assert list(config.MODEL_PRESETS) == ["intern-s2-official"], "预设键或顺序变了"
+    # 契约：2026-09-21 用户定案删除魔搭三预设（intern-s2/qwen-flash/deepseek）与北龙（blsc-s2），
+    # 只留官方书生API 一个；2026-09-24 起按用户要求加回第二个渠道（火山方舟 Doubao-Seed-2.1-Lite，
+    # 接线前实测：模型名可直调且必须带版本后缀、小图两行字照抄正确=真读图、输出含 reasoning token）。
+    # 剔除原因见 config 注释：纯文本模型收图不报错直接照编；北龙配额未开通（400）；
+    # GLM-4V-Flash max_tokens 上限 1024 且难票上对调 MAWB/HAWB + 凭空编签发日期。
+    # 纯文本链路机制仍保留：原始 id + VLM_VISION=0。预设表要变动请连同这条一起改。
+    assert list(config.MODEL_PRESETS) == ["intern-s2-official", "doubao-seed-2-1-lite"], "预设键或顺序变了"
     assert all(p["vision"] for p in config.MODEL_PRESETS.values()), "预设里不该再有纯文本模型"
     assert config.resolve_model("intern-s2-official")["model"] == "intern-s2-preview"
+    assert config.resolve_model("doubao-seed-2-1-lite")["model"] == "doubao-seed-2-1-lite-260915", \
+        "方舟不带版本后缀的模型名会 404，预设必须钉死带日期的 id"
+    assert config.MODEL_PRESETS["doubao-seed-2-1-lite"]["max_tokens"] >= 32768, \
+        "它是思考型（实测 85 输出 token 里 57 个是 reasoning），没有下限就会整票空返回"
     assert config.resolve_model("INTERN-S2-OFFICIAL")["vision"] is True, "预设键要大小写不敏感"
     assert config.resolve_model("")["model"] == config.MODEL_PRESETS[config.DEFAULT_MODEL_KEY]["model"]
 

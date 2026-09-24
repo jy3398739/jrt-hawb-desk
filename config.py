@@ -45,7 +45,17 @@ MODEL_PRESETS = {
     "intern-s2-official": {"model": "intern-s2-preview", "vision": True, "max_tokens": 32768,
                            "label": "Intern-S2-Preview · 官方书生API · 视觉",
                            "base_url": "https://chat.intern-ai.org.cn/api/v1",
-                           "api_key_env": "INTERNLM_API_KEY"},
+                           "api_key_env": "INTERNLM_API_KEY",
+                           "key_hint": "https://internlm.intern-ai.org.cn/api/tokens"},
+    # 火山方舟 Doubao-Seed-2.1-Lite（2026-09-24 接入，用户给测试密钥）。三条实测事实：
+    # ① 密钥可直接用模型名调用（不需要建 ep- 接入点）；无日期的 "doubao-seed-2-1-lite" 报 404，
+    #    必须带版本后缀 -260915，所以这里钉死带日期的 id；② 真读图（420x120 小图两行字照抄无误）；
+    #    ③ 是思考型：那发 85 个输出 token 里 57 个是 reasoning，故与 Intern-S2 同待给 max_tokens 下限。
+    "doubao-seed-2-1-lite": {"model": "doubao-seed-2-1-lite-260915", "vision": True, "max_tokens": 32768,
+                             "label": "Doubao-Seed-2.1-Lite · 火山方舟 · 视觉",
+                             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+                             "api_key_env": "ARK_API_KEY",
+                             "key_hint": "方舟控制台 https://console.volcengine.com/ark（API Key 与模型开通在同一账号下）"},
 }
 DEFAULT_MODEL_KEY = "intern-s2-official"
 
@@ -98,9 +108,12 @@ def require_vlm_api_key() -> str:
         return require_api_key()
     key = os.getenv(env, "").strip()
     if not key:
+        preset = _active_preset()
+        hint = preset.get("key_hint") or "https://internlm.intern-ai.org.cn/api/tokens"
         raise SystemExit(
-            f"未配置当前模型渠道的密钥：请在 .env 或环境变量中设置 {env}\n"
-            "官方书生API 获取地址: https://internlm.intern-ai.org.cn/api/tokens（令牌勿写进代码或聊天记录）"
+            f"未配置当前模型渠道（{VLM_MODEL_CHOICE}）的密钥："
+            f"请在 .env 或环境变量中设置 {env}\n"
+            f"密钥获取: {hint}（令牌勿写进代码或聊天记录）"
         )
     return key
 
