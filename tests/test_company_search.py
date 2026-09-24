@@ -244,3 +244,13 @@ def test_inputter_page_has_mawb_source_entry_and_generic_fields():
     assert "查看主单原件" in html and "/mawb/source/" in html
     assert "mawb_order" in html and "Object.keys" in html, \
         "主单业务字段按接口返回的 key 通用渲染：真接口一通就自动出字段，不用改前端"
+
+
+def test_desk_topbar_has_mawb_search_entry_for_admin_only():
+    """主单入口此前只有 URL：录入员登录后 index 会自动跳去 /inputter，管理员却没有任何按钮指过去。
+    入口只给管理员——制单员点了也是被 require_inputter 拒掉，摆出来是坑人。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="btnMawb" hidden' in html, "顶栏要有主单检索台按钮，且未登录时不得先闪出来"
+    assert 'location.href = BASE + "/inputter"' in html, \
+        "跳转要拼 BASE：反代前缀（/hawb/）下硬写 /inputter 会跳到站点根路径"
+    assert '$("#btnMawb").hidden = !admin' in html, "按钮可见性要跟管理员判定同一条"

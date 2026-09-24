@@ -191,6 +191,7 @@ td.k.loc:hover .kk{color:var(--edit)}
   <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
     <input type="checkbox" id="doSave" checked>落盘留档</label>
   <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
+  <button class="btn sm" id="btnMawb" hidden title="按主单号检索主单与其名下已提交的分单，并回看主单原件（原件放 output/mawb_source/&lt;主单号&gt;/）">主单检索台</button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
@@ -225,7 +226,7 @@ td.k.loc:hover .kk{color:var(--edit)}
       <button class="btn sm pri" id="acAdd">保存</button>
     </div>
     <div class="lgerr" id="acctErr" hidden></div>
-    <div class="lghint">制单员可上传、看票面、核对与提交；录入员在 /inputter 检索台按主单号核对主↔分单；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
+    <div class="lghint">制单员可上传、看票面、核对与提交；录入员登录后直接进主单检索台按主单号核对主↔分单（管理员可在顶栏点「主单检索台」过去）；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
   </div>
 </div>
 
@@ -1163,6 +1164,7 @@ function applyRole(){
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = admin ? "管理员" : "制单员";
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
+  $("#btnMawb").hidden = !admin;             // 主单检索台入口仅管理员：制单员点了会被 require_inputter 拒掉
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
   const rv = $("#reviewer");                 // 复核人 = 登录身份，锁定不让手写（提交留痕即本人）
   rv.value = ME.name; rv.readOnly = true;
@@ -1231,6 +1233,7 @@ async function saveAcct(name, password, role){
   }catch(e){ acctErr("保存失败：" + (e.message || e)); }
 }
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
+$("#btnMawb").addEventListener("click", () => { location.href = BASE + "/inputter"; });   // 录入员页对管理员也放行，且有「返回制单台」
 $("#acctClose").addEventListener("click", () => { $("#acct").hidden = true; });
 $("#acAdd").addEventListener("click", async () => {
   const n = $("#acName").value.trim(), p = $("#acPass").value, role = $("#acRole").value;
