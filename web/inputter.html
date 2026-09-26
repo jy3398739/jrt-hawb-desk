@@ -10,6 +10,7 @@
 body{margin:0;font:14px/1.6 system-ui,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink)}
 .bar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--card);border-bottom:1px solid var(--line)}
 .bar h1{font-size:15px;margin:0;font-weight:600}
+.ver{font-size:11px;font-weight:600;color:var(--edit);background:#eaf1fb;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle}
 .spacer{flex:1}
 .who{font-size:12px;color:var(--ink3)}
 .card{max-width:820px;margin:22px auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px}
@@ -38,7 +39,7 @@ a:hover{text-decoration:underline}
 </head>
 <body>
 <div class="bar">
-  <h1>主分单审核台 · 录入员检索</h1>
+  <h1>主分单审核台 · 录入员检索<span class="ver" id="verTag" title="当前服务端版本"></span></h1>
   <span class="spacer"></span>
   <span class="who" id="who" hidden></span>
   <button id="btnDesk" hidden>返回制单台</button>
@@ -164,7 +165,9 @@ $("#btnSearch").addEventListener("click", search);
 $("#mawb").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
 $("#btnDesk").addEventListener("click", () => { location.href = BASE + "/"; });
 
-(async () => { const u = await me(); show(u); $("#btnDesk").hidden = !(u && u.role === "admin"); })();
+(async () => { const u = await me(); show(u); $("#btnDesk").hidden = !(u && u.role === "admin");
+  try{ const h = await (await fetch(BASE + "/health")).json(); $("#verTag").textContent = h.version || ""; }catch(e){}
+})();
 </script>
 </body>
 </html>

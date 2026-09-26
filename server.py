@@ -41,7 +41,7 @@ import store
 import xlsx2pdf
 from jobs import handle_file
 
-app = FastAPI(title="HAWB 分单识别服务", version="1.2")
+app = FastAPI(title="HAWB 分单识别服务", version=config.APP_VERSION)
 WEB_DIR = Path(__file__).resolve().parent / "web"
 CHUNK = 1 << 20
 # 进程启动时刻：用来发现「源码改了但服务没重启」。审核台曾因此一直拿不到票面原件
@@ -205,7 +205,8 @@ def _stale_files() -> list:
 
 @app.get("/health")
 def health():
-    return {"ok": True, "model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE,
+    return {"ok": True, "version": config.APP_VERSION,
+            "model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE,
             "vision": config.MODEL_VISION, "key_configured": config.vlm_api_key_configured(),
             "stale_files": _stale_files()}
 

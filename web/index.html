@@ -23,6 +23,7 @@ input,textarea{font:inherit;color:inherit}
 @keyframes pulse{to{opacity:.25}}
 .svc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
 .svc b{color:var(--ink);font-weight:600}
+.ver{font-size:11px;font-weight:600;color:var(--edit);background:#eaf1fb;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle}
 .f{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
 /* .f 的 display:flex 会盖过 UA 的 [hidden]{display:none}，不补这条则 applyRole 收起模型下拉/身份条形同虚设 */
 .f[hidden]{display:none}
@@ -182,7 +183,7 @@ td.k.loc:hover .kk{color:var(--edit)}
 <body>
 
 <header class="hdr">
-  <h1>主分单审核台 · 制单台</h1>
+  <h1>主分单审核台 · 制单台<span class="ver" id="verTag" title="当前服务端版本"></span></h1>
   <span class="svc"><span class="dot" id="svcDot"></span><span id="svcTxt">正在连接提取服务…</span></span>
   <span class="sp"></span>
   <label class="f" id="fModel" title="提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
@@ -755,6 +756,7 @@ function exitLocate(){
 async function probe(){
   try{
     const r = await fetch(BASE + "/health").then(x => x.json());
+    $("#verTag").textContent = r.version || "";   // 版本号只写在 config，页面照着报：V2 起两台并存
     /* 服务端跑的是改动前的旧进程时，票面浏览这类新功能会像坏了——直接说清是没重启 */
     const stale = r.stale_files || [];
     $("#svcDot").className = "dot " + (stale.length ? "bad" :

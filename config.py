@@ -7,6 +7,10 @@ import os
 import sys
 from pathlib import Path
 
+# 版本标识：V1 = 2026-09-26 定版的现役形态（票面 PDF/图片 → L1 转录 → L2 提取 → 审核台核对 → mock 回传）。
+# V2 是另一套形态（对接真实网页制单，测试用、不走公司系统），两台会并存，所以 /health 与页面标题都得带它。
+APP_VERSION = "V1"
+
 ENV_FILE = Path(__file__).with_name(".env")
 
 try:

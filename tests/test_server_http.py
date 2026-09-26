@@ -79,6 +79,19 @@ def test_health_is_open_and_no_longer_reports_auth_flag():
         assert "auth_required" not in r.json(), "auth_required 已经失去含义：HTTP_API_KEY 删了就该一起走"
 
 
+def test_version_label_shows_on_both_ends():
+    """V1 定版（2026-09-26 用户点名）：/health 报出版本，审核台把 /health 的 version 显示到标题旁。
+    版本号只在 config.APP_VERSION 写一次——页面写死一份的话，改了 config 页面还在骗人。
+    V2 是另一套对接真网页的形态，两台并存时只凭端口号分不出谁是谁。"""
+    with _stubbed():
+        assert TestClient(server.app).get("/health").json().get("version") == config.APP_VERSION
+    assert '"version": config.APP_VERSION' in (Path(server.__file__).read_text(encoding="utf-8")), \
+        "健康检查里的版本号要跟 config 同源，别再各处写死一遍"
+    for page in ("index.html", "inputter.html"):
+        html = (server.WEB_DIR / page).read_text(encoding="utf-8")
+        assert 'id="verTag"' in html and ".version" in html, f"{page} 要把版本号显示出来"
+
+
 def test_endpoints_refuse_without_login():
     """没有会话就是 401；X-API-Key 请求头不再被认（HTTP_API_KEY 已从 config 删除）。"""
     with _stubbed():
