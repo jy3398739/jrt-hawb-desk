@@ -1262,13 +1262,15 @@ TARGET_KEYS_OUT = TARGET_KEYS[:2] + ("SHIPPER_INFO", "CONSIGNEE_INFO") + TARGET_
                     "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "AEO", "EMAIL", "TAX_ID"))
 
 # 票面税号标签 -> 号码。只认带标签的，绝不拿裸数字猜（18 位纯数字也可能是货值/账号）。
+# EORI 是 2026-09-26 CCSP 八票对格补的：欧票把海关号印成 `EORI IT03268900267`，
+# 标签表漏了它导致五张欧票的 TAX 反向核查全哑。
 TAX_LABEL_RE = re.compile(
     r"\b(USCI|统一社会信用代码|CNPJ|CPF|R\.?\s?F\.?\s?C\.?|GST\s*IN|GST|TAX\s*ID|TAX\s*NO"
-    r"|VAT\s*(?:NO|NR|ID|NUMBER)?)\b[^0-9A-Za-z]{0,4}([A-Z]{0,3}[0-9][0-9A-Za-z./\-]{5,})",
+    r"|EORI\s*(?:NO|NR|NUMBER)?|VAT\s*(?:NO|NR|ID|NUMBER)?)\b[^0-9A-Za-z]{0,4}([A-Z]{0,3}[0-9][0-9A-Za-z./\-]{5,})",
     re.I)
 
 
-TAX_PREFIX_RE = re.compile(r"^(?:USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*ID|TAX\s*NO|TAX"
+TAX_PREFIX_RE = re.compile(r"^(?:USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*ID|TAX\s*NO|TAX|EORI\s*(?:NO|NR|NUMBER)?"
                          r"|VAT\s*(?:NO|NR|NUMBER|ID)|VAT|统一社会信用代码)[#.:：\s]*", re.I)
 
 

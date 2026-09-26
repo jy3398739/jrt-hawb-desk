@@ -72,6 +72,23 @@ def test_missing_tax_on_real_ticket_is_flagged():
     assert find_missing_tax(filled, c["transcript"]) == []
 
 
+def test_missing_tax_catches_eori_labels_from_eu_tickets():
+    """CCSP 平台八票对格坐实（2026-09-26）：欧票把海关号印成 `EORI IT03268900267` / `EORI NO.: IT03599210261`
+    这类形态，标签表里没有 EORI ⇒ 五张全漏、红旗全没响。EORI 进标签后必须抓住；
+    号若已被任何字段收走（EORI 列、或还黏在地址行里）则照旧闭嘴，不给复核的人添重复旗。"""
+    tr = {"lines": [{"text": t} for t in [
+        "OZONE S.R.L", "VIALE DELLE INDUSTRIE 10", "EORI IT03268900267", "TEL 390422470376"]],
+        "full_text": ""}
+    assert find_missing_tax({}, tr) == [("EORI", "IT03268900267")]
+    tr2 = {"lines": [{"text": "EORI NO.: DE4827430"}], "full_text": ""}
+    assert find_missing_tax({}, tr2) == [("EORI NO", "DE4827430")]
+    assert find_missing_tax({"CONSIGNEE_INFO_EORI": "IT03268900267"}, tr) == [], \
+        "号已落 EORI 列就该闭嘴"
+    tr3 = {"lines": [{"text": "FORMERVANGEN 5 EORI NO DK28490704"}], "full_text": ""}
+    glued = {"CONSIGNEE_INFO_COMP_ADDRESS": "FORMERVANGEN 5 EORI NO DK28490704"}
+    assert find_missing_tax(glued, tr3) == [], "号还黏在我方地址行里=已捕获，不重复报"
+
+
 def test_tax_check_needs_a_label_and_a_real_number():
     """只认带标签的号：裸 18 位数字可能是货值/账号，抓它做红旗就是误报。短号同理不算税号。"""
     tr = {"lines": [{"text": t} for t in [

@@ -1,13 +1,19 @@
 {
  "source_name": "Copy 6 - (Extra Copy) - HAWB No_ TAO10359760",
  "expect": {
-  "checked": 24,
+  "checked": 25,
   "passed": 23,
   "failed_fields": [
-   "CONSIGNEE_INFO_CITTY"
+   "CONSIGNEE_INFO_CITTY",
+   "TAX_ID"
   ],
   "missing_mawb": [],
-  "missing_tax": []
+  "missing_tax": [
+   [
+    "EORI NO",
+    "FR34351590400161"
+   ]
+  ]
  },
  "transcript": {
   "lines": [
