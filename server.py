@@ -19,6 +19,7 @@
   POST /extract            需登录会话；multipart 字段 file=分单文件；?save=true 同时按原名落盘
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   GET  /company/mawb       需录入员(或管理员)会话；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)，现走 mock
+  GET  /webplan/{stem}     需录入员(或管理员)会话；CCSP 填表计划 dry-run（只读归档，不碰平台）
   GET  /results            已落盘条数（需登录会话）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
   GET  /mawb/source/{mawb} 回看主单原件（需录入员或管理员会话）；原件在 output/mawb_source/<归一化主单号>/
@@ -38,6 +39,7 @@ import auth
 import company_api
 import config
 import store
+import web_bridge
 import xlsx2pdf
 from jobs import handle_file
 
@@ -240,6 +242,24 @@ def company_mawb(mawb: str = Query(..., description="主单号（可带连字符
     if not store.norm_no(mawb):
         raise HTTPException(400, "主单号不能为空")
     return company_api.search_mawb(mawb)
+
+
+@app.get("/webplan/{stem}")
+def webplan(stem: str, _: None = Depends(require_inputter)):
+    """V2 dry-run：CCSP 填表计划。读归档的 L3 航空口径（+L2 原文补城市名），按 sites/ccsp.json
+    的映射算出"将往平台 editHAWBForm 哪些控件填什么值 + 需人工核对清单"。
+    纯只读：不起浏览器、不向平台发任何请求；真填表/提交是后续里程碑且永远人工点。"""
+    name = _safe_stem(stem)
+    air_p = config.OUTPUT_AIR_DIR / f"{name}.json" if name else None
+    if not air_p or not air_p.exists():
+        raise HTTPException(404, f"本机没有 {stem} 的航空口径结果（output/air/ 缺文件）")
+    air = json.loads(air_p.read_text(encoding="utf-8"))
+    raw = {}
+    raw_p = config.OUTPUT_RAW_DIR / f"{name}.json"
+    if raw_p.exists():
+        raw = json.loads(raw_p.read_text(encoding="utf-8"))
+    return {"stem": name, "hawb": str(air.get("HAWB_NO", "") or ""),
+            "plan": web_bridge.build_fill_plan(air, raw=raw)}
 
 
 class SubmitBody(BaseModel):
