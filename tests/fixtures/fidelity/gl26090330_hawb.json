@@ -1,9 +1,10 @@
 {
  "source_name": "GL26090330 HAWB",
  "expect": {
-  "checked": 19,
+  "checked": 20,
   "passed": 17,
   "failed_fields": [
+   "GOODS_HS_CODE",
    "GOODS_INFO",
    "MAWB_NO"
   ],

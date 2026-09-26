@@ -98,6 +98,11 @@ def _mawb_check_digit_ok(serial: str) -> bool:
     return int(serial[:7]) % 7 == int(serial[7])
 
 
+# 票面 HS 码标签形态（2026-09-26 对格实测）：`HSCODE: 89031200` / `HS:7007290000` /
+# `HS Codes: 85389000` / `HS code : 8505.11`。要求后面紧跟冒号，避免把普通行里的 HS 字样当标签。
+_HS_LABEL_RE = re.compile(r"\bHS\s*(?:CODES?\s*)?[:：]", re.I)
+
+
 def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
     """反向核查税号漏抄：票面印着带标签的税号（USCI/CNPJ/VAT NO/TAX ID…），
     L2 三十九个字段里却一处都找不到。返回 [(标签, 号码)]。税号早先没有落点，模型按
@@ -111,6 +116,24 @@ def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
         if len(_alnum(val)) < 8 or _alnum(val) in captured:
             continue
         out.append((label, val))
+    return list(dict.fromkeys(out))
+
+
+def find_missing_hs(raw: dict, transcript: dict) -> list[str]:
+    """反向核查 HS 码漏抄：票面印着带 HS 标签的码（`HSCODE: 89031200` / `HS Codes: 85389000` / `HS:850152`），
+    GOODS_HS_CODE 却没接住。按前 6 位归一比对——平台/国际口径只填 6 位，也算已捕获。
+    无标签的裸数字形态（EDC `84742708 (4),84647039 (24)`）明确不覆盖：裸 6-10 位可能是电话/邮编/货值，
+    拿它挂旗误报率不可控。CCSP 八票对格（2026-09-26）坐实 S2/MiMo 各漏过一例且旗全哑。"""
+    mine = re.sub(r"\D", "", str(raw.get("GOODS_HS_CODE", "") or ""))
+    out = []
+    for x in transcript.get("lines", []):
+        t = str(x.get("text", "") if isinstance(x, dict) else x)
+        m = _HS_LABEL_RE.search(t)
+        if not m:
+            continue
+        for run in re.findall(r"\d{6,10}", t[m.end():]):
+            if run[:6] not in mine:
+                out.append(run)
     return list(dict.fromkeys(out))
 
 
@@ -265,6 +288,11 @@ def verify_fidelity(raw: dict, transcript: dict) -> dict:
         failed.append({"field": "TAX_ID", "value": val,
                        "reason": f"{label} 税号漏抄：票面有 {val}，"
                                  f"需核票填 SHIPPER_INFO_TAX_ID 或 CONSIGNEE_INFO_TAX_ID"})
+
+    for cand in find_missing_hs(raw, transcript):
+        checked += 1
+        failed.append({"field": "GOODS_HS_CODE", "value": cand,
+                       "reason": f"HS 码漏抄：票面印着带标签的 HS 码 {cand}，GOODS_HS_CODE 空或不包含，需核票补"})
 
     return {"checked": checked, "passed": passed,
             "failed": failed, "sources": sources}

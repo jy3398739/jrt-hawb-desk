@@ -1,10 +1,11 @@
 {
  "source_name": "分单AE20260916",
  "expect": {
-  "checked": 18,
+  "checked": 19,
   "passed": 17,
   "failed_fields": [
-   "CREATE_TIME"
+   "CREATE_TIME",
+   "GOODS_HS_CODE"
   ],
   "missing_mawb": [],
   "missing_tax": []
