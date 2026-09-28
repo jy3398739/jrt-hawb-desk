@@ -12,7 +12,7 @@ import auth
 import config
 import server
 
-WEB_INPUTTER = Path(__file__).resolve().parent.parent / "web" / "inputter.html"
+WEB_DESK = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 AIR = {
     "MAWB_NO": "999-95764373", "HAWB_NO": "VCE4373", "ORIGIN_NAME": "BJS", "DEST_NAME": "VCE",
@@ -87,6 +87,21 @@ def test_webplan_unknown_stem_is_404():
         _restore(old, users_tmp)
 
 
-def test_inputter_page_has_webplan_entry():
-    html = WEB_INPUTTER.read_text(encoding="utf-8")
-    assert "填表计划" in html and "/webplan/" in html, "录入员检索台要有 CCSP 填表计划入口"
+def test_webplan_open_to_reviewer_after_merge():
+    """合并后主单检索/填表计划不再是录入员专属：制单员登录也能直接调。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_wp_"))
+    old, users_tmp = _isolate(tmp)
+    try:
+        auth.ensure_seed()
+        auth.set_password("宛平", "rv-123456", "reviewer")
+        client = TestClient(server.app)
+        r = client.post("/login", json={"name": "宛平", "password": "rv-123456"})
+        assert r.status_code == 200, r.text
+        assert client.get("/webplan/T1").status_code == 200, "制单员合并后可用填表计划"
+    finally:
+        _restore(old, users_tmp)
+
+
+def test_desk_page_has_webplan_entry():
+    html = WEB_DESK.read_text(encoding="utf-8")
+    assert "填表计划" in html and "/webplan/" in html, "制单台要有 CCSP 填表计划入口（录入员功能已并入）"

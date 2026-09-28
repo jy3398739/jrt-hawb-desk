@@ -14,7 +14,6 @@ import config
 import server
 import store
 
-WEB_INPUTTER = Path(__file__).resolve().parent.parent / "web" / "inputter.html"
 
 
 def _isolate(tmp: Path):
@@ -92,22 +91,24 @@ def test_company_api_mock_returns_orders_with_stem():
         _restore(ou, ol, tmp)
 
 
-def test_company_api_live_mode_raises():
-    old = config.COMPANY_API_MODE
-    config.COMPANY_API_MODE = "live"
+def test_company_api_live_without_endpoint_never_fakes_or_hits_network():
+    """live 已有真实现（2026-09-26 j9 契约），但缺端点/密钥时必须立刻抛 CompanyNotConfigured——
+    既不静默返回假数据，也不会拿着空 URL 往外发请求。（回归入口还把 URL/key 钉空做双保险。）"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+           config.COMPANY_HAWB_KEY, config.COMPANY_MAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", ""
+    config.COMPANY_HAWB_KEY = config.COMPANY_MAWB_KEY = ""
     try:
-        try:
-            company_api.search_mawb("235-96146363")
-            assert False, "live 模式无真实现应抛 CompanyNotConfigured，绝不静默返回假数据"
-        except company_api.CompanyNotConfigured:
-            pass
-        try:
-            company_api.submit_order({"mawb": "1", "hawb": "2"})
-            assert False, "提交走 live 也应抛错"
-        except company_api.CompanyNotConfigured:
-            pass
+        for call in (lambda: company_api.search_mawb("235-96146363"),
+                     lambda: company_api.submit_order({"mawb": "235-96146363", "hawb": "X1", "air": {}})):
+            try:
+                call()
+                raise AssertionError("live 缺配置居然没抛 CompanyNotConfigured")
+            except company_api.CompanyNotConfigured:
+                pass
     finally:
-        config.COMPANY_API_MODE = old
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+         config.COMPANY_HAWB_KEY, config.COMPANY_MAWB_KEY) = old
 
 
 def test_company_mawb_requires_login():
@@ -121,7 +122,8 @@ def test_company_mawb_requires_login():
         _restore(ou, ol, tmp)
 
 
-def test_company_mawb_reviewer_forbidden_inputter_ok():
+def test_company_mawb_reviewer_and_inputter_both_allowed():
+    """2026-09-26 合并：主单检索不再分角色——制单员/录入员/管理员登录即用（一个工作台）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
     ou, ol = _isolate(tmp)
     try:
@@ -133,7 +135,7 @@ def test_company_mawb_reviewer_forbidden_inputter_ok():
         rv = TestClient(server.app)
         _login(rv, "马殿齐", "rv-123456")
         r = rv.get("/company/mawb", params={"mawb": "235-96146363"})
-        assert r.status_code == 403, "制单员不是录入员，应被挡在检索门外"
+        assert r.status_code == 200, f"制单员合并后也能检索主单：{r.status_code} {r.text[:120]}"
 
         inp = TestClient(server.app)
         _login(inp, "郭健康", "in-123456")
@@ -161,17 +163,17 @@ def test_company_mawb_admin_allowed():
         _restore(ou, ol, tmp)
 
 
-def test_inputter_page_is_served():
+def test_inputter_route_redirects_to_merged_desk():
+    """2026-09-26 合并：录入员功能进了制单台，/inputter 不再单独成页——老书签/外链一律 302 回主页，
+    避免出现两份会各自漂移的检索界面。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
     ou, ol = _isolate(tmp)
     try:
         auth.ensure_seed()
-        r = TestClient(server.app).get("/inputter")
-        assert r.status_code == 200, "录入员检索台页面应能打开（数据接口才要登录）"
-        assert "录入员检索" in r.text
+        r = TestClient(server.app, follow_redirects=False).get("/inputter")
+        assert r.status_code in (302, 307), f"/inputter 应重定向回制单台，实际 {r.status_code}"
+        assert r.headers["location"] in ("/", "./", ""), r.headers.get("location")
     finally:
-        html = WEB_INPUTTER.read_text(encoding="utf-8")
-        assert "/company/mawb" in html and "查看原件" in html
         _restore(ou, ol, tmp)
 
 
@@ -222,7 +224,8 @@ def test_mawb_source_route_guards_roles_and_serves_pdf():
         assert TestClient(server.app).get("/mawb/source/235-96146363").status_code == 401, "要登录会话"
         rv = TestClient(server.app)
         _login(rv, "宛平", "rv-123456")
-        assert rv.get("/mawb/source/235-96146363").status_code == 403, "制单员没有主单原件权限"
+        assert rv.get("/mawb/source/235-96146363").status_code == 404, \
+            "合并后制单员也能开主单原件（本机没放原件才是 404，不再是 403）"
         inp = TestClient(server.app)
         _login(inp, "郭旭", "in-123456")
         miss = inp.get("/mawb/source/235-96146363")
@@ -239,18 +242,13 @@ def test_mawb_source_route_guards_roles_and_serves_pdf():
         _restore(ou, ol, tmp)
 
 
-def test_inputter_page_has_mawb_source_entry_and_generic_fields():
-    html = WEB_INPUTTER.read_text(encoding="utf-8")
-    assert "查看主单原件" in html and "/mawb/source/" in html
-    assert "mawb_order" in html and "Object.keys" in html, \
-        "主单业务字段按接口返回的 key 通用渲染：真接口一通就自动出字段，不用改前端"
-
-
-def test_desk_topbar_has_mawb_search_entry_for_admin_only():
-    """主单入口此前只有 URL：录入员登录后 index 会自动跳去 /inputter，管理员却没有任何按钮指过去。
-    入口只给管理员——制单员点了也是被 require_inputter 拒掉，摆出来是坑人。"""
+def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
+    """2026-09-26 合并：录入员功能并进制单台——主单检索、主单/分单原件、CCSP 填表计划
+    都在 index.html 一个页面里；入口对所有登录角色可见（录入员/制单员同一工作台）。"""
     html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
-    assert 'id="btnMawb" hidden' in html, "顶栏要有主单检索台按钮，且未登录时不得先闪出来"
-    assert 'location.href = BASE + "/inputter"' in html, \
-        "跳转要拼 BASE：反代前缀（/hawb/）下硬写 /inputter 会跳到站点根路径"
-    assert '$("#btnMawb").hidden = !admin' in html, "按钮可见性要跟管理员判定同一条"
+    assert "/company/mawb" in html, "制单台要有主单检索"
+    assert "查看主单原件" in html and "/mawb/source/" in html, "制单台要能开主单原件"
+    assert "/webplan/" in html and "填表计划" in html, "CCSP 填表计划要在制单台上"
+    assert "mawb_order" in html and "Object.keys" in html, "主单字段按接口 key 通用渲染"
+    assert 'id="btnMawb"' in html, "顶栏要有「主单检索」入口"
+    assert '$("#btnMawb").hidden = !ME' in html, "入口对所有登录角色可见，只在未登录时藏"

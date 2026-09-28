@@ -18,11 +18,11 @@
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；?save=true 同时按原名落盘
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
-  GET  /company/mawb       需录入员(或管理员)会话；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)，现走 mock
-  GET  /webplan/{stem}     需录入员(或管理员)会话；CCSP 填表计划 dry-run（只读归档，不碰平台）
+  GET  /company/mawb       需登录会话(任意角色，2026-09-26 并入制单台)；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)，现走 mock
+  GET  /webplan/{stem}     需登录会话(任意角色)；CCSP 填表计划 dry-run（只读归档，不碰平台）
   GET  /results            已落盘条数（需登录会话）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
-  GET  /mawb/source/{mawb} 回看主单原件（需录入员或管理员会话）；原件在 output/mawb_source/<归一化主单号>/
+  GET  /mawb/source/{mawb} 回看主单原件（需登录会话，任意角色）；原件在 output/mawb_source/<归一化主单号>/
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
   GET  /render/{stem}      把归档票面按页转成 PNG（?page=&scale=），定位模式的底图（需登录会话）
 """
@@ -31,7 +31,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -71,17 +71,6 @@ def require_admin(request: Request) -> None:
     if user:
         raise HTTPException(403, "此操作需要管理员权限")
     raise HTTPException(401, "请先以管理员登录")
-
-
-def require_inputter(request: Request) -> None:
-    """录入员专属（按主单号检索主单/分单）：认录入员或管理员会话（管理员可代为排查）。
-    已登录但角色不对 → 403；无会话 → 401。制单员没有此权限——检索是录入员一侧的活。"""
-    user = auth.session_user(request)
-    if user and user.get("role") in ("inputter", "admin"):
-        return
-    if user:
-        raise HTTPException(403, "此操作需要录入员权限")
-    raise HTTPException(401, "请先以录入员登录")
 
 
 class LoginBody(BaseModel):
@@ -188,12 +177,9 @@ def desk():
 
 @app.get("/inputter")
 def inputter_desk():
-    """录入员检索台（按主单号取回主单+分单→打开本机分单原件对票面核对）。
-    页面本身是静态壳，是否录入员由前端按 /api/me 判断，取数据仍走登录会话 + require_inputter。"""
-    page = WEB_DIR / "inputter.html"
-    if not page.is_file():
-        raise HTTPException(404, f"录入员检索台页面缺失: {page}")
-    return FileResponse(page, media_type="text/html; charset=utf-8")
+    """录入员检索台已并入制单台（2026-09-26 用户定案：主单检索/主单原件/填表计划都在 / 一页）。
+    老书签与外链一律 302 回主页，避免留下会各自漂移的第二份检索界面。"""
+    return RedirectResponse(url="./", status_code=302)
 
 
 def _stale_files() -> list:
@@ -233,8 +219,9 @@ def _company_submit(payload: dict) -> dict:
 
 @app.get("/company/mawb")
 def company_mawb(mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
-                 _: None = Depends(require_inputter)):
-    """录入员按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对）。
+                 _: None = Depends(require_web)):
+    """按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对）。
+    2026-09-26 起对任意登录角色开放——录入员检索台已并入制单台。
 
     数据来自 company_api.search_mawb——当前是 mock：主单业务字段空壳，分单来自本机提交台账里
     该主单号下已提交的票。这一步只回我们自己拥有的连接数据（哪些分单挂在这个主单下、原件在
@@ -245,7 +232,7 @@ def company_mawb(mawb: str = Query(..., description="主单号（可带连字符
 
 
 @app.get("/webplan/{stem}")
-def webplan(stem: str, _: None = Depends(require_inputter)):
+def webplan(stem: str, _: None = Depends(require_web)):
     """V2 dry-run：CCSP 填表计划。读归档的 L3 航空口径（+L2 原文补城市名），按 sites/ccsp.json
     的映射算出"将往平台 editHAWBForm 哪些控件填什么值 + 需人工核对清单"。
     纯只读：不起浏览器、不向平台发任何请求；真填表/提交是后续里程碑且永远人工点。"""
@@ -445,8 +432,8 @@ def source(stem: str, raw: bool = Query(False, description="true=发原件本身
 
 @app.get("/mawb/source/{mawb}")
 def mawb_source(mawb: str, raw: bool = Query(False, description="true=发原件本身（电子单下载用）"),
-                _: None = Depends(require_inputter)):
-    """主单(MAWB)原件预览：/source 的分单侧对应物，给录入员对票面核对用。
+                _: None = Depends(require_web)):
+    """主单(MAWB)原件预览：/source 的分单侧对应物，任何登录角色可开（检索已并入制单台）。
 
     原件从 output/mawb_source/<归一化主单号>/ 取，格式处理与分单侧同一套（浏览器能渲染的直接发、
     电子单现转 PDF 缓存）。主单原件接口待 IT——真接口到位后由 company_api 缓存进同一目录即可，

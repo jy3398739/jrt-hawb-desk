@@ -100,6 +100,9 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .ft{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ft.top{border-top:0;border-bottom:1px solid var(--line);background:#fbfcfe}
 .hint{font-size:12px;color:var(--ink2)}
+/* 主单检索卡片（并入自录入员检索台）用的小标题与等宽列 */
+.t2{font-size:13px;font-weight:600;margin:14px 0 4px}
+.j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
 /* 票面浏览：粘住不滚，核对下面字段时票面一直在视野里。
    .wrap 是 align-items:start，网格不会把这一格拉高，靠内容撑就只有半屏（票面只看到一半、下面空着）——
    直接给死高度，让 PDF/图片铺满整个可视高度。 */
@@ -192,7 +195,7 @@ td.k.loc:hover .kk{color:var(--edit)}
   <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
     <input type="checkbox" id="doSave" checked>落盘留档</label>
   <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
-  <button class="btn sm" id="btnMawb" hidden title="按主单号检索主单与其名下已提交的分单，并回看主单原件（原件放 output/mawb_source/&lt;主单号&gt;/）">主单检索台</button>
+  <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
@@ -227,7 +230,7 @@ td.k.loc:hover .kk{color:var(--edit)}
       <button class="btn sm pri" id="acAdd">保存</button>
     </div>
     <div class="lgerr" id="acctErr" hidden></div>
-    <div class="lghint">制单员可上传、看票面、核对与提交；录入员登录后直接进主单检索台按主单号核对主↔分单（管理员可在顶栏点「主单检索台」过去）；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
+    <div class="lghint">制单员可上传、看票面、核对与提交；主单检索（原录入员检索台）已并入制单台：登录后点顶栏「主单检索」或滚到该卡片即可；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
   </div>
 </div>
 
@@ -242,6 +245,15 @@ td.k.loc:hover .kk{color:var(--edit)}
       </div>
       <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
       <div class="list" id="list"><div class="empty">尚无票据。</div></div>
+    </section>
+    <section class="card" style="margin-top:14px">
+      <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus"></span></div>
+      <div class="f" style="gap:8px;margin-bottom:6px">
+        <input id="mstNo" type="text" placeholder="主单号，如 235-96146363" size="18">
+        <button class="btn sm pri" id="mstGo">检索</button>
+      </div>
+      <div class="hint">按主单号取回主单原生资料（含 AMS_RECORD）与名下分单，对票面核对后打开原件。原录入员检索台已并入本页。</div>
+      <div id="mstResult"></div>
     </section>
     <section class="card" style="margin-top:14px">
       <div class="t">本地暂存<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
@@ -1160,13 +1172,10 @@ function applyRole(){
   $("#whoWrap").hidden = !ME;
   $("#btnLogout").hidden = !ME;
   if (!ME) return;
-  if (ME.role === "inputter"){           // 录入员不碰上传台：直接送去检索工作台
-    location.replace(BASE + "/inputter"); return;
-  }
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = admin ? "管理员" : "制单员";
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
-  $("#btnMawb").hidden = !admin;             // 主单检索台入口仅管理员：制单员点了会被 require_inputter 拒掉
+  $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
   const rv = $("#reviewer");                 // 复核人 = 登录身份，锁定不让手写（提交留痕即本人）
   rv.value = ME.name; rv.readOnly = true;
@@ -1235,7 +1244,11 @@ async function saveAcct(name, password, role){
   }catch(e){ acctErr("保存失败：" + (e.message || e)); }
 }
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
-$("#btnMawb").addEventListener("click", () => { location.href = BASE + "/inputter"; });   // 录入员页对管理员也放行，且有「返回制单台」
+$("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"滚过去 + 聚焦输入框"
+  const box = $("#mstNo");
+  box.scrollIntoView({behavior: "smooth", block: "center"});
+  box.focus();
+});
 $("#acctClose").addEventListener("click", () => { $("#acct").hidden = true; });
 $("#acAdd").addEventListener("click", async () => {
   const n = $("#acName").value.trim(), p = $("#acPass").value, role = $("#acRole").value;
@@ -1256,6 +1269,69 @@ $("#acctList").addEventListener("click", async e => {
       toast("已删除", "ok"); loadAcct();
     }catch(err){ acctErr("删除失败：" + (err.message || err)); }
   }
+});
+/* ── 主单检索（2026-09-26 由录入员检索台并入）：主单原生资料 + 名下分单 + 原件 + CCSP 填表计划 ── */
+function mstFmtVal(v){
+  if (v == null || v === "") return "—";
+  if (typeof v === "object") return esc(JSON.stringify(v));
+  return esc(String(v));
+}
+function mstCard(j, mawb){
+  const mo = j.mawb_order || {};
+  const src = j.source_available
+    ? '<a href="' + BASE + '/mawb/source/' + encodeURIComponent(mawb) + '" target="_blank">查看主单原件</a>'
+    : '<span class="hint">本机暂无主单原件（可放 output/mawb_source/ 对应主单号目录）</span>';
+  const keys = Object.keys(mo).filter(k => k !== "AMS_RECORD");
+  const rows = keys.length
+    ? '<table><tbody>' + keys.map(k => '<tr><th>' + esc(k) + '</th><td class="j">' + mstFmtVal(mo[k]) + '</td></tr>').join("") + '</tbody></table>'
+    : '<p class="hint">主单业务字段为空（公司侧无该主单，或接口未返回）</p>';
+  return '<div class="t2">主单 ' + esc(mawb) + '　' + src + '</div>' + rows;
+}
+function mstTable(list){
+  if (!list.length) return "";
+  const rows = list.map(o => "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
+    "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") + "</td><td>" +
+    (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
+            : '<span class="hint">本机无归档</span>') + "</td><td>" +
+    (o.stem ? '<button data-wp="' + esc(o.stem) + '">填表计划</button>' : "—") + "</td></tr>").join("");
+  return '<div class="t2">名下分单</div><table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th><th>CCSP</th></tr></thead><tbody>' +
+    rows + '</tbody></table><div id="webplanBox" style="margin-top:14px" hidden></div>';
+}
+async function mstSearch(){
+  const m = $("#mstNo").value.trim(), st = $("#mstStatus");
+  if (!m){ st.textContent = "请先填主单号"; return; }
+  st.textContent = "检索中…";
+  try{
+    const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m));
+    if (r.status === 401){ $("#gate").hidden = false; throw new Error("登录已过期，请重新登录"); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    st.textContent = "主单 " + m + " · 名下 " + (j.hawb_orders || []).length + " 张分单（" + j.mode + "）";
+    $("#mstResult").innerHTML = mstCard(j, m) + mstTable(j.hawb_orders || []);
+  }catch(e){ st.textContent = "检索失败：" + (e.message || e); $("#mstResult").innerHTML = ""; }
+}
+$("#mstGo").addEventListener("click", mstSearch);
+$("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(); });
+$("#mstResult").addEventListener("click", async e => {
+  const btn = e.target.closest("[data-wp]");
+  if (!btn) return;
+  const box = document.getElementById("webplanBox");
+  box.hidden = false;
+  box.innerHTML = '<p class="hint">生成 CCSP 填表计划中…（dry-run：只读本机归档，不会向平台写入）</p>';
+  try{
+    const r = await fetch(BASE + "/webplan/" + encodeURIComponent(btn.dataset.wp));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    const p = j.plan || {};
+    const vrows = Object.entries(p.values || {}).map(([k, v]) =>
+      "<tr><td class=\"j\">" + esc(k) + "</td><td>" + esc(v) + "</td></tr>").join("");
+    const needs = (p.needs_human || []).map(n => "<li>" + esc(n) + "</li>").join("") || "<li>无</li>";
+    box.innerHTML = '<div class="t2">CCSP 填表计划（dry-run · 不写平台）· ' + esc(j.hawb || j.stem || "") + '</div>' +
+      '<p class="hint">将填 ' + Object.keys(p.values || {}).length + ' 格；控件名即平台 editHAWBForm 字段名。</p>' +
+      '<table><thead><tr><th>平台控件</th><th>将填值</th></tr></thead><tbody>' + vrows + '</tbody></table>' +
+      '<div class="t2">需人工核对 ' + (p.needs_human || []).length + ' 项</div><ul>' + needs + '</ul>';
+    box.scrollIntoView({behavior: "smooth", block: "nearest"});
+  }catch(err){ box.innerHTML = '<p class="hint">填表计划失败：' + esc(err.message || err) + '</p>'; }
 });
 checkAuth();
 </script>

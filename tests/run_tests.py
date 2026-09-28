@@ -13,6 +13,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -22,6 +23,15 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows 控制台�
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 sys.path.insert(0, str(ROOT))
+
+# 回归必须与运维机上的 .env 无关：那台机器可能把 COMPANY_API_MODE 设成 live（真连公司系统），
+# 而用例的默认期望是 mock（不外发）。live 用例自己会在用例内显式切模式并假装 HTTP 层。
+# 端点与两把 key 一并钉空：曾有旧用例把 mode 改成 live 后真打了一次公司接口（只读也是外发），
+# 钉空后任何"忘了打桩的 live 调用"都会立刻抛 CompanyNotConfigured，而不是悄悄出网。
+os.environ["COMPANY_API_MODE"] = "mock"
+os.environ["COMPANY_API_URL"] = ""
+os.environ["COMPANY_MAWB_KEY"] = ""
+os.environ["COMPANY_HAWB_KEY"] = ""
 
 
 def _load_modules(only: str):

@@ -87,7 +87,7 @@ def test_version_label_shows_on_both_ends():
         assert TestClient(server.app).get("/health").json().get("version") == config.APP_VERSION
     assert '"version": config.APP_VERSION' in (Path(server.__file__).read_text(encoding="utf-8")), \
         "健康检查里的版本号要跟 config 同源，别再各处写死一遍"
-    for page in ("index.html", "inputter.html"):
+    for page in ("index.html",):   # 录入员页已并入制单台
         html = (server.WEB_DIR / page).read_text(encoding="utf-8")
         assert 'id="verTag"' in html and ".version" in html, f"{page} 要把版本号显示出来"
 
