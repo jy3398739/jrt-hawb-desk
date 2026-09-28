@@ -154,6 +154,20 @@ def test_fidelity_can_check_the_master_column_face():
     assert any(x["field"] == "CONSIGNEE_INFO_COMP_NAME" for x in fid2["failed"]), "编出来的公司名要被抓出来"
 
 
+def test_master_fidelity_does_not_flag_a_normalized_hs():
+    """HS 是公司要求归一的列（去点号、逗号连接），拿"逐字找得到"去回查它等于自己打自己脸——
+    分单侧同样不把 GOODS_HS_CODE 放进回查清单，漏抄交给反向核查兜。"""
+    import master_pipeline as mp
+    tr = {"lines": [{"i": 1, "text": "MASTER_NO: 176-62400004"},
+                    {"i": 2, "text": "GOODS_NAME: PISTON ROD HS CODE:8412.9090,8517.1200"}],
+          "full_text": "MASTER_NO: 176-62400004\nGOODS_NAME: PISTON ROD HS CODE:8412.9090,8517.1200"}
+    raw = {"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "84129090,85171200"}
+    assert "GOODS_INFO_HSCODE" not in mp._SHORT, "HS 列不进逐字回查清单"
+    fid = fidelity.verify_fidelity(raw, tr, short=mp._SHORT, long=mp._LONG,
+                                   hs_field="GOODS_INFO_HSCODE", tax=False)
+    assert fid["failed"] == [], fid["failed"]
+
+
 def test_field_table_groups_drive_the_ui_sections():
     groups = {g for _c, _l, g in MASTER_FIELDS}
     assert groups == {"cargo", "shipper", "consignee", "notify"}, groups

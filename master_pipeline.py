@@ -26,9 +26,11 @@ from fidelity import verify_fidelity
 from validator import validate_master
 
 MASTER_COLS = mf.MASTER_COLS
-# 保真回查按主单列面走：公司名/地址是长字段（跨行排版，用词元覆盖率兜底），SLAC 是数值不参与
+# 保真回查按主单列面走：公司名/地址是长字段（跨行排版，用词元覆盖率兜底）；
+# SLAC 是数值、GOODS_INFO_HSCODE 是公司要求归一的列（去点号逗号连接）——逐字回查它们等于自己打自己脸，
+# 都交给 validator 与反向漏抄核查管（分单侧同样不回查 GOODS_HS_CODE）。
 _LONG = [c for c in MASTER_COLS if c.endswith(("_COMP_NAME", "_COMP_ADDRESS"))]
-_SHORT = [c for c in MASTER_COLS if c not in _LONG and c != "SLAC"]
+_SHORT = [c for c in MASTER_COLS if c not in _LONG and c not in ("SLAC", "GOODS_INFO_HSCODE")]
 
 _lock = threading.Lock()
 
