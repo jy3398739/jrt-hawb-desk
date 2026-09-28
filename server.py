@@ -172,8 +172,8 @@ def desk():
     page = WEB_DIR / "index.html"
     if not page.is_file():
         raise HTTPException(404, f"审核台页面缺失: {page}")
-    return FileResponse(page, media_type="text/html; charset=utf-8")
-
+    return FileResponse(page, media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "no-store"})   # 别拿旧壳：页面改了刷新即生效
 
 @app.get("/inputter")
 def inputter_desk():

@@ -1390,7 +1390,7 @@ $("#mstResult").addEventListener("click", async e => {
     if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
     MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, parsed: MST_LAST.parsed};
     render();
-    $("#main").scrollIntoView({behavior: "smooth", block: "start"});
+    $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静
     toast("已载入主单 " + MV.mawb + " 的公司资料（只读核对，不提交）", "ok");
     return;
   }

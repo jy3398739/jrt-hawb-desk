@@ -206,6 +206,8 @@ def test_desk_page_is_served_without_login():
         assert r.status_code == 200, r.status_code
         assert "主分单审核台" in r.text and 'charset="utf-8"' in r.text
         assert "text/html" in r.headers["content-type"]
+        # 页面不缓存：改了 index.html 又重启了服务，浏览器还拿旧壳 → 新按钮点了没反应（2026-09-28 用户实测撞到）
+        assert r.headers.get("cache-control") == "no-store", "审核台页面要禁缓存"
 
 
 def test_desk_page_missing_is_reported_not_500():

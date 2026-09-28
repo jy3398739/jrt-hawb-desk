@@ -112,6 +112,8 @@ def test_desk_master_view_shows_company_text_and_readonly_check():
     assert mn.index("if (MV") < mn.index('id="submit"'), "主单分支要先 return，页面上不出现提交按钮"
     assert "不提交" in mn, "主单核对区要写清这一路不提交"
     assert 'id="mvBack"' in html, "要有退回分单核对的出口"
+    assert '$("#view").scrollIntoView' in html, \
+        "窄屏（<1461px）时票面栏在核对区上方：滚动要停在票面栏，否则用户看着它空着以为没反应"
 
 
 def test_company_api_live_without_endpoint_never_fakes_or_hits_network():
