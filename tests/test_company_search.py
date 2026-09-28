@@ -84,7 +84,7 @@ def test_company_api_mock_returns_orders_with_stem():
         j = company_api.search_mawb("235-96146363")
         assert j["mode"] == "mock" and j["mawb"] == "235-96146363"
         assert j["mawb_order"] == {}, "主单业务字段留空壳，等公司真接口"
-        assert j["parsed"]["fields"] == {}, "空壳也算出空视图：前端据此不显示「送入预览与核对」，不出现假格子"
+        assert "parsed" not in j, "检索响应不再自带手拆视图：主单改走 master_pipeline 真解析"
         assert len(j["hawb_orders"]) == 1
         o = j["hawb_orders"][0]
         assert o["hawb"] == "CLA001" and o["stem"] == "CLA1", "分单带上本机原件 stem 供 /source 打开"

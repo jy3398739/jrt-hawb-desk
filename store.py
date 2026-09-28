@@ -158,28 +158,30 @@ def mawb_source_key(mawb: str) -> str:
     return key if _MAWB_DIR_RE.fullmatch(key) else ""
 
 
-def _load_ledger() -> dict:
-    if not config.SUBMIT_LEDGER.is_file():
+def _load_ledger(path=None) -> dict:
+    path = path or config.SUBMIT_LEDGER
+    if not path.is_file():
         return {}
     try:
-        data = json.loads(config.SUBMIT_LEDGER.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except Exception:
         return {}          # 台账读坏宁可当空表重来，也别让一次提交把服务打挂
 
 
-def _write_ledger(data: dict) -> None:
+def _write_ledger(data: dict, path=None) -> None:
     """原子写并收紧权限：内容含复核人姓名与回执，posix 上收进 600（同 auth._write 的套路，
     否则 tmp 按 umask 建、os.replace 会把原文件 600 放宽成 664）。"""
-    config.SUBMIT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config.SUBMIT_LEDGER.with_name(config.SUBMIT_LEDGER.name + ".tmp")
+    path = path or config.SUBMIT_LEDGER
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    mode = (config.SUBMIT_LEDGER.stat().st_mode & 0o7777) if config.SUBMIT_LEDGER.exists() else 0o600
+    mode = (path.stat().st_mode & 0o7777) if path.exists() else 0o600
     try:
         os.chmod(tmp, mode)
     except OSError:
         pass                                  # Windows 的 chmod 只管只读位，失败不拦写入
-    os.replace(tmp, config.SUBMIT_LEDGER)
+    os.replace(tmp, path)
 
 
 def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
@@ -201,6 +203,28 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
 def ledger() -> dict:
     """stem → 提交条目。给 /results 之类展示与索引用；纯读不加锁。"""
     return _load_ledger()
+
+
+def mark_master_submitted(mawb: str, reviewer: str, receipt: dict = None,
+                          acked_flags: list = None, snapshot: dict = None) -> dict:
+    """主单提交台账（键=归一化主单号）。与分单台账分开：那边以 stem 为键，主单没有原件 stem。
+    snapshot 存提交前公司侧的 AMS_RECORD——整表写回会把没给的列写成 NULL，出事时要能看出抹掉了什么。"""
+    key = norm_no(mawb)
+    with _LEDGER_LOCK:
+        data = _load_ledger(config.MASTER_LEDGER)
+        entry = {"mawb": str(mawb or "").strip(), "reviewer": reviewer,
+                 "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                 "action": (receipt or {}).get("action"),
+                 "acked_flags": [str(a) for a in (acked_flags or [])],
+                 "receipt": receipt or {}, "snapshot": snapshot or {}}
+        data[key] = entry
+        _write_ledger(data, config.MASTER_LEDGER)
+    return entry
+
+
+def master_ledger() -> dict:
+    """归一化主单号 → 主单提交条目。"""
+    return _load_ledger(config.MASTER_LEDGER)
 
 
 def number_index() -> dict:

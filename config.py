@@ -223,6 +223,12 @@ SUBMIT_LEDGER = Path(os.getenv("SUBMIT_LEDGER", str(BASE_DIR / "output" / "submi
 # 公司主单原件接口待 IT——先支持人工放入同一目录跑通录入员"对票面核对"，真接口到位后
 # 由 company_api 把取回的主单原件缓存进这里，路由与前端一行都不用改。
 MAWB_SOURCE_DIR = Path(os.getenv("MAWB_SOURCE_DIR", str(BASE_DIR / "output" / "mawb_source")))
+# 主单解析结果缓存：按归一化主单号一份（含 L1 文本、L2/L3 可编辑面、质检与资料指纹 text_md5）。
+# 主单不是分单——不进 output/raw|air|qc，也不进 Excel/数据库。
+MASTER_DIR = Path(os.getenv("MASTER_DIR", str(BASE_DIR / "output" / "master")))
+# 主单提交台账：mawb2 回传成功后逐条记（主单号→复核人/时间/回执/确认过的红旗/提交前快照）。
+# 单独一张表是因为分单台账以 stem 为键，而主单没有 stem。
+MASTER_LEDGER = Path(os.getenv("MASTER_LEDGER", str(BASE_DIR / "output" / "master_submitted.json")))
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))

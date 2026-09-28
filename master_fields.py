@@ -67,19 +67,21 @@ def build_transcript(mawb_order: dict) -> dict:
     mo = mawb_order or {}
     lines: list[str] = []
 
-    def add(text):
-        text = _txt(text)
+    def add(label: str, value):
+        """值为空（含 None/纯空白）就不出行——`f"{k}: {mo.get(k)}"` 会把 None 印成文本，
+        那会让"公司压根没给这条主单"看起来像"给了但都是空"，白调一次模型。"""
+        text = _txt(value)
         if text:
-            lines.append(text)
+            lines.append(f"{label}: {text}")
 
-    add("MASTER_NO: " + str(mo.get("MASTER_NO") or ""))
+    add("MASTER_NO", mo.get("MASTER_NO"))
     ams = mo.get("AMS_RECORD") if isinstance(mo.get("AMS_RECORD"), dict) else {}
     for k, v in ams.items():
-        if k in AMS_SERVER_COLS or v is None or _txt(v) == "":
+        if k in AMS_SERVER_COLS:
             continue
-        add(f"{k}: {v}")
+        add(k, v)
     for k in OUTER_REF_COLS[2:]:
-        add(f"{k}: {mo.get(k)}")
+        add(k, mo.get(k))
     return {"lines": [{"i": i + 1, "text": t} for i, t in enumerate(lines)],
             "full_text": "\n".join(lines)}
 
@@ -94,11 +96,12 @@ def _int_or_none(v):
 def clean_ams(ams: dict) -> dict:
     """L2 原文口径 → 可提交口径：只动格式不动内容（与分单 to_air 同一条铁律）。
 
-    没值的列一律 None：mawb2 是整表写回，缺列=写 NULL，所以"清空"必须是显式 None，
-    不能靠不发这一列——不发和发 NULL 在公司侧结果相同，但显式写出来才好核对。"""
+    只清洗调用方**给到**的列（不在主单 36 列里的键一律丢掉）：mawb2 是整表写回，
+    "这次没碰"必须是缺键（由 company_api 用库里的现值补齐），"人工清空"才是显式 null。
+    一视同仁地补齐 36 列会把前者误判成后者，等于用一次提交把公司库里没动的列抹成 NULL。"""
     src = ams or {}
     out: dict = {}
-    for col in MASTER_COLS:
+    for col in (c for c in MASTER_COLS if c in src):
         v = src.get(col)
         if v is None or (isinstance(v, str) and not v.strip()):
             out[col] = None

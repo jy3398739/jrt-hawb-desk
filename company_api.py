@@ -4,8 +4,8 @@
 口径（2026-09-26 契约到货）：j9 AMS 录入接口——主单/分单读+写四个接口，全部 POST+JSON，
 请求头 X-Api-Key（主单组与分单组两把 key 互不通用）。MODE=live 时真连，mock 保持原行为：
 - search_mawb：live 走 `j9/hawb` 按主单号拉分单行 + `j9/mawb/` 拉主单原生资料（含 AMS_RECORD），
-  再用本机提交台账把已归档原件的 stem 联结进去（/source 与 /webplan 都靠它）；两种模式都附
-  `parsed`=主单资料确定性拆成的我方字段视图（审核台「送入预览与核对」只读用，不接提交）。
+  再用本机提交台账把已归档原件的 stem 联结进去（/source 与 /webplan 都靠它）。
+- submit_master：主单回传走 `j9/mawb2/`，同样先读后写（SEND_STATUS 闸门 + 整表写回补齐未改列）。
 - submit_order：live 走"先读后写"——`j9/hawb` 读回那一行（SEND_STATUS 闸门：仅 0/2 可更新），
   用复核后的 air 字段按映射覆盖（ORIGIN_NAME→ORGIN_NAME、CONSIGNEE_INFO_CITTY→…_CITY），
   **整行原样带上未改的列**后 POST `j9/hawb2`。整表写回语义：缺列=写 NULL，绝不能只发我们有的字段。
@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 import config
-import master_parse
+import master_fields as mf
 import store
 
 # 读接口的 SHIPPER_INFO/CONSIGNEE_INFO 是 Python repr 的列表串，展示/合并前归一。
@@ -82,13 +82,6 @@ def _unrepr(v):
     return re.sub(r"\s+", " ", s)
 
 
-def _with_parsed(res: dict) -> dict:
-    """附上「我方字段视图」：主单资料确定性拆成 40 字段 + 拆不出的人工清单，供只读核对。
-    放在适配层而不是路由里，是为了让任何消费方拿到的检索结果都自带这一份，不必各算各的。"""
-    res["parsed"] = master_parse.parse_master(res.get("mawb_order") or {})
-    return res
-
-
 def search_mawb(mawb: str) -> dict:
     """按主单号检索该主单及其名下分单。"""
     mawb = str(mawb or "").strip()
@@ -100,8 +93,8 @@ def search_mawb(mawb: str) -> dict:
                    "stem": e.get("stem"), "reviewer": e.get("reviewer", ""),
                    "submitted_at": e.get("submitted_at", "")}
                   for e in store.submitted_by_mawb(mawb)]
-        return _with_parsed({"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
-                             "source_available": store.mawb_source_dir(mawb) is not None})
+        return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
+                "source_available": store.mawb_source_dir(mawb) is not None}
     if not config.COMPANY_API_URL or not config.COMPANY_HAWB_KEY:
         raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_HAWB_KEY/COMPANY_MAWB_KEY")
     nm = store.norm_no(mawb)
@@ -124,9 +117,40 @@ def search_mawb(mawb: str) -> dict:
         orders.append({"hawb": str(row.get("HAWB_NO", "")), "mawb": str(row.get("MAWB_NO", "")),
                        "stem": stem, "reviewer": "—", "submitted_at": "—",
                        "send_status": row.get("SEND_STATUS"), "row": row})
-    return _with_parsed({"mode": "live", "mawb": mawb, "mawb_order": mawb_order,
-                         "hawb_orders": orders,
-                         "source_available": store.mawb_source_dir(mawb) is not None})
+    return {"mode": "live", "mawb": mawb, "mawb_order": mawb_order, "hawb_orders": orders,
+            "source_available": store.mawb_source_dir(mawb) is not None}
+
+
+def submit_master(payload: dict) -> dict:
+    """把一条主单资料回传公司（`POST /api/v1/j9/mawb2/`）。mock 只回带 mode 的回执；live 先读后写。
+
+    先读是为了两件事：① 库里这条记录的 SEND_STATUS 不是 0/2 就说明已发送锁定，直接拒绝且
+    **一个写请求都不发**；② mawb2 是整表写回，没给的列会被写成 NULL，所以要把读到的列原样
+    带上，再用人工核对后的值覆盖。提交体只有主单那 36 列——服务端维护的 HMY_ID/CREATE_TIME/
+    SEND_STATUS 和外层资料块都不发。"""
+    mawb = _norm_mawb((payload or {}).get("mawb", ""))
+    ams = (payload or {}).get("ams") or {}
+    if config.COMPANY_API_MODE != "live":
+        if config.COMPANY_API_MODE != "mock":
+            raise CompanyNotConfigured(f"COMPANY_API_MODE={config.COMPANY_API_MODE!r}：只能是 mock 或 live。")
+        return {"mode": "mock", "accepted": True, "mawb": mawb}
+    if not mawb:
+        raise CompanyApiError("回传公司需要主单号")
+    if not config.COMPANY_API_URL or not config.COMPANY_MAWB_KEY:
+        raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_MAWB_KEY")
+    master = _j9_post("/api/v1/j9/mawb/", {"master_no": mawb}, config.COMPANY_MAWB_KEY)["data"]
+    existing = (master[0].get("AMS_RECORD") if master else None) or {}
+    if existing and existing.get("SEND_STATUS") not in (0, 2, None):
+        raise CompanyLocked(
+            f"{mawb} 不允许更新（j9 侧 SEND_STATUS={existing.get('SEND_STATUS')}，仅 0/2 可改，已发送锁定）")
+    record = {col: existing.get(col) for col in mf.MASTER_COLS}
+    for col in mf.MASTER_COLS:
+        if col in ams:
+            record[col] = ams[col]
+    record["MAWB_NO"] = mf.norm_mawb_hyphen(mawb)
+    res = _j9_post("/api/v1/j9/mawb2/", {"AMS_RECORD": record}, config.COMPANY_MAWB_KEY)
+    return {"mode": "live", "accepted": bool(res.get("success")), "action": res.get("action"),
+            "mawb": mawb, "before": existing}
 
 
 def submit_order(payload: dict) -> dict:
