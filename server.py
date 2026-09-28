@@ -221,6 +221,7 @@ def _company_submit(payload: dict) -> dict:
 @app.get("/company/mawb")
 def company_mawb(background: BackgroundTasks,
                  mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
+                 force: int = Query(0, description="1=越过缓存重跑解析（换了模型或手动重试）"),
                  _: None = Depends(require_web)):
     """按主单号检索：返回该主单原生资料 + 名下分单（带上本机原件 stem 供 /source 对票面核对），
     并**就地起主单解析**（用户定案：检索到就解析；同一主单并发只有一个真跑）。
@@ -232,18 +233,19 @@ def company_mawb(background: BackgroundTasks,
     res = company_api.search_mawb(mawb)
     order = res.get("mawb_order") or {}
     if order:
-        res["master"] = master_pipeline.read_master(mawb) or {"state": "parsing", "mawb": mawb}
-        background.add_task(master_pipeline.ensure, mawb, order)
+        res["master"] = master_pipeline.public(
+            master_pipeline.read_master(mawb) or {"state": "parsing", "mawb": mawb})
+        background.add_task(master_pipeline.ensure, mawb, order, bool(force))
     else:
         # 没资料就没得解析：就地记下 failed，让页面能说清"为什么没有结果"而不是空着
-        res["master"] = master_pipeline.ensure(mawb, order)
+        res["master"] = master_pipeline.public(master_pipeline.ensure(mawb, order))
     return res
 
 
 @app.get("/master/{mawb}")
 def master_result(mawb: str, _: None = Depends(require_web)):
-    """主单解析记录（state/ams 36 列/qc 红旗与保真/L1 原文）。没解析过就 404。"""
-    rec = master_pipeline.read_master(mawb)
+    """主单解析记录（state / 36 列可编辑面 / 红旗与保真 / L1 原文 / 列名中文分组表）。没解析过就 404。"""
+    rec = master_pipeline.public(master_pipeline.read_master(mawb))
     if rec is None:
         raise HTTPException(404, "这条主单还没有解析结果（先在审核台检索一次主单号）")
     return rec
@@ -265,7 +267,8 @@ def master_submit(body: MasterSubmitBody, _: None = Depends(require_web)):
     try:
         return master_pipeline.submit_master(body.model_dump())
     except master_pipeline.MasterFlagged as e:
-        raise HTTPException(400, str(e))
+        # detail 带结构化红旗：前端逐条出「确认无误」按钮，不用解析提示文案
+        raise HTTPException(400, {"message": str(e), "flags": e.flags})
     except company_api.CompanyLocked as e:
         raise HTTPException(409, str(e))
     except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:

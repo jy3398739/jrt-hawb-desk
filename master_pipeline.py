@@ -34,7 +34,12 @@ _lock = threading.Lock()
 
 
 class MasterFlagged(RuntimeError):
-    """主单提交门拦下：还有没清、也没逐条「确认无误」的红旗，或者没人署名。"""
+    """主单提交门拦下：还有没清、也没逐条「确认无误」的红旗，或者没人署名。
+    `flags` 带着原文，前端据此逐条出「确认无误」按钮，不用解析提示文案。"""
+
+    def __init__(self, msg: str, flags: list = None):
+        super().__init__(msg)
+        self.flags = list(flags or [])
 
 
 def _now() -> str:
@@ -113,18 +118,29 @@ def run_master(mawb: str, mawb_order: dict) -> dict:
     return _write(rec)
 
 
-def ensure(mawb: str, mawb_order: dict) -> dict:
+def public(rec: dict | None) -> dict | None:
+    """给前端的形态：附上 36 列的列名/中文名/分组——这份表只有 master_fields 一个真源，
+    前端抄一份迟早和后端漂移。"""
+    if rec is None:
+        return None
+    out = dict(rec)
+    out["fields"] = [list(f) for f in mf.MASTER_FIELDS]
+    return out
+
+
+def ensure(mawb: str, mawb_order: dict, force: bool = False) -> dict:
     """保证有一份"跟当前公司资料对齐"的解析结果，返回该记录。
 
     指纹命中直接回缓存（不再花钱）；没资料就地失败（不能让模型凭空编一条主单）；
-    要重跑时先把 state=parsing 写下去再干活——并发的第二个请求看到 parsing 就只跟不抢。"""
+    要重跑时先把 state=parsing 写下去再干活——并发的第二个请求看到 parsing 就只跟不抢。
+    force=True 越过缓存：换了模型或想把上一次的失败重试一次。"""
     tr = mf.build_transcript(mawb_order)
     md5 = _md5(tr["full_text"])
     with _lock:
         rec = read_master(mawb)
         if rec and rec.get("state") == "parsing":
             return rec
-        if rec and rec.get("text_md5") == md5 and rec.get("state") in ("done", "failed"):
+        if rec and not force and rec.get("text_md5") == md5 and rec.get("state") in ("done", "failed"):
             return rec
         if not tr["lines"]:
             return _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "state": "failed",
@@ -153,7 +169,7 @@ def submit_master(payload: dict) -> dict:
     left = [f for f in flags if f not in acked]
     if left:
         raise MasterFlagged("主单还有未确认的红旗，逐条点「确认无误」后才能回传公司：\n" +
-                            "\n".join(left))
+                            "\n".join(left), left)
     # 只发调用方给过的列（clean_ams 会丢掉没给的）：mawb2 是整表写回，
     # "这次没碰"要由 company_api 用库里的现值补齐，"人工清空"才是显式 null。
     res = company_api.submit_master({"mawb": mawb, "ams": mf.clean_ams(ams)})

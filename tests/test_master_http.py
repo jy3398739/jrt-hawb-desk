@@ -132,6 +132,57 @@ def test_search_in_mock_mode_reports_master_without_network():
         _restore(old, tmp)
 
 
+def test_master_result_carries_the_labeled_field_table():
+    """36 列的列名/中文名/分组只有一份真源（master_fields），前端照着渲染——不再抄第二份。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
+    old = _isolate(tmp)
+    try:
+        auth.ensure_seed()
+        undo = _stub_live()
+        try:
+            c = _login()
+            c.get("/company/mawb", params={"mawb": "176-62400004"})
+            j = c.get("/master/176-62400004").json()
+            cols = [f[0] for f in j["fields"]]
+            assert len(cols) == 36 and "NOTIFYE_INFO_COUNTRY" in cols and "CONSIGNEE_INFO_CITY" in cols
+            assert all(len(f) == 3 for f in j["fields"]), "每列都要带中文名与分组，前端才有段落标题"
+        finally:
+            undo()
+    finally:
+        _restore(old, tmp)
+
+
+def test_force_reparse_runs_the_model_again():
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
+    old = _isolate(tmp)
+    calls = []
+    try:
+        auth.ensure_seed()
+        undo = _stub_live()
+        # 计数桩要盖在 _stub_live 的假提取之上（反过来装会被它替换掉），结束后再还原
+        real = vlm_extract.extract_master
+
+        def counting(tr):
+            calls.append(1)
+            data = {c: None for c in mp.MASTER_COLS}
+            data.update(AMS)
+            return data
+
+        vlm_extract.extract_master = counting
+        try:
+            c = _login()
+            c.get("/company/mawb", params={"mawb": "176-62400004"})
+            c.get("/company/mawb", params={"mawb": "176-62400004"})
+            assert len(calls) == 1, "资料没变就该复用缓存"
+            c.get("/company/mawb", params={"mawb": "176-62400004", "force": "1"})
+            assert len(calls) == 2, "换了模型要能强制重跑一次"
+        finally:
+            vlm_extract.extract_master = real
+            undo()
+    finally:
+        _restore(old, tmp)
+
+
 def test_master_submit_blocks_flags_and_passes_after_ack():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
     old = _isolate(tmp)
@@ -145,6 +196,8 @@ def test_master_submit_blocks_flags_and_passes_after_ack():
             r = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin", "ams": bad})
             assert r.status_code == 400, r.text
             assert "MAWB_NO" in r.text and "SHIPPER_INFO_POSTAL" in r.text
+            assert sorted(r.json()["detail"]["flags"]) == sorted(mp.master_flags(bad)), \
+                "400 要带结构化红旗：前端据此逐条出「确认无误」，不用解析文案"
             assert sent == [], "被门拦下时一次公司请求都不该发"
             flags = mp.master_flags(bad)
             r2 = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
