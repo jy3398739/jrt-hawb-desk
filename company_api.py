@@ -91,7 +91,8 @@ def search_mawb(mawb: str) -> dict:
                 f"COMPANY_API_MODE={config.COMPANY_API_MODE!r}：只能是 mock 或 live。")
         orders = [{"hawb": e.get("hawb", ""), "mawb": e.get("mawb", ""),
                    "stem": e.get("stem"), "reviewer": e.get("reviewer", ""),
-                   "submitted_at": e.get("submitted_at", "")}
+                   "submitted_at": e.get("submitted_at", ""),
+                   "submitted_here": True}
                   for e in store.submitted_by_mawb(mawb)]
         return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
                 "source_available": store.mawb_source_dir(mawb) is not None}
@@ -112,10 +113,17 @@ def search_mawb(mawb: str) -> dict:
                 mo[k] = _unrepr(mo[k])
         mawb_order = mo
     orders = []
+    # j9 的行里没有"谁提交/何时提交"，而本机提交台账有。不 join 的话，刚提交过的票在界面上
+    # 显示两栏"—"，看着像从没动过——SEND_STATUS=0 在公司侧就是"已录入待发送"，两件事必须分开看。
+    mine = {e.get("key"): e for e in store.ledger().values()}
     for row in rows:
-        stem = store.lookup_stem(mawb, str(row.get("HAWB_NO", "")))
-        orders.append({"hawb": str(row.get("HAWB_NO", "")), "mawb": str(row.get("MAWB_NO", "")),
-                       "stem": stem, "reviewer": "—", "submitted_at": "—",
+        hawb = str(row.get("HAWB_NO", ""))
+        stem = store.lookup_stem(mawb, hawb)
+        ent = mine.get(store.number_key(mawb, hawb)) or {}
+        orders.append({"hawb": hawb, "mawb": str(row.get("MAWB_NO", "")),
+                       "stem": stem, "reviewer": ent.get("reviewer") or "—",
+                       "submitted_at": ent.get("submitted_at") or "—",
+                       "submitted_here": bool(ent),
                        "send_status": row.get("SEND_STATUS"), "row": row})
     return {"mode": "live", "mawb": mawb, "mawb_order": mawb_order, "hawb_orders": orders,
             "source_available": store.mawb_source_dir(mawb) is not None}

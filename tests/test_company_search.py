@@ -143,6 +143,31 @@ def test_company_api_live_without_endpoint_never_fakes_or_hits_network():
          config.COMPANY_HAWB_KEY, config.COMPANY_MAWB_KEY) = old
 
 
+def test_live_rows_carry_our_own_submit_record():
+    """live 检索的分单行来自 j9，没有"谁提交/何时提交"这两栏；不 join 本机台账的话，
+    刚提交过的票在界面上看着像从没动过（用户就是被这个问住的）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
+    ou, ol = _isolate(tmp)
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    real_post = company_api._j9_post
+    try:
+        store.mark_submitted("CLA9", "999-95764373", "VCE4373", "马殿齐", {"mode": "live"})
+        company_api._j9_post = lambda path, body, key: {
+            "code": 0, "data": [] if path.endswith("/mawb/") else
+            [{"HAWB_NO": "VCE4373", "MAWB_NO": "999-95764373", "SEND_STATUS": 0}]}
+        config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+        config.COMPANY_MAWB_KEY = config.COMPANY_HAWB_KEY = "k"
+        o = company_api.search_mawb("999-95764373")["hawb_orders"][0]
+        assert o["reviewer"] == "马殿齐", f"本机提交过的人没带出来：{o}"
+        assert o["submitted_at"], "提交时间没带出来"
+        assert o["send_status"] == 0
+    finally:
+        company_api._j9_post = real_post
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old
+        _restore(ou, ol, tmp)
+
+
 def test_company_mawb_requires_login():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
     ou, ol = _isolate(tmp)
@@ -302,3 +327,27 @@ def test_house_list_under_master_moves_to_a_full_width_strip():
     assert _fn(html, "mstCard").count("<table") == 0, "左栏卡片里不该再有表格"
     tab = _fn(html, "mstTable")
     assert "发送状态" in tab or "状态" in tab, "整宽了就把 j9 的发送状态一并显示（录入员要看哪张已发）"
+
+
+def test_send_status_wording_keeps_our_submit_and_company_send_apart():
+    """"待发送"被读成"我这下没提交成功"（用户被 999-95764373 问住的那里）：j9 的 SEND_STATUS
+    说的是公司有没有把分单发给航司，与本台有没有提交回公司是两件事，措辞不能共用一个"发送"。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert '"待发送"' not in html, "0 不能叫「待发送」——提交回公司那一刻它已经是成功状态了"
+    tab = _fn(html, "mstTable")
+    assert "公司发送状态" in tab, "表头点名主语是公司，不是本台"
+    assert "待公司发送" in html and "公司已发送" in html, "状态值要带主语"
+    assert "o.submitted_here" in tab, "本台没提交过的分单要写明白，不能只留一个「—」让人猜"
+
+
+def test_mock_rows_also_carry_submitted_here():
+    """mock 的行本来就来自本机台账，submitted_here 必须给 True；不给的话前端那条
+    「不在本台提交」会在 mock 下说谎，两种模式的行形状也得一致（前端只写一套判断）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_cs_"))
+    ou, ol = _isolate(tmp)
+    try:
+        store.mark_submitted("CLAM", "999-95764373", "VCE4373", "马殿齐", {"mode": "mock"})
+        o = company_api.search_mawb("999-95764373")["hawb_orders"][0]
+        assert o["submitted_here"] is True, f"mock 行该标成本台已提交: {o}"
+    finally:
+        _restore(ou, ol, tmp)

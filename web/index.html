@@ -1431,22 +1431,27 @@ function mstCard(j, mawb){
     : '<span class="hint">公司侧没有这条主单的资料</span>';
   return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>';
 }
-const SEND_TXT = {0:"待发送", 1:"已发送（锁定）", 2:"已改待重发"};
+const SEND_TXT = {0:"待公司发送", 1:"公司已发送（锁定）", 2:"已改·待公司重发"};
 function mstTable(list){
   if (!list.length) return '<p class="hint" style="padding:12px">这条主单下公司还没有分单记录。</p>';
   const rows = list.map(o => {
     const ss = o.send_status === undefined || o.send_status === null ? "—"
              : (SEND_TXT[o.send_status] || o.send_status);
     return "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
-      "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") +
+      "</td><td>" + esc(o.reviewer || "—") + "</td><td>" +
+      (o.submitted_here ? esc(o.submitted_at || "—")
+                        : '<span class="hint">不在本台提交</span>') +
       "</td><td>" + esc(ss) + "</td><td>" +
       (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
               : '<span class="hint">本机无归档</span>') + "</td></tr>";
   }).join("");
   return '<table><colgroup><col style="width:19%"><col style="width:15%"><col style="width:12%">' +
     '<col style="width:18%"><col style="width:16%"><col></colgroup><thead><tr>' +
-    '<th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>发送状态</th><th>票面原件</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>';
+    '<th>分单号</th><th>主单号</th><th>提交人</th><th>提交时间</th><th>公司发送状态</th><th>票面原件</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<p class="hint" style="padding:8px 4px 2px">「提交人/提交时间」是本审核台提交回公司的留痕；' +
+    '「公司发送状态」是公司有没有把这条分单发给航司。' +
+    '待公司发送 = 公司已收到、还没往航司发，不是说本台没提交。</p>';
 }
 /* 一份结果两处落位：左栏只留入口那一行，名下分单表进页面底部整宽卡（264px 里放不下五列） */
 function mstRender(j, mawb){
