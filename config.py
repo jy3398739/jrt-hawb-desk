@@ -169,6 +169,13 @@ def master_model_bundle() -> dict:
             "extra_body": dict(preset.get("extra_body") or {})}
 
 
+def set_master_model(choice: str) -> dict:
+    """运行时切换主单链的模型（审核台用）。空串=不独立，跟分单当前选择走。"""
+    global MASTER_VLM_MODEL
+    MASTER_VLM_MODEL = (choice or "").strip()
+    return master_model_bundle()
+
+
 def master_api_key_configured() -> bool:
     """/health 用：主单链渠道有没有密钥，只报有没有，不碰值本身。"""
     env = master_model_bundle().get("api_key_env")
@@ -219,10 +226,10 @@ def set_model(choice: str) -> dict:
     return info
 
 
-def persist_model_choice(choice: str) -> None:
-    """把选择写回 .env 的 VLM_MODEL 一行（其余行逐字保留，写临时文件再原子替换），
-    重启后仍是这张选择，CLI/批处理下次启动也照它走。
-    换行风格照抄原文件：Windows 上 write_text 会把 \n 统统翻成 \r\n，把一份 LF 的 .env 整篇改脏。"""
+def persist_model_choice(choice: str, env_key: str = "VLM_MODEL") -> None:
+    """把选择写回 .env 的某一行（默认 VLM_MODEL；主单链传 MASTER_VLM_MODEL）。
+    其余行逐字保留，写临时文件再原子替换，重启后与 CLI/批处理都照它走。
+    换行风格照抄原文件：Windows 上 write_text 会把 \\n 统统翻成 \\r\\n，把一份 LF 的 .env 整篇改脏。"""
     raw = ""
     if ENV_FILE.exists():
         with ENV_FILE.open("r", encoding="utf-8", newline="") as f:
@@ -230,15 +237,15 @@ def persist_model_choice(choice: str) -> None:
     nl = "\r\n" if "\r\n" in raw else "\n"
     out, hit = [], False
     for ln in raw.splitlines():
-        if not ln.lstrip().startswith("#") and ln.strip().startswith("VLM_MODEL="):
-            out.append(f"VLM_MODEL={choice}")
+        if not ln.lstrip().startswith("#") and ln.strip().startswith(env_key + "="):
+            out.append(f"{env_key}={choice}")
             hit = True
         else:
             out.append(ln)
     if not hit:
         if out and out[-1].strip():
             out.append("")
-        out.append(f"VLM_MODEL={choice}")
+        out.append(f"{env_key}={choice}")
     tmp = ENV_FILE.with_name(ENV_FILE.name + ".tmp")
     with tmp.open("w", encoding="utf-8", newline="") as f:
         f.write(nl.join(out) + nl)

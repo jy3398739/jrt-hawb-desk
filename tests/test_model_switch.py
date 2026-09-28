@@ -261,12 +261,20 @@ def test_qwen_preset_pins_id_and_carries_thinking_off():
             "预设没声明关思考——带思考那一档会在输出里多烧几千 reasoning token"
         assert config.MODEL_PRESETS["qwen38-flash-bailian"]["max_tokens"] >= 32768, \
             "它是思考型，没有下限会 finish_reason=length、content 空"
+        saved = os.environ.get("DASHSCOPE_API_KEY")
         os.environ.pop("DASHSCOPE_API_KEY", None)
         try:
             config.require_vlm_api_key()
             raise AssertionError("没配 DASHSCOPE_API_KEY 时居然放行了")
         except SystemExit as e:
             assert "DASHSCOPE_API_KEY" in str(e), f"报错要点名该配哪个变量: {e}"
+        finally:
+            # 不还原的话，后面任何读这把密钥的用例都会看到"没配"——曾经让 /models 的
+            # key_configured 断言在全量回归里假失败（单跑正常、连跑就红）。
+            if saved is None:
+                os.environ.pop("DASHSCOPE_API_KEY", None)
+            else:
+                os.environ["DASHSCOPE_API_KEY"] = saved
 
 
 def test_preset_extra_body_reaches_every_model_call():
@@ -391,6 +399,23 @@ def test_api_clients_are_bounded_by_timeout_and_a_single_retry_layer():
             f"SDK 层重试没关，会和 VLM_RETRIES 相乘: max_retries={kw.get('max_retries')!r}"
         assert kw.get("base_url") == config.vlm_base_url(), \
             f"客户端没按当前渠道的端点构造: base_url={kw.get('base_url')!r}"
+
+
+def test_persist_model_choice_can_target_the_master_line():
+    """两条链各写各的行：切主单模型不能顺手把分单那行也改了。"""
+    with tempfile.TemporaryDirectory() as d:
+        env = Path(d) / ".env"
+        env.write_text("VLM_MODEL=intern-s2-official\nMASTER_VLM_MODEL=qwen38-flash-bailian\n", encoding="utf-8")
+        old = config.ENV_FILE
+        config.ENV_FILE = env
+        try:
+            config.persist_model_choice("mimo-v2.6-flash", "MASTER_VLM_MODEL")
+            lines = env.read_text(encoding="utf-8").splitlines()
+            assert "MASTER_VLM_MODEL=mimo-v2.6-flash" in lines
+            assert "VLM_MODEL=intern-s2-official" in lines, "分单那行不该被动"
+            assert sum(1 for l in lines if l.startswith("MASTER_VLM_MODEL=")) == 1, "要就地替换不是再追加一行"
+        finally:
+            config.ENV_FILE = old
 
 
 def test_persist_model_choice_keeps_the_dotenv_file_mode():

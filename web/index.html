@@ -194,8 +194,10 @@ td.k.loc:hover .kk{color:var(--edit)}
   <h1>主分单审核台 · 制单台<span class="ver" id="verTag" title="当前服务端版本"></span></h1>
   <span class="svc"><span class="dot" id="svcDot"></span><span id="svcTxt">正在连接提取服务…</span></span>
   <span class="sp"></span>
-  <label class="f" id="fModel" title="提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
-    模型<select id="modelSel"></select></label>
+  <label class="f" id="fModel" title="分单（HAWB）提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
+    分单模型<select id="modelSel"></select></label>
+  <label class="f" id="fModelM" title="主单（MAWB）提取用的模型，和分单各切各的。主单资料是几百字符的纯文本、没有票面图，2026-09-29 实测同一条 S2 取到 2/36 列、qwen3.8-flash 取到 18/36 列。切换后已缓存的主单解析结果按新模型自动重算">
+    主单模型<select id="modelSelM"></select></label>
   <label class="f">复核人<input id="reviewer" type="text" placeholder="制单员姓名" size="10"></label>
   <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
     <input type="checkbox" id="doSave" checked>落盘留档</label>
@@ -808,10 +810,13 @@ async function probe(){
     /* 服务端跑的是改动前的旧进程时，票面浏览这类新功能会像坏了——直接说清是没重启 */
     const stale = r.stale_files || [];
     $("#svcDot").className = "dot " + (stale.length ? "bad" :
-      (r.key_configured ? "ok" : "bad"));
-    $("#svcTxt").innerHTML = "提取服务在线 · 模型 <b>" + esc(String(r.model || "").split("/").pop()) + "</b>" +
+      ((r.key_configured && r.master_key_configured !== false) ? "ok" : "bad"));
+    const mMod = r.master_model ? String(r.master_model).split("/").pop() : "";
+    $("#svcTxt").innerHTML = "提取服务在线 · 分单模型 <b>" + esc(String(r.model || "").split("/").pop()) + "</b>" +
+      (mMod ? " · 主单模型 <b>" + esc(mMod) + "</b>" : "") +
       (r.vision === false ? " · <b style='color:#8c4a17'>纯文本模型：扫描件会失败，电子单/文字层 PDF 可用</b>" : "") +
       (r.key_configured ? "" : " · <b style='color:#9c2b20'>服务端未配当前模型渠道的密钥</b>") +
+      (r.master_key_configured === false ? " · <b style='color:#9c2b20'>主单链渠道缺密钥</b>" : "") +
       (stale.length ? " · <b style='color:#9c2b20'>服务端代码改了没重启（" + esc(stale.join("、")) +
         "），票面浏览等功能不生效：关掉服务窗口，重跑 4_启动HTTP服务.bat</b>" : "");
     if (stale.length) toast("提取服务还是改动前的旧进程：关掉服务窗口重跑 4_启动HTTP服务.bat，票面浏览才会生效", "bad");
@@ -824,37 +829,48 @@ async function probe(){
 async function loadModels(){
   try{
     const r = await fetch(BASE + "/models").then(x => x.json());
-    const cur = r.current || "";
-    const opts = (r.presets || []).map(p =>
-      '<option value="' + esc(p.key) + '"' + (p.key === cur ? " selected" : "") + ">" + esc(p.label || p.model) + "</option>");
-    if (cur && !(r.presets || []).some(p => p.key === cur)){
-      /* .env 里直接写的是原始模型 id：也列出来并选中，否则下拉会显示成另一个模型，看着像切错了 */
-      opts.unshift('<option value="' + esc(cur) + '" selected>自定义：' + esc(r.effective || cur) + "</option>");
-    }
-    $("#modelSel").innerHTML = opts.join("") || '<option value="">（服务端没给预设）</option>';
+    $("#modelSel").innerHTML = modelOpts(r.presets, r.current, r.effective);
+    /* 主单链用的是另一个模型（服务端 MASTER_VLM_MODEL）。看不到这一项的话，
+       "主单其实换了模型"这件事在界面上完全隐形。 */
+    $("#modelSelM").innerHTML = r.master ? modelOpts(r.presets, r.master.choice, r.master.model)
+                                         : '<option value="">（服务端旧进程，重启后可见）</option>';
   }catch(e){
     $("#modelSel").innerHTML = '<option value="">（服务端旧进程，重启后再试）</option>';
+    $("#modelSelM").innerHTML = $("#modelSel").innerHTML;
   }
 }
-$("#modelSel").addEventListener("change", async e => {
-  const v = e.target.value;
+function modelOpts(presets, cur, effective){
+  const list = (presets || []).map(p =>
+    '<option value="' + esc(p.key) + '"' + (p.key === cur ? " selected" : "") + ">" + esc(p.label || p.model) + "</option>");
+  if (cur && !(presets || []).some(p => p.key === cur)){
+    /* .env 里直接写的是原始模型 id：也列出来并选中，否则下拉会显示成另一个模型，看着像切错了 */
+    list.unshift('<option value="' + esc(cur) + '" selected>自定义：' + esc(effective || cur) + "</option>");
+  }
+  return list.join("") || '<option value="">（服务端没给预设）</option>';
+}
+async function switchModel(sel, chain){
+  const v = sel.value;
   if (!v) return;
-  e.target.disabled = true;
+  sel.disabled = true;
+  const who = chain === "master" ? "主单" : "分单";
   try{
     const r = await fetch(BASE + "/model", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({model: v})});
+      body: JSON.stringify({model: v, chain: chain})});
     const j = await r.json().catch(() => ({detail:"返回不是 JSON（HTTP " + r.status + "）"}));
     if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
-    toast("已切换模型：" + (j.label || j.model) +
+    toast("已切换" + who + "模型：" + (j.label || j.model) +
+          (chain === "master" ? "（已缓存的主单解析会按新模型自动重算）" : "") +
           (j.vision ? "" : "（纯文本：扫描件会失败，电子单/文字层 PDF 可用）"), "ok");
   }catch(err){
-    toast("切换模型失败：" + err.message, "bad");
+    toast("切换" + who + "模型失败：" + err.message, "bad");
   }finally{
-    e.target.disabled = false;
+    sel.disabled = false;
     loadModels(); probe();     // 以服务端实际值为准重画下拉（失败了要退回原选项）
   }
-});
+}
+$("#modelSel").addEventListener("change", e => switchModel(e.target, "hawb"));
+$("#modelSelM").addEventListener("change", e => switchModel(e.target, "master"));
 async function extract(t){
   const fd = new FormData();
   fd.append("file", t.file, t.filename);
@@ -1297,6 +1313,7 @@ function applyRole(){
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
   $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
+  $("#fModelM").hidden = !admin;             // 主单链那条也是
   const rv = $("#reviewer");                 // 复核人 = 登录身份，锁定不让手写（提交留痕即本人）
   rv.value = ME.name; rv.readOnly = true;
 }

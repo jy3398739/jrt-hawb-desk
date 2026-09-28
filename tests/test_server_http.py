@@ -482,6 +482,50 @@ def test_switch_model_needs_admin_login_and_writes_dotenv():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_master_chain_model_is_visible_and_switchable_separately():
+    """两条链各用哪个模型要在界面上看得见、管理员能各切各的：
+    切主单不能把分单那行改掉（反之亦然），否则下拉框就成了互相打架的开关。"""
+    client = TestClient(server.app)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_env_"))
+    old_env_file, old_state = config.ENV_FILE, config.MASTER_VLM_MODEL
+    old_hawb = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION)
+    config.ENV_FILE = tmp / ".env"
+    config.MASTER_VLM_MODEL = "qwen38-flash-bailian"   # 回归入口把它钉成空（=跟分单同渠道），这里显式设
+    config.ENV_FILE.write_text("INTERNLM_API_KEY=sk-x\nDASHSCOPE_API_KEY=sk-y\n"
+                               "VLM_MODEL=intern-s2-official\nMASTER_VLM_MODEL=qwen38-flash-bailian\n",
+                               encoding="utf-8")
+    try:
+        with _stubbed():
+            _login_admin(client)
+            j = client.get("/models").json()
+            assert j["master"]["model"] == "qwen3.8-flash", "/models 没报主单链在用什么模型"
+            assert j["master"]["key_configured"] is True, "主单链密钥状态没报出来"
+            r = client.post("/model", json={"model": "mimo-v2.6-flash", "chain": "master"})
+            assert r.status_code == 200 and r.json()["ok"], r.text
+            assert config.MASTER_VLM_MODEL == "mimo-v2.6-flash", "主单链选择没生效"
+            assert config.VLM_MODEL == old_hawb[1], "切主单模型把分单模型一起换了"
+            text = config.ENV_FILE.read_text(encoding="utf-8")
+            assert "MASTER_VLM_MODEL=mimo-v2.6-flash" in text and "VLM_MODEL=intern-s2-official" in text, text
+            assert client.get("/health").json()["master_model"] == "mimo-v2.6-flash", "健康检查没跟上主单链新模型"
+            assert client.post("/model", json={"model": "intern-s2-official", "chain": "nope"}).status_code == 400, \
+                "乱填 chain 居然放行了"
+    finally:
+        config.ENV_FILE, config.MASTER_VLM_MODEL = old_env_file, old_state
+        config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION = old_hawb
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_desk_shows_both_chain_models():
+    """顶栏要同时看得见两条链的模型（所有人可见状态，仅管理员能切）——
+    只报一个的话，主单用了别的模型这件事在界面上完全隐形。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="modelSelM"' in html, "主单链的模型下拉没了"
+    assert 'switchModel(e.target, "master")' in html and 'switchModel(e.target, "hawb")' in html, \
+        "两个下拉要各自带 chain 参数，否则切主单会把分单模型一起换掉"
+    assert 'id="fModelM"' in html and '$("#fModelM").hidden = !admin' in html, "主单下拉也要仅管理员"
+    assert "主单模型" in html and "分单模型" in html, "顶栏没把两条链分开标"
+
+
 def test_switch_model_rejects_injection_and_empty():
     """选择会拼进 .env：换行/等号/空格能伪造出别的配置行，值必须在门口就挡住。"""
     client = TestClient(server.app)
@@ -502,9 +546,10 @@ def test_desk_model_selector_is_wired_to_models_and_model_endpoints():
     load = re.search(r"async function loadModels\(\)\{(.*?)\n\}", html, re.S)
     assert load and re.search(r'fetch\((?:BASE \+ )?"/models"\)', load.group(1)), "下拉没有从 /models 取数"
     assert "probe(); loadModels();" in html, "启动时没填下拉"
-    handler = re.search(r'\$\("#modelSel"\)\.addEventListener\("change", async e => \{(.*?)\n\}\);', html, re.S)
-    assert handler, "下拉的 change 处理没了：选中新模型也不会切换"
+    handler = re.search(r"async function switchModel\(sel, chain\)\{(.*?)\n\}", html, re.S)
+    assert handler, "下拉的切换处理没了：选中新模型也不会切换"
     assert '"/model"' in handler.group(1), "切换请求没打到 /model"
+    assert "chain: chain" in handler.group(1), "切换请求没带 chain：两条链会互相换掉对方的模型"
     assert "X-API-Key" not in handler.group(1), "前端还在发 X-API-Key：接口密钥已删，只走会话 Cookie"
     probe = re.search(r"async function probe\(\)\{(.*?)\n\}", html, re.S)
     assert probe and "vision" in probe.group(1), "纯文本模型（vision=false）没有在顶栏提示"

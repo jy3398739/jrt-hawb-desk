@@ -211,6 +211,7 @@ _MODEL_ID_OK = re.compile(r"^[A-Za-z0-9._:/-]{1,120}$")
 
 class ModelChoice(BaseModel):
     model: str = ""
+    chain: str = "hawb"      # hawb = 分单链（默认）；master = 主单链
 
 
 def _company_submit(payload: dict) -> dict:
@@ -339,9 +340,12 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
 
 @app.get("/models")
 def models():
-    """可选模型清单。免登录：审核台要先填出下拉（可能还没登录）。"""
+    """可选模型清单 + 两条链各自在用什么。免登录：审核台要先填出下拉（可能还没登录）。"""
+    mb = config.master_model_bundle()
     return {"current": config.VLM_MODEL_CHOICE, "effective": config.VLM_MODEL,
             "vision": config.MODEL_VISION,
+            "master": {"choice": mb["choice"], "model": mb["model"], "vision": mb["vision"],
+                       "label": mb.get("label") or "", "key_configured": config.master_api_key_configured()},
             "presets": [{"key": k, "model": v["model"], "vision": bool(v["vision"]), "label": v["label"]}
                         for k, v in config.MODEL_PRESETS.items()]}
 
@@ -349,18 +353,30 @@ def models():
 @app.post("/model")
 def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
     """切换提取用的模型：本进程立即生效，并写回 .env 供重启后与 CLI/批处理沿用。
-    换模型直接改变提取结果——管理员专属（管理员登录会话）。"""
+    换模型直接改变提取结果——管理员专属（管理员登录会话）。
+    `chain=master` 切的是主单链（写 MASTER_VLM_MODEL 那一行），默认切分单链；两条链互不带对方。"""
     choice = body.model.strip()
+    chain = (body.chain or "hawb").strip().lower()
+    if chain not in ("hawb", "master"):
+        raise HTTPException(400, f"chain 只能是 hawb 或 master，收到 {chain!r}")
     if not choice:
         raise HTTPException(400, "model 不能为空：填预设键（如 intern-s2-official）或 org/模型 id")
     if not _MODEL_ID_OK.match(choice):
         raise HTTPException(400, f"模型名不合法：{choice!r}（只允许字母数字与 . _ - / :）")
+    if chain == "master":
+        info = config.set_master_model(choice)
+        try:
+            config.persist_model_choice(info["choice"], "MASTER_VLM_MODEL")
+        except OSError as e:
+            raise HTTPException(500, f"主单链模型已在本进程切换，但写 .env 失败（重启后仍是旧模型）：{e}")
+        return {"ok": True, "chain": "master", "choice": info["choice"],
+                "model": info["model"], "vision": info["vision"]}
     info = config.set_model(choice)
     try:
         config.persist_model_choice(info["choice"])
     except OSError as e:
         raise HTTPException(500, f"模型已在本进程切换，但写 .env 失败（重启后仍是旧模型）：{e}")
-    return {"ok": True, **info}
+    return {"ok": True, "chain": "hawb", **info}
 
 
 @app.post("/extract")
