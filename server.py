@@ -237,8 +237,8 @@ def company_mawb(background: BackgroundTasks,
     res = company_api.search_mawb(mawb)
     order = res.get("mawb_order") or {}
     if order:
-        res["master"] = master_pipeline.public(
-            master_pipeline.read_master(mawb) or {"state": "parsing", "mawb": mawb})
+        fresh = master_pipeline.fresh_record(mawb, order, bool(force))
+        res["master"] = master_pipeline.public(fresh) if fresh else {"state": "parsing", "mawb": mawb}
         background.add_task(master_pipeline.ensure, mawb, order, bool(force))
     else:
         # 没资料就没得解析：就地记下 failed，让页面能说清"为什么没有结果"而不是空着

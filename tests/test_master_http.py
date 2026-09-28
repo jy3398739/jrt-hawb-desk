@@ -183,6 +183,31 @@ def test_force_reparse_runs_the_model_again():
         _restore(old, tmp)
 
 
+def test_search_does_not_pretend_a_stale_cache_is_fresh():
+    """缓存过期（改了提示词/换了模型）时，检索响应不能把旧结果当"已解析"回给页面——
+    前端只在 parsing 时轮询，报 done 就等于让它一直显示过期解析，直到用户再搜一次。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
+    old = _isolate(tmp)
+    try:
+        auth.ensure_seed()
+        undo = _stub_live()
+        try:
+            c = _login()
+            c.get("/company/mawb", params={"mawb": "176-62400004"})
+            p = config.MASTER_DIR / "17662400004.json"
+            rec = json.loads(p.read_text(encoding="utf-8"))
+            rec["face_md5"] = "过期"                # 装作提示词/列面变了
+            p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+            j = c.get("/company/mawb", params={"mawb": "176-62400004"}).json()
+            assert j["master"]["state"] == "parsing", \
+                f"缓存过期却报 {j['master']['state']}：前端不会轮询，页面就停在旧结果上"
+            assert c.get("/master/176-62400004").json()["state"] == "done", "后台要真的重解析完"
+        finally:
+            undo()
+    finally:
+        _restore(old, tmp)
+
+
 def test_master_submit_blocks_flags_and_passes_after_ack():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
     old = _isolate(tmp)

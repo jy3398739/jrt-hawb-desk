@@ -135,6 +135,23 @@ def _missed_flags(ams: dict, transcript: dict) -> tuple[list, list]:
     return flags, cols
 
 
+def fresh_record(mawb: str, mawb_order: dict, force: bool = False) -> dict | None:
+    """缓存里那份还作不作数（资料、提示词/列面、模型三项都对得上）。
+
+    路由必须先问这个再回前端：过期却报 `done`，前端就不轮询了，页面会停在一次过期解析上
+    ——而改了提示词或换模型后每条主单都会命中这个坑。"""
+    if force:
+        return None
+    rec = read_master(mawb)
+    if not rec or rec.get("state") not in ("done", "failed"):
+        return None
+    tr = mf.build_transcript(mawb_order)
+    if (rec.get("text_md5") == _md5(tr["full_text"]) and rec.get("face_md5") == _face_md5()
+            and rec.get("model") == config.master_model_bundle()["model"]):
+        return rec
+    return None
+
+
 def run_master(mawb: str, mawb_order: dict) -> dict:
     """就地解析一条主单并落盘。失败也落盘（state=failed + 原因），别让它在页面上隐身。"""
     tr = mf.build_transcript(mawb_order)
