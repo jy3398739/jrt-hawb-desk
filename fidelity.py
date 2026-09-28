@@ -123,7 +123,7 @@ def find_missing_hs(raw: dict, transcript: dict, field: str = "GOODS_HS_CODE") -
     """反向核查 HS 码漏抄：票面印着带 HS 标签的码（`HSCODE: 89031200` / `HS Codes: 85389000` / `HS:850152`），
     GOODS_HS_CODE 却没接住。按前 6 位归一比对——平台/国际口径只填 6 位，也算已捕获。
     无标签的裸数字形态（EDC `84742708 (4),84647039 (24)`）明确不覆盖：裸 6-10 位可能是电话/邮编/货值，
-    拿它挂旗误报率不可控。CCSP 八票对格（2026-09-26）坐实 S2/MiMo 各漏过一例且旗全哑。"""
+    拿它挂旗误报率不可控。2026-09-26 八票逐格对台实测坐实：S2/MiMo 各漏过一例且旗全哑。"""
     mine = re.sub(r"\D", "", str(raw.get(field, "") or ""))
     out = []
     for x in transcript.get("lines", []):

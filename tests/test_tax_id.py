@@ -73,7 +73,7 @@ def test_missing_tax_on_real_ticket_is_flagged():
 
 
 def test_missing_tax_catches_eori_labels_from_eu_tickets():
-    """CCSP 平台八票对格坐实（2026-09-26）：欧票把海关号印成 `EORI IT03268900267` / `EORI NO.: IT03599210261`
+    """2026-09-26 八票对台实测坐实：欧票把海关号印成 `EORI IT03268900267` / `EORI NO.: IT03599210261`
     这类形态，标签表里没有 EORI ⇒ 五张全漏、红旗全没响。EORI 进标签后必须抓住；
     号若已被任何字段收走（EORI 列、或还黏在地址行里）则照旧闭嘴，不给复核的人添重复旗。"""
     tr = {"lines": [{"text": t} for t in [

@@ -21,7 +21,7 @@ def test_fidelity_fixture_count():
 
 
 def test_missing_hs_code_when_labelled_on_ticket():
-    """CCSP 对格坐实（2026-09-26）：HS 多带标签印在票面（`HS:7007290000` / `HS Codes: 85389000`），
+    """2026-09-26 八票对台实测坐实：HS 多带标签印在票面（`HS:7007290000` / `HS Codes: 85389000`），
     模型却把 GOODS_HS_CODE 留空（S2 与 MiMo 各坐实一例）——正向保真查不到空值，只能反向。
     判据=标签驱动：票面有 HS 标签行、抽出的 6-10 位码不在我方 GOODS_HS_CODE（按前 6 位比对）就挂旗；
     无标签的裸数字形态（EDC `84742708 (4),84647039 (24)`）明确不覆盖——裸数字可能是电话/邮编/货值。"""

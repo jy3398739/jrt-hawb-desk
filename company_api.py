@@ -4,7 +4,7 @@
 口径（2026-09-26 契约到货）：j9 AMS 录入接口——主单/分单读+写四个接口，全部 POST+JSON，
 请求头 X-Api-Key（主单组与分单组两把 key 互不通用）。MODE=live 时真连，mock 保持原行为：
 - search_mawb：live 走 `j9/hawb` 按主单号拉分单行 + `j9/mawb/` 拉主单原生资料（含 AMS_RECORD），
-  再用本机提交台账把已归档原件的 stem 联结进去（/source 与 /webplan 都靠它）。
+  再用本机提交台账把已归档原件的 stem 联结进去（前端 /source 打开原件靠它）。
 - submit_master：主单回传走 `j9/mawb2/`，同样先读后写（SEND_STATUS 闸门 + 整表写回补齐未改列）。
 - submit_order：live 走"先读后写"——`j9/hawb` 读回那一行（SEND_STATUS 闸门：仅 0/2 可更新），
   用复核后的 air 字段按映射覆盖（ORIGIN_NAME→ORGIN_NAME、CONSIGNEE_INFO_CITTY→…_CITY），

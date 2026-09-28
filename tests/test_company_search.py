@@ -275,12 +275,11 @@ def test_mawb_source_route_guards_roles_and_serves_pdf():
 
 
 def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
-    """2026-09-26 合并：录入员功能并进制单台——主单检索、主单/分单原件、CCSP 填表计划
-    都在 index.html 一个页面里；入口对所有登录角色可见（录入员/制单员同一工作台）。"""
+    """录入员功能并进制单台：主单检索、主单/分单原件都在 index.html 一个页面里；
+    入口对所有登录角色可见（录入员/制单员同一工作台）。"""
     html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert "/company/mawb" in html, "制单台要有主单检索"
     assert "查看主单原件" in html and "/mawb/source/" in html, "制单台要能开主单原件"
-    assert "/webplan/" in html and "填表计划" in html, "CCSP 填表计划要在制单台上"
     assert "mawb_order" in html and "Object.keys" in html, "有没有资料要按接口返回判断"
     assert "公司侧没有这条主单的资料" in html, "查不到时给一句话说明，不再摊一表原始字段"
     assert "function mstCard" in html and _fn(html, "mstCard").count("<table") == 0, \
