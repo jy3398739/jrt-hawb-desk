@@ -289,7 +289,12 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
         stem = str(tk.get("stem") or tk.get("filename") or "").strip()
         if not store.norm_no(mawb) or not store.norm_no(hawb):
             raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
-        receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem})
+        try:
+            receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem, "air": rec})
+        except company_api.CompanyLocked as e:
+            raise HTTPException(409, str(e))
+        except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
+            raise HTTPException(502, f"回传公司失败：{e}")
         acked = tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else []
         entry = store.mark_submitted(stem, mawb, hawb,
                                      str(tk.get("reviewer", "") or ""), receipt, acked_flags=acked)

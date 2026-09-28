@@ -256,12 +256,14 @@ SITE_URL = os.getenv("SITE_URL", "").strip().rstrip("/")
 WORKER_TOKEN = os.getenv("WORKER_TOKEN", "").strip()
 
 # === 公司系统接口（主分单审核台·录入员检索 / 提交回传）===
-# 契约待公司 IT 给（见 company_api.py）：现在一律 mock，绝不外发任何请求。
-# 真接口到位后只改 company_api 里的实现 + 在这里配 COMPANY_API_MODE=live 与端点/密钥，
-# 上层 /submit、/company/mawb 与各角色守卫都不动。
+# 契约已到（2026-09-26，IT《AMS录入接口调用说明》）：j9 AMS 录入接口，主单/分单各一把 key，
+# POST + JSON + 请求头 X-Api-Key，公网 http://j9aiaeapi.justrightlog.com:18080（必须带端口）。
+# 限流每把 key 10 次/秒、200 次/分、3600 次/时。MODE=live 时 search_mawb/submit_order 真连；
+# 密钥只放 .env（COMPANY_MAWB_KEY / COMPANY_HAWB_KEY），绝不写死、绝不进前端。
 COMPANY_API_MODE = (os.getenv("COMPANY_API_MODE", "mock") or "mock").strip().lower()
 COMPANY_API_URL = os.getenv("COMPANY_API_URL", "").strip().rstrip("/")
-COMPANY_API_KEY_ENV = os.getenv("COMPANY_API_KEY_ENV", "").strip()   # 密钥从该环境变量读，绝不写死
+COMPANY_MAWB_KEY = os.getenv("COMPANY_MAWB_KEY", "")   # 主单组（mawb//mawb2/）
+COMPANY_HAWB_KEY = os.getenv("COMPANY_HAWB_KEY", "")   # 分单组（hawb/hawb2），两把互不通用
 
 
 # 支持的输入类型
