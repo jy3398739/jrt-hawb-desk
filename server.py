@@ -460,6 +460,25 @@ def _preview_file(stem: str, d: Path) -> Path:
     raise HTTPException(415, "这张票的原件格式浏览器预览不了（TIFF），请点「下载原件」在本地打开")
 
 
+@app.get("/ticket/{stem}")
+def ticket_result(stem: str, _: None = Depends(require_web)):
+    """按 stem 重开一张已归档的分单：L2 原文口径 + L3 航空口径 + 质检记录 + 本机提交条目。
+    只把落盘的东西原样交回，不在路由里重算——改完仍走 /submit，红旗由服务端按当前值再算一遍。"""
+    name = _safe_stem(stem)
+    if name is None:
+        raise HTTPException(400, "stem 不合法（不接受带路径的名字）")
+    raw_p, air_p = config.OUTPUT_RAW_DIR / f"{name}.json", config.OUTPUT_AIR_DIR / f"{name}.json"
+    if not (raw_p.exists() and air_p.exists()):
+        raise HTTPException(404, f"本机没有 {name} 的解析结果（output/raw 或 output/air 缺文件）")
+    qc_p = config.OUTPUT_QC_DIR / f"{name}.json"
+    qc = json.loads(qc_p.read_text(encoding="utf-8")) if qc_p.exists() else {}
+    return {"stem": name, "filename": qc.get("source_name") or name,
+            "channel": qc.get("channel"), "elapsed": qc.get("elapsed"),
+            "raw": json.loads(raw_p.read_text(encoding="utf-8")),
+            "air": json.loads(air_p.read_text(encoding="utf-8")),
+            "qc": qc, "submitted": store.ledger().get(name)}
+
+
 @app.get("/source/{stem}")
 def source(stem: str, raw: bool = Query(False, description="true=发原件本身（Excel/TIFF 浏览器渲染不了时下载用）"),
            _: None = Depends(require_web)):

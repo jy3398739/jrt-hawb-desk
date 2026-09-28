@@ -1437,7 +1437,9 @@ function mstTable(list){
   const rows = list.map(o => {
     const ss = o.send_status === undefined || o.send_status === null ? "—"
              : (SEND_TXT[o.send_status] || o.send_status);
-    return "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
+    const no = o.stem ? '<a href="#" data-open="' + esc(o.stem) + '" title="点开这张分单的核对页">' + esc(o.hawb) + '</a>'
+                      : esc(o.hawb);
+    return "<tr><td>" + no + "</td><td>" + esc(o.mawb) +
       "</td><td>" + esc(o.reviewer || "—") + "</td><td>" +
       (o.submitted_here ? esc(o.submitted_at || "—")
                         : '<span class="hint">不在本台提交</span>') +
@@ -1460,6 +1462,30 @@ function mstRender(j, mawb){
   $("#mstHawbCard").hidden = !list.length;
   $("#mstHawbCnt").textContent = list.length ? ("主单 " + mawb + " · " + list.length + " 张") : "";
   $("#mstHawbBox").innerHTML = mstTable(list);
+}
+/* 点分单号 = 从主单侧回到那张分单自己的核对页：服务器上落盘的 L2/L3/质检直接装回票据列表，
+   不需要制单员重新上传原件。改完还是走 /submit，红旗由服务端按当前值重算。 */
+async function openHouse(stem){
+  const hit = S.tickets.find(t => t.stem === stem);
+  if (hit){ MV = null; S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  try{
+    const r = await fetch(BASE + "/ticket/" + encodeURIComponent(stem));
+    if (!r.ok){
+      const j = await r.json().catch(() => ({}));
+      throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    }
+    const d = await r.json(), dr = drafts()[stem] || {};
+    const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:true,
+               channel:d.channel, elapsed:d.elapsed,
+               qc: Object.keys(d.qc || {}).length ? d.qc : null,
+               raw:d.raw || {}, air:d.air || {}, airE:dr.airE || {}, ackF:dr.ackF || [],
+               submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
+                                         reviewer:d.submitted.reviewer} : null};
+    S.tickets.push(t); MV = null; S.sel = stem; render();
+    $("#view").scrollIntoView({behavior:"smooth", block:"start"});
+    toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + (t.submitted ? "已提交过，改动需再点提交"
+          : "本机结果，改完点提交") + "）", "ok");
+  }catch(e){ toast("打开这张分单失败：" + (e.message || e), "bad"); }
 }
 async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
@@ -1557,6 +1583,10 @@ async function mvSubmit(){
   finally{ if (btn) btn.disabled = false; render(); }
 }
 $("#mstGo").addEventListener("click", () => mstSearch(false));
+$("#mstHawbBox").addEventListener("click", e => {
+  const a = e.target.closest("[data-open]"); if (!a) return;
+  e.preventDefault(); openHouse(a.dataset.open);
+});
 $("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(false); });
 $("#mstResult").addEventListener("click", async e => {
   const use = e.target.closest("[data-mv]");
