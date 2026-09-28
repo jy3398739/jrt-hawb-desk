@@ -1387,25 +1387,19 @@ $("#acctList").addEventListener("click", async e => {
     }catch(err){ acctErr("删除失败：" + (err.message || err)); }
   }
 });
-/* ── 主单检索（2026-09-26 由录入员检索台并入）：主单原生资料 + 名下分单 + 原件 + CCSP 填表计划 ── */
-function mstFmtVal(v){
-  if (v == null || v === "") return "—";
-  if (typeof v === "object") return esc(JSON.stringify(v));
-  return esc(String(v));
-}
+/* ── 主单检索（2026-09-26 由录入员检索台并入）：入口 + 名下分单 + 原件 + CCSP 填表计划 ── */
 function mstCard(j, mawb){
+  /* 检索卡片只留入口：外层原始字段（JOB_ID/MASTER_NO/几坨拼接资料块）不再摊在这儿——
+     内容和解析结果都在主单核对页看，这里重复一遍只会把左栏撑成一屏流水账（2026-09-28 用户定案）。 */
   const mo = j.mawb_order || {};
   const src = j.source_available
     ? '<a href="' + BASE + '/mawb/source/' + encodeURIComponent(mawb) + '" target="_blank">查看主单原件</a>'
     : '<span class="hint">本机暂无主单原件（可放 output/mawb_source/ 对应主单号目录）</span>';
-  const keys = Object.keys(mo).filter(k => k !== "AMS_RECORD");
-  const rows = keys.length
-    ? '<table><tbody>' + keys.map(k => '<tr><th>' + esc(k) + '</th><td class="j">' + mstFmtVal(mo[k]) + '</td></tr>').join("") + '</tbody></table>'
-    : '<p class="hint">主单业务字段为空（公司侧无该主单，或接口未返回）</p>';
-  const use = Object.keys(mo).length
-    ? '<button class="btn sm" data-mv="' + esc(mawb) + '">送入主单核对</button>' : "";
   const st = ({parsing:"解析中…", done:"已解析", failed:"解析失败"})[j.master && j.master.state] || "待解析";
-  return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>' + rows;
+  const use = Object.keys(mo).length
+    ? '<button class="btn sm" data-mv="' + esc(mawb) + '">送入主单核对</button>'
+    : '<span class="hint">公司侧没有这条主单的资料</span>';
+  return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>';
 }
 function mstTable(list){
   if (!list.length) return "";

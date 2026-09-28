@@ -279,6 +279,9 @@ def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
     assert "/company/mawb" in html, "制单台要有主单检索"
     assert "查看主单原件" in html and "/mawb/source/" in html, "制单台要能开主单原件"
     assert "/webplan/" in html and "填表计划" in html, "CCSP 填表计划要在制单台上"
-    assert "mawb_order" in html and "Object.keys" in html, "主单字段按接口 key 通用渲染"
+    assert "mawb_order" in html and "Object.keys" in html, "有没有资料要按接口返回判断"
+    assert "公司侧没有这条主单的资料" in html, "查不到时给一句话说明，不再摊一表原始字段"
+    assert "function mstCard" in html and _fn(html, "mstCard").count("<table") == 0, \
+        "检索卡片只留入口：外层原始字段表已撤，看内容一律走主单核对页（2026-09-28 用户定案）"
     assert 'id="btnMawb"' in html, "顶栏要有「主单检索」入口"
     assert '$("#btnMawb").hidden = !ME' in html, "入口对所有登录角色可见，只在未登录时藏"
