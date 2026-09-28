@@ -97,12 +97,17 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .badge{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--chip);color:var(--ink2);white-space:nowrap}
 .badge.miss{background:#fdeceb;color:#9c2b20}.badge.warn{background:#fdf1e6;color:#8c4a17}
 .badge.same{background:#eef7f0;color:#1f8b4d}
+.mvnotes{margin:0;padding:2px 16px 10px 30px;font-size:12px;color:var(--ink2);line-height:1.75}
 .ft{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ft.top{border-top:0;border-bottom:1px solid var(--line);background:#fbfcfe}
 .hint{font-size:12px;color:var(--ink2)}
 /* 主单检索卡片（并入自录入员检索台）用的小标题与等宽列 */
 .t2{font-size:13px;font-weight:600;margin:14px 0 4px}
 .j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+/* 主单资料借票面栏展示：那一栏底色是灰的且居中，纯文字要一张左对齐白卡才读得下去 */
+.pv .mvtxt{text-align:left;background:#fff;padding:12px 14px;box-shadow:0 1px 8px rgba(20,32,48,.16)}
+.pv .mvtxt .t2:first-child{margin-top:0}
+.pv .mvtxt .blk{margin:0 0 10px;line-height:1.65;white-space:pre-wrap}
 /* 票面浏览：粘住不滚，核对下面字段时票面一直在视野里。
    .wrap 是 align-items:start，网格不会把这一格拉高，靠内容撑就只有半屏（票面只看到一半、下面空着）——
    直接给死高度，让 PDF/图片铺满整个可视高度。 */
@@ -343,6 +348,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
+/* MV = 「主单资料」只读视图：公司主单检索结果借这两个面板展示（票面预览=公司原始资料，
+   核对=映射后的我方字段）。它不是票据，没有提交按钮——主单写接口 mawb2/ 待接。 */
+let MV = null;
+let MST_LAST = null;             // 最近一次主单检索的原始响应，「送入预览与核对」用它，不必再打一次公司接口
 let ME = null;   // 当前登录者 {name, role}：null = 未登录（显示登录遮罩）
 
 function toast(msg, kind){
@@ -558,7 +567,32 @@ function previewKey(t){
   if (t.file && fileKind(t.filename) !== "other") return "F|" + t.filename;
   return "A|" + (t.stem || t.filename) + (t.state === "done" ? "|d" : "|p");
 }
+/* 主单资料视图：公司 AMS 给的是几坨拼接文本（发货人/收货人/货描），这里原样摊开对着分单票面核，
+   不重排、不补全——猜出来的排版会让人误以为公司就是这么分的列。 */
+const MV_SKIP = {JOB_ID:1, SEND_STATUS:1, CREATE_TIME:1, HMY_ID:1, AMS_RECORD:1};
+function mvPreview(){
+  const mo = MV.order || {};
+  const blocks = Object.keys(mo).filter(k => !MV_SKIP[k] && typeof mo[k] === "string" && mo[k].trim())
+    .map(k => '<div class="t2">' + esc(k) + '</div><div class="j blk">' + esc(mo[k]) + '</div>');
+  if (mo.AMS_RECORD){
+    blocks.push('<div class="t2">AMS_RECORD · 公司已录入结果</div><div class="j blk">' +
+      esc(JSON.stringify(mo.AMS_RECORD, null, 1)) + '</div>');
+  }
+  if (!blocks.length) return '<div class="empty">公司侧这条主单没有原文资料块：接口没返回，或从未录入。</div>';
+  return '<div class="mvtxt">' + blocks.join("") + '</div>';
+}
 function renderPreview(){
+  if (MV){
+    const key = "M|" + MV.mawb;
+    if (key === PREVIEW.key) return;
+    ++_pvSeq;                                   // 作废在飞的票面取回，别让原件盖掉公司资料
+    PREVIEW.key = key;
+    releasePreview();
+    $("#pvName").textContent = "主单 " + MV.mawb + " · 公司 AMS 原文（只读，非票面）";
+    $("#pvTools").hidden = true;
+    pvBody(mvPreview());
+    return;
+  }
   const t = current(), key = previewKey(t);
   /* 定位模式画的是票面页图：切到别的票时必须先退出，否则正常预览会把高亮层冲掉 */
   if (LOC.on && (!t || (t.stem || "") !== LOC.stem)){ exitLocate(); return; }
@@ -975,6 +1009,39 @@ function statusCell(t, k, fl){
 }
 function renderMain(){
   const el = $("#main"), t = current();
+  /* 主单资料视图：借这套字段壳只读展示，没有提交按钮——按 2026-09-26 定案，这一路只展示+核对 */
+  if (MV){
+    const f = MV.parsed.fields || {}, notes = MV.parsed.notes || [];
+    const has = k => f[k] !== undefined && String(f[k]) !== "";
+    const got = FIELDS.filter(([k]) => has(k)).length;
+    let rows = "", last = "";
+    for (const [k, lab, g] of FIELDS){
+      if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
+      rows += `<tr><td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
+        <td class="c"><div class="j" style="padding:7px 8px">${has(k) ? esc(f[k]) : '<span class="hint">—</span>'}</div></td>
+        <td class="s">${has(k) ? '<span class="badge same">公司侧有值</span>' : '<span class="badge">公司侧空</span>'}</td></tr>`;
+    }
+    el.innerHTML = `
+      <div class="hd">
+        <span class="dot warn" style="margin-top:6px"></span>
+        <div><div class="nm">主单 ${esc(MV.mawb)} · 公司 AMS 资料</div>
+          <div class="meta">只读核对，不提交（主单写接口 mawb2/ 未接）· 来源：${MV.parsed.source === "ams_record"
+            ? "公司已录入结果，按列名平移" : "公司资料块确定性拆解（只认带标签的值）"}
+            · 我方 ${FIELDS.length} 列里有值 ${got} 列</div></div>
+        <span class="sp"></span>
+        <button class="btn sm" id="mvBack">返回分单核对</button>
+      </div>
+      <div class="tools">
+        <span class="hint">对照左边公司原文逐列看；<b>缺的列不要在这里改</b>，改动只走分单核对区并提交</span>
+      </div>
+      ${notes.length ? `<div class="t2" style="padding:10px 12px 0">公司主单侧给不了 / 拆不出的列 · 按分单票面人工确认（${notes.length}）</div>
+        <ul class="mvnotes">${notes.map(n => `<li class="j">${esc(n)}</li>`).join("")}</ul>` : ""}
+      <table><thead><tr>
+        <th>字段</th><th class="g">公司 AMS 值 · 只读</th><th style="text-align:right">状态</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+    $("#mvBack").addEventListener("click", () => { MV = null; render(); });
+    return;
+  }
   if (!t){
     el.innerHTML = `<div class="empty" style="padding:64px 20px;text-align:center">上传分单后在这里逐字段核对。</div>`;
     return;
@@ -1147,6 +1214,7 @@ $("#pvNew").addEventListener("click", () => {
 $("#list").addEventListener("click", e => {
   const row = e.target.closest(".row"); if (!row) return;
   const t = S.tickets[+row.dataset.i]; if (!t) return;
+  MV = null;                     // 选中分单就退出"主单资料"视图，回到该票自己的核对与提交
   S.sel = t.stem || t.filename; render();
 });
 $("#drafts").addEventListener("click", e => {
@@ -1285,7 +1353,9 @@ function mstCard(j, mawb){
   const rows = keys.length
     ? '<table><tbody>' + keys.map(k => '<tr><th>' + esc(k) + '</th><td class="j">' + mstFmtVal(mo[k]) + '</td></tr>').join("") + '</tbody></table>'
     : '<p class="hint">主单业务字段为空（公司侧无该主单，或接口未返回）</p>';
-  return '<div class="t2">主单 ' + esc(mawb) + '　' + src + '</div>' + rows;
+  const use = (j.parsed && Object.keys(j.parsed.fields || {}).length)
+    ? '<button class="btn sm" data-mv="' + esc(mawb) + '">送入预览与核对</button>' : "";
+  return '<div class="t2">主单 ' + esc(mawb) + '　' + src + '　' + use + '</div>' + rows;
 }
 function mstTable(list){
   if (!list.length) return "";
@@ -1307,12 +1377,23 @@ async function mstSearch(){
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
     st.textContent = "主单 " + m + " · 名下 " + (j.hawb_orders || []).length + " 张分单（" + j.mode + "）";
+    MST_LAST = j;
     $("#mstResult").innerHTML = mstCard(j, m) + mstTable(j.hawb_orders || []);
   }catch(e){ st.textContent = "检索失败：" + (e.message || e); $("#mstResult").innerHTML = ""; }
 }
 $("#mstGo").addEventListener("click", mstSearch);
 $("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(); });
 $("#mstResult").addEventListener("click", async e => {
+  const use = e.target.closest("[data-mv]");
+  if (use){
+    if (!MST_LAST || !MST_LAST.parsed) return;
+    if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
+    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, parsed: MST_LAST.parsed};
+    render();
+    $("#main").scrollIntoView({behavior: "smooth", block: "start"});
+    toast("已载入主单 " + MV.mawb + " 的公司资料（只读核对，不提交）", "ok");
+    return;
+  }
   const btn = e.target.closest("[data-wp]");
   if (!btn) return;
   const box = document.getElementById("webplanBox");

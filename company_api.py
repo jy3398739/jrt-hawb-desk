@@ -4,7 +4,8 @@
 口径（2026-09-26 契约到货）：j9 AMS 录入接口——主单/分单读+写四个接口，全部 POST+JSON，
 请求头 X-Api-Key（主单组与分单组两把 key 互不通用）。MODE=live 时真连，mock 保持原行为：
 - search_mawb：live 走 `j9/hawb` 按主单号拉分单行 + `j9/mawb/` 拉主单原生资料（含 AMS_RECORD），
-  再用本机提交台账把已归档原件的 stem 联结进去（/source 与 /webplan 都靠它）。
+  再用本机提交台账把已归档原件的 stem 联结进去（/source 与 /webplan 都靠它）；两种模式都附
+  `parsed`=主单资料确定性拆成的我方字段视图（审核台「送入预览与核对」只读用，不接提交）。
 - submit_order：live 走"先读后写"——`j9/hawb` 读回那一行（SEND_STATUS 闸门：仅 0/2 可更新），
   用复核后的 air 字段按映射覆盖（ORIGIN_NAME→ORGIN_NAME、CONSIGNEE_INFO_CITTY→…_CITY），
   **整行原样带上未改的列**后 POST `j9/hawb2`。整表写回语义：缺列=写 NULL，绝不能只发我们有的字段。
@@ -18,6 +19,7 @@ import urllib.error
 import urllib.request
 
 import config
+import master_parse
 import store
 
 # 读接口的 SHIPPER_INFO/CONSIGNEE_INFO 是 Python repr 的列表串，展示/合并前归一。
@@ -80,6 +82,13 @@ def _unrepr(v):
     return re.sub(r"\s+", " ", s)
 
 
+def _with_parsed(res: dict) -> dict:
+    """附上「我方字段视图」：主单资料确定性拆成 40 字段 + 拆不出的人工清单，供只读核对。
+    放在适配层而不是路由里，是为了让任何消费方拿到的检索结果都自带这一份，不必各算各的。"""
+    res["parsed"] = master_parse.parse_master(res.get("mawb_order") or {})
+    return res
+
+
 def search_mawb(mawb: str) -> dict:
     """按主单号检索该主单及其名下分单。"""
     mawb = str(mawb or "").strip()
@@ -91,8 +100,8 @@ def search_mawb(mawb: str) -> dict:
                    "stem": e.get("stem"), "reviewer": e.get("reviewer", ""),
                    "submitted_at": e.get("submitted_at", "")}
                   for e in store.submitted_by_mawb(mawb)]
-        return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
-                "source_available": store.mawb_source_dir(mawb) is not None}
+        return _with_parsed({"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
+                             "source_available": store.mawb_source_dir(mawb) is not None})
     if not config.COMPANY_API_URL or not config.COMPANY_HAWB_KEY:
         raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_HAWB_KEY/COMPANY_MAWB_KEY")
     nm = store.norm_no(mawb)
@@ -115,8 +124,9 @@ def search_mawb(mawb: str) -> dict:
         orders.append({"hawb": str(row.get("HAWB_NO", "")), "mawb": str(row.get("MAWB_NO", "")),
                        "stem": stem, "reviewer": "—", "submitted_at": "—",
                        "send_status": row.get("SEND_STATUS"), "row": row})
-    return {"mode": "live", "mawb": mawb, "mawb_order": mawb_order, "hawb_orders": orders,
-            "source_available": store.mawb_source_dir(mawb) is not None}
+    return _with_parsed({"mode": "live", "mawb": mawb, "mawb_order": mawb_order,
+                         "hawb_orders": orders,
+                         "source_available": store.mawb_source_dir(mawb) is not None})
 
 
 def submit_order(payload: dict) -> dict:

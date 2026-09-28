@@ -75,6 +75,9 @@ def test_search_mawb_live_reads_j9_and_joins_local_stem():
     assert row["hawb"] == "NOAIRWAW050582" and row["stem"] == "T1", "本机归档 stem 要联结进去供 /source"
     assert any(p["path"].endswith("/j9/hawb") and p["key"] == "kh" for p in sent), "分单行用分单 key"
     assert any(p["path"].endswith("/j9/mawb/") and p["key"] == "km" for p in sent), "主单资料用主单 key"
+    p = out["parsed"]
+    assert p and p["source"] == "blobs", "检索响应要带我方字段视图（票面预览/核对区用它）"
+    assert any("CONSIGNEE_INFO_CITTY" in n for n in p["notes"]), "公司给不了的列要逐条进人工清单"
 
 
 def test_submit_live_reads_then_sends_full_merged_row():

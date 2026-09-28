@@ -84,11 +84,34 @@ def test_company_api_mock_returns_orders_with_stem():
         j = company_api.search_mawb("235-96146363")
         assert j["mode"] == "mock" and j["mawb"] == "235-96146363"
         assert j["mawb_order"] == {}, "主单业务字段留空壳，等公司真接口"
+        assert j["parsed"]["fields"] == {}, "空壳也算出空视图：前端据此不显示「送入预览与核对」，不出现假格子"
         assert len(j["hawb_orders"]) == 1
         o = j["hawb_orders"][0]
         assert o["hawb"] == "CLA001" and o["stem"] == "CLA1", "分单带上本机原件 stem 供 /source 打开"
     finally:
         _restore(ou, ol, tmp)
+
+
+def _fn(html: str, name: str) -> str:
+    """截取某个 function 的函数体（到下一个顶层 function 为止），用来做结构性断言。"""
+    start = html.index("function " + name + "(")
+    nxt = html.index("\nfunction ", start + 1)
+    return html[start:nxt]
+
+
+def test_desk_master_view_shows_company_text_and_readonly_check():
+    """「送入预览与核对」这一路（2026-09-26 用户定案：只展示+核对，不接提交）：
+    左栏把公司主单资料块当票面原文展示，右栏按我方字段只读核对，拆不出的列进人工清单。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    pv, mn = _fn(html, "renderPreview"), _fn(html, "renderMain")
+    assert "MV" in pv, "票面预览要有主单分支"
+    mv = _fn(html, "mvPreview")
+    assert "MV.order" in mv and "esc(" in mv, "预览要把公司资料块原文转义后摊开，不重排不补全"
+    assert "MV" in mn, "核对区要有主单分支"
+    assert "parsed.notes" in mn, "拆不出的列要进人工清单"
+    assert mn.index("if (MV") < mn.index('id="submit"'), "主单分支要先 return，页面上不出现提交按钮"
+    assert "不提交" in mn, "主单核对区要写清这一路不提交"
+    assert 'id="mvBack"' in html, "要有退回分单核对的出口"
 
 
 def test_company_api_live_without_endpoint_never_fakes_or_hits_network():

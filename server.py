@@ -220,15 +220,15 @@ def _company_submit(payload: dict) -> dict:
 @app.get("/company/mawb")
 def company_mawb(mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
                  _: None = Depends(require_web)):
-    """按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对）。
+    """按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对），
+    并自带 parsed=主单资料确定性拆成的我方字段视图（审核台只读核对，不接提交）。
     2026-09-26 起对任意登录角色开放——录入员检索台已并入制单台。
 
-    数据来自 company_api.search_mawb——当前是 mock：主单业务字段空壳，分单来自本机提交台账里
-    该主单号下已提交的票。这一步只回我们自己拥有的连接数据（哪些分单挂在这个主单下、原件在
-    哪），不伪造公司的主单字段口径；真接口到位后同结构换成 HTTP 结果。"""
+    数据来自 company_api.search_mawb：mock 模式主单业务字段是空壳、分单来自本机提交台账里该主单号
+    下已提交的票；live 模式换成 j9 AMS 接口的真读结果。结构一致，前端不必分辨。"""
     if not store.norm_no(mawb):
         raise HTTPException(400, "主单号不能为空")
-    return company_api.search_mawb(mawb)
+    return company_api.search_mawb(mawb)   # 结果自带 parsed（master_parse 的我方字段视图），前端只读核对用
 
 
 @app.get("/webplan/{stem}")
