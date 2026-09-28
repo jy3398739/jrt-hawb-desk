@@ -286,3 +286,19 @@ def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
         "检索卡片只留入口：外层原始字段表已撤，看内容一律走主单核对页（2026-09-28 用户定案）"
     assert 'id="btnMawb"' in html, "顶栏要有「主单检索」入口"
     assert '$("#btnMawb").hidden = !ME' in html, "入口对所有登录角色可见，只在未登录时藏"
+
+
+def test_house_list_under_master_moves_to_a_full_width_strip():
+    """名下分单表不能留在 264px 的左栏里：一多就挤成竖排（用户实测截图）。
+    左栏只留入口，分单表落到 .wrap 网格之外的一条整宽卡上。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="mstHawbCard"' in html and 'id="mstHawbBox"' in html, "要有整宽的名下分单卡"
+    wrap, card, toast = html.index('class="wrap"'), html.index('id="mstHawbCard"'), html.index('<div class="toast"')
+    assert wrap < card < toast, "整宽卡必须在 .wrap 之外，否则跟着网格只有三分之一宽"
+    srch = _fn(html, "mstSearch")
+    assert "mstRender(j, m)" in srch, "检索结果要统一走 mstRender（搜索与轮询共用一份落位逻辑）"
+    render = _fn(html, "mstRender")
+    assert "mstHawbBox" in render and "mstHawbCard" in render, "分单表要写进底部整宽卡"
+    assert _fn(html, "mstCard").count("<table") == 0, "左栏卡片里不该再有表格"
+    tab = _fn(html, "mstTable")
+    assert "发送状态" in tab or "状态" in tab, "整宽了就把 j9 的发送状态一并显示（录入员要看哪张已发）"

@@ -98,6 +98,11 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .badge.miss{background:#fdeceb;color:#9c2b20}.badge.warn{background:#fdf1e6;color:#8c4a17}
 .badge.same{background:#eef7f0;color:#1f8b4d}
 .mvnotes{margin:0;padding:2px 16px 10px 30px;font-size:12px;color:var(--ink2);line-height:1.75}
+/* 名下分单整宽卡：一个主单下几十张分单时表格自己滚、表头粘住，
+   不再塞回 264px 的左栏（那里五列就挤成竖排了） */
+#mstHawbBox{max-height:440px;overflow:auto;padding:0 4px 4px}
+#mstHawbBox th{top:0}
+#mstHawbBox td{padding:7px 8px}
 .ft{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ft.top{border-top:0;border-bottom:1px solid var(--line);background:#fbfcfe}
 .hint{font-size:12px;color:var(--ink2)}
@@ -259,7 +264,7 @@ td.k.loc:hover .kk{color:var(--edit)}
         <input id="mstNo" type="text" placeholder="主单号，如 235-96146363" size="18">
         <button class="btn sm pri" id="mstGo">检索</button>
       </div>
-      <div class="hint">按主单号取回主单原生资料（含 AMS_RECORD）与名下分单，对票面核对后打开原件。原录入员检索台已并入本页。</div>
+      <div class="hint">按主单号取回主单原生资料并自动解析；名下分单列在页面底部长条里，原件点开即看。原录入员检索台已并入本页。</div>
       <div id="mstResult"></div>
     </section>
     <section class="card" style="margin-top:14px">
@@ -303,6 +308,11 @@ td.k.loc:hover .kk{color:var(--edit)}
     </div>
   </section>
 </div>
+
+<section class="card" id="mstHawbCard" hidden style="margin-top:14px">
+  <div class="t">名下分单<span class="sp"></span><span class="n" id="mstHawbCnt"></span></div>
+  <div id="mstHawbBox"></div>
+</section>
 
 <div class="toast" id="toast"></div>
 
@@ -1421,14 +1431,30 @@ function mstCard(j, mawb){
     : '<span class="hint">公司侧没有这条主单的资料</span>';
   return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>';
 }
+const SEND_TXT = {0:"待发送", 1:"已发送（锁定）", 2:"已改待重发"};
 function mstTable(list){
-  if (!list.length) return "";
-  const rows = list.map(o => "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
-    "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") + "</td><td>" +
-    (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
-            : '<span class="hint">本机无归档</span>') + "</td></tr>").join("");
-  return '<div class="t2">名下分单</div><table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th></tr></thead><tbody>' +
-    rows + '</tbody></table>';
+  if (!list.length) return '<p class="hint" style="padding:12px">这条主单下公司还没有分单记录。</p>';
+  const rows = list.map(o => {
+    const ss = o.send_status === undefined || o.send_status === null ? "—"
+             : (SEND_TXT[o.send_status] || o.send_status);
+    return "<tr><td>" + esc(o.hawb) + "</td><td>" + esc(o.mawb) +
+      "</td><td>" + esc(o.reviewer || "—") + "</td><td>" + esc(o.submitted_at || "—") +
+      "</td><td>" + esc(ss) + "</td><td>" +
+      (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
+              : '<span class="hint">本机无归档</span>') + "</td></tr>";
+  }).join("");
+  return '<table><colgroup><col style="width:19%"><col style="width:15%"><col style="width:12%">' +
+    '<col style="width:18%"><col style="width:16%"><col></colgroup><thead><tr>' +
+    '<th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>发送状态</th><th>票面原件</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+/* 一份结果两处落位：左栏只留入口那一行，名下分单表进页面底部整宽卡（264px 里放不下五列） */
+function mstRender(j, mawb){
+  $("#mstResult").innerHTML = mstCard(j, mawb);
+  const list = j.hawb_orders || [];
+  $("#mstHawbCard").hidden = !list.length;
+  $("#mstHawbCnt").textContent = list.length ? ("主单 " + mawb + " · " + list.length + " 张") : "";
+  $("#mstHawbBox").innerHTML = mstTable(list);
 }
 async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
@@ -1439,13 +1465,13 @@ async function mstSearch(force){
     if (r.status === 401){ $("#gate").hidden = false; throw new Error("登录已过期，请重新登录"); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
-    st.textContent = "主单 " + m + " · 名下 " + (j.hawb_orders || []).length + " 张分单（" + j.mode + "）";
+    st.textContent = "（" + j.mode + "）";
     MST_LAST = j;
-    $("#mstResult").innerHTML = mstCard(j, m) + mstTable(j.hawb_orders || []);
+    mstRender(j, m);
     if (j.master && j.master.state === "parsing") mstPoll(m);   // 解析在后台跑，卡片跟着刷新状态
   }catch(e){ st.textContent = "检索失败：" + (e.message || e); $("#mstResult").innerHTML = ""; }
 }
-/* 解析中每 2 秒取一次结果：卡片状态、以及（如果已经打开）主单核对区一起更新 */
+/* 解析中每 2 秒取一次结果：入口状态、以及（如果已经打开）主单核对区一起更新 */
 function mstPoll(mawb){
   setTimeout(async () => {
     try{
@@ -1454,7 +1480,7 @@ function mstPoll(mawb){
       const rec = await r.json();
       if (!MST_LAST || MST_LAST.mawb !== mawb) return;
       MST_LAST.master = rec;
-      $("#mstResult").innerHTML = mstCard(MST_LAST, mawb) + mstTable(MST_LAST.hawb_orders || []);
+      $("#mstResult").innerHTML = mstCard(MST_LAST, mawb);
       if (MV && MV.mawb === mawb){ MV.rec = rec; render(); }
       if (rec.state === "parsing") mstPoll(mawb);
     }catch(e){ mstPoll(mawb); }
