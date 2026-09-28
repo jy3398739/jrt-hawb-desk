@@ -77,6 +77,9 @@ def test_health_is_open_and_no_longer_reports_auth_flag():
         r = TestClient(server.app).get("/health")
         assert r.status_code == 200, r.status_code
         assert "auth_required" not in r.json(), "auth_required 已经失去含义：HTTP_API_KEY 删了就该一起走"
+        j = r.json()
+        assert j.get("master_model"), "/health 要报主单链用的模型：两条链默认不同渠道，只报一个会看着像配错"
+        assert "master_key_configured" in j
 
 
 def test_version_label_shows_on_both_ends():

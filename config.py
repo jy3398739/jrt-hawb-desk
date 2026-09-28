@@ -143,6 +143,50 @@ def vlm_base_url() -> str:
     return (_active_preset().get("base_url") or MODELSCOPE_BASE_URL).strip()
 
 
+# === 主单（MAWB）链的模型（2026-09-29 实测定案）===
+# 同一条主单输入：intern-s2-preview 取到 2/36 列（97.8s），qwen3.8-flash 取到 17/36 列（7s）。
+# 主单资料是几百字符的拼接文本、不是整张票面，S2 在这种输入上不稳，所以两条链分开选模型。
+# 设成空串 = 不独立，跟审核台当前选择走（回归就是这么钉的，保证测试不出网）。
+DEFAULT_MASTER_MODEL_KEY = "qwen38-flash-bailian"
+_raw_master_model = os.getenv("MASTER_VLM_MODEL")
+MASTER_VLM_MODEL = (DEFAULT_MASTER_MODEL_KEY if _raw_master_model is None
+                    else _raw_master_model).strip()
+
+
+def master_model_bundle() -> dict:
+    """主单链这次该用哪个模型/端点/参数。选择为空就沿用当前生效选择。"""
+    if not MASTER_VLM_MODEL:
+        return {"choice": VLM_MODEL_CHOICE, "model": VLM_MODEL, "vision": MODEL_VISION,
+                "base_url": vlm_base_url(), "api_key_env": _active_preset().get("api_key_env"),
+                "max_tokens": model_max_tokens(), "extra_body": model_extra_body()}
+    info = resolve_model(MASTER_VLM_MODEL)
+    preset = MODEL_PRESETS.get(str(info["choice"]).lower()) or {}
+    return {"choice": info["choice"], "model": info["model"], "vision": info["vision"],
+            "label": info.get("label") or preset.get("label", ""),
+            "base_url": (preset.get("base_url") or MODELSCOPE_BASE_URL).strip(),
+            "api_key_env": preset.get("api_key_env"),
+            "max_tokens": max(VLM_MAX_TOKENS, int(preset.get("max_tokens", 0))),
+            "extra_body": dict(preset.get("extra_body") or {})}
+
+
+def master_api_key_configured() -> bool:
+    """/health 用：主单链渠道有没有密钥，只报有没有，不碰值本身。"""
+    env = master_model_bundle().get("api_key_env")
+    return bool(os.getenv(env, "").strip()) if env else vlm_api_key_configured()
+
+
+def master_api_key(bundle: dict) -> str:
+    """主单链渠道的密钥。缺了就明确说该配哪个变量，并给出"退回分单同一渠道"这条路。"""
+    env = bundle.get("api_key_env")
+    if not env:
+        return require_api_key()
+    key = os.getenv(env, "").strip()
+    if not key:
+        raise SystemExit(f"主单链渠道缺密钥：请在 .env 配 {env}；"
+                         "或把 MASTER_VLM_MODEL 设成空，让主单跟分单用同一个模型")
+    return key
+
+
 def require_vlm_api_key() -> str:
     """当前渠道的密钥。预设声明了 api_key_env 就从那个环境变量读（如官方书生API 的 INTERNLM_API_KEY），
     没声明即魔搭。切渠道后调用方拿到的 key 与 vlm_base_url() 始终配套。"""

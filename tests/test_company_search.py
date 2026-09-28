@@ -113,6 +113,8 @@ def test_desk_master_view_parses_edits_and_submits():
     assert "fields" in mn and "meta" in mn and "groups" in mn, \
         "列名/分组/只读列（JOB_ID 等）都由后端给，前端不抄第二份表"
     assert "确认无误" in mn, "红旗要能逐条确认（提交门认这个）"
+    assert "missed_cols" in mn and "漏取" in mn, \
+        "'资料里有但没取到'要单独标出来，不能和'资料里本来就没有'混成同一个空格子"
     assert 'id="mvSubmit"' in html and "/master/submit" in html, "主单要有回传公司的出口"
     assert 'id="mvReparse"' in html and "force=1" in html, "换模型后要能强制重解析"
     assert "/master/" in html, "解析在后台跑，前端要轮询状态"

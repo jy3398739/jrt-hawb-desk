@@ -88,34 +88,61 @@ D. 唯一允许的改写：主单号统一成「3位数字-横杠-8位数字」�
 只输出JSON。"""
 
 
-def extract_master(transcript: dict) -> dict:
+def master_prompt(transcript: dict) -> str:
+    """主单这次的完整提示词。单独暴露出来是给缓存算指纹用的：改了提示词或列面，
+    旧解析结果必须失效，否则页面会一直投喂过期结果。"""
+    lines = (transcript or {}).get("lines") or []
+    body = "\n".join(f"{x['i']}: {x['text']}" for x in lines)
+    return MASTER_PROMPT_HEAD + PROMPT_TRANSCRIPT + body
+
+
+def extract_master(transcript: dict, model: dict | None = None) -> dict:
     """主单 L2：公司资料文本 → 36 列原文口径。
 
     主单侧没有版式原件，所以**任何模型都不下发图片**（视觉模型也一样）——给一张不相干的
-    图或空图只会诱发它照图编字段。没有资料文本就直接失败，不能让模型凭空生成一条主单。"""
-    lines = (transcript or {}).get("lines") or []
-    if not lines:
+    图或空图只会诱发它照图编字段。没有资料文本就直接失败，不能让模型凭空生成一条主单。
+    模型默认取 `MASTER_VLM_MODEL`（主单链独立渠道，见 config 里的实测注记）。"""
+    if not (transcript or {}).get("lines"):
         raise RuntimeError("主单资料文本为空，无从解析：公司接口没返回这条主单的资料")
-    body = "\n".join(f"{x['i']}: {x['text']}" for x in lines)
-    prompt = MASTER_PROMPT_HEAD + PROMPT_TRANSCRIPT + body
-    return _chat_json(prompt, [], mf.MASTER_COLS, "主单", numeric=("SLAC",))
+    model = model or config.master_model_bundle()
+    return _chat_json(master_prompt(transcript), [], mf.MASTER_COLS, "主单", numeric=("SLAC",),
+                      client=_client_for(model), model_id=model["model"],
+                      max_tokens=model["max_tokens"], extra_body=model["extra_body"])
+
+
+_extra_clients: dict[str, object] = {}
+
+
+def _client_for(bundle: dict):
+    """按端点各存一份客户端：主单链跑在另一个渠道时不能蹭分单那份，两条链同时在解析
+    也不能互相把对方的渠道顶掉。同端点就复用审核台那份（热切模型时不会各留一份僵尸连接）。"""
+    if bundle["base_url"] == config.vlm_base_url():
+        return _get_client()
+    c = _extra_clients.get(bundle["base_url"])
+    if c is None:
+        c = OpenAI(api_key=config.master_api_key(bundle), base_url=bundle["base_url"],
+                   timeout=config.VLM_TIMEOUT, max_retries=0)
+        _extra_clients[bundle["base_url"]] = c
+    return c
 
 
 def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
-               numeric: tuple = ("PIECES", "SLAC", "WEIGHT")) -> dict:
+               numeric: tuple = ("PIECES", "SLAC", "WEIGHT"), client=None,
+               model_id: str | None = None, max_tokens: int | None = None,
+               extra_body: dict | None = None) -> dict:
     """发一次提取请求并解析 JSON，缺列补齐（数值列补 None，其余补空串）。失败按 VLM_RETRIES 重试。"""
-    client = _get_client()
+    client = client or _get_client()
     content = [{"type": "image_url", "image_url": {"url": u}} for u in urls]
     content.append({"type": "text", "text": prompt})
     last_err = None
     for attempt in range(config.VLM_RETRIES):
         try:
             resp = client.chat.completions.create(
-                model=config.VLM_MODEL,
+                model=model_id or config.VLM_MODEL,
                 messages=[{"role": "user", "content": content}],
-                max_tokens=config.model_max_tokens(),
+                max_tokens=max_tokens if max_tokens is not None else config.model_max_tokens(),
                 temperature=0.0,
-                extra_body=config.model_extra_body(),
+                extra_body=config.model_extra_body() if extra_body is None else extra_body,
             )
             text = resp.choices[0].message.content.strip()
             if text.startswith("```"):

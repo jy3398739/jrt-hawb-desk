@@ -90,32 +90,77 @@ def _write(rec: dict) -> dict:
 
 
 def master_flags(ams: dict, transcript: dict | None = None) -> list:
-    """主单红旗清单（服务端重算用，前端传来的旗一律不信）。"""
-    return validate_master(mf.clean_ams(ams), transcript)
+    """主单红旗清单（服务端重算用，前端传来的旗一律不信）。
+
+    漏取也算旗：提交门重算时若不算它，"资料里有值但这次没填"的列会直接被写成 NULL。"""
+    cleaned = mf.clean_ams(ams)
+    flags = validate_master(cleaned, transcript)
+    if transcript:
+        flags += _missed_flags(cleaned, transcript)[0]
+    return flags
+
+
+def _face_md5() -> str:
+    """提示词 + 列面的指纹。改了 prompt、加了列，旧解析结果必须作废——否则页面会一直
+    投喂过期结果（2026-09-29 用户实撞：176 那条显示 5/36，重读公司接口实有 21 列）。"""
+    return _md5(vlm_extract.MASTER_PROMPT_HEAD + "|" + ",".join(mf.MASTER_COLS))
+
+
+_AMS_LINE = re.compile(r"^([A-Z][A-Z0-9_]*):[ \t]*(.+)$")
+_COL_SET = set(MASTER_COLS)
+
+
+def missed_cols(ams: dict, transcript: dict) -> list:
+    """L1 里明明有「列名: 值」、结果却是空 → 模型漏取，不是"资料里没有"。
+
+    这两件事必须分开说：混在一起，复核人只能对着一屏空格子猜；而 mawb2 是整表写回，
+    漏取的那一列提交后会被写成 NULL，等于用一次提交把公司库里已有的值抹掉。"""
+    have: dict[str, str] = {}
+    for x in (transcript or {}).get("lines") or []:
+        m = _AMS_LINE.match(str(x.get("text", "")))
+        if m and m.group(1) in _COL_SET and m.group(2).strip():
+            have.setdefault(m.group(1), m.group(2).strip())
+    return [k for k in MASTER_COLS if not (ams or {}).get(k) and have.get(k)]
+
+
+def _missed_flags(ams: dict, transcript: dict) -> tuple[list, list]:
+    cols = missed_cols(ams, transcript)
+    have = {}
+    for x in (transcript or {}).get("lines") or []:
+        m = _AMS_LINE.match(str(x.get("text", "")))
+        if m:
+            have.setdefault(m.group(1), m.group(2).strip())
+    flags = [f"{k} 漏取：资料里有「{have[k][:60]}」而这一列是空，直接提交会把公司库里这列写成 NULL"
+             for k in cols]
+    return flags, cols
 
 
 def run_master(mawb: str, mawb_order: dict) -> dict:
     """就地解析一条主单并落盘。失败也落盘（state=failed + 原因），别让它在页面上隐身。"""
     tr = mf.build_transcript(mawb_order)
+    bundle = config.master_model_bundle()
     t0 = time.time()
     rec = {"mawb": str(mawb or "").strip(), "text_md5": _md5(tr["full_text"]),
-           "model": config.VLM_MODEL, "started_at": _now(), "transcript": tr,
+           "face_md5": _face_md5(), "model": bundle["model"],
+           "started_at": _now(), "transcript": tr,
            "outer": {k: (mawb_order or {}).get(k) for k in mf.OUTER_REF_COLS},
            "ams": {}, "ams_raw": {}, "qc": None, "error": ""}
     try:
-        raw = vlm_extract.extract_master(tr)
+        raw = vlm_extract.extract_master(tr, model=bundle)
         ams = mf.clean_ams(raw)
         fid = verify_fidelity(raw, tr, short=_SHORT, long=_LONG,
                               hs_field="GOODS_INFO_HSCODE", tax=False)
-        flags = validate_master(ams, tr)
+        flags = validate_master(ams, tr) + _missed_flags(ams, tr)[0]
         rec.update({"state": "done", "ams_raw": raw, "ams": ams,
                     "qc": {"flags": flags, "needs_review": bool(flags),
+                           "missed_cols": missed_cols(ams, tr),
                            "fidelity": {"checked": fid["checked"], "passed": fid["passed"],
                                         "failed": fid["failed"], "sources": fid["sources"]},
                            "missing_mawb": [], "source_name": "公司主单资料"}})
     except Exception as e:
         rec.update({"state": "failed", "error": f"{type(e).__name__}: {e}",
-                    "qc": {"flags": [f"主单解析失败 {e}"], "needs_review": True, "fidelity": None}})
+                    "qc": {"flags": [f"主单解析失败 {e}"], "needs_review": True,
+                           "missed_cols": [], "fidelity": None}})
     rec["elapsed"] = round(time.time() - t0, 1)
     rec["updated_at"] = _now()
     return _write(rec)
@@ -142,21 +187,24 @@ def ensure(mawb: str, mawb_order: dict, force: bool = False) -> dict:
     要重跑时先把 state=parsing 写下去再干活——并发的第二个请求看到 parsing 就只跟不抢。
     force=True 越过缓存：换了模型或想把上一次的失败重试一次。"""
     tr = mf.build_transcript(mawb_order)
-    md5 = _md5(tr["full_text"])
+    md5, face = _md5(tr["full_text"]), _face_md5()
+    model = config.master_model_bundle()["model"]
     with _lock:
         rec = read_master(mawb)
         if rec and rec.get("state") == "parsing":
             return rec
-        if rec and not force and rec.get("text_md5") == md5 and rec.get("state") in ("done", "failed"):
+        if (rec and not force and rec.get("text_md5") == md5 and rec.get("face_md5") == face
+                and rec.get("model") == model and rec.get("state") in ("done", "failed")):
             return rec
         if not tr["lines"]:
-            return _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "state": "failed",
-                           "model": config.VLM_MODEL, "transcript": tr, "ams": {}, "ams_raw": {},
+            return _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "face_md5": face,
+                           "model": model, "state": "failed",
+                           "transcript": tr, "ams": {}, "ams_raw": {},
                            "error": "主单资料文本为空，无从解析：公司接口没返回这条主单的资料",
                            "qc": {"flags": ["主单资料为空"], "needs_review": True, "fidelity": None},
                            "started_at": _now(), "updated_at": _now(), "elapsed": 0.0})
-        _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "state": "parsing",
-                "model": config.VLM_MODEL, "transcript": tr, "ams": {}, "ams_raw": {},
+        _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "face_md5": face, "model": model,
+                "state": "parsing", "transcript": tr, "ams": {}, "ams_raw": {},
                 "error": "", "qc": None, "started_at": _now(), "updated_at": _now()})
     return run_master(mawb, mawb_order)
 

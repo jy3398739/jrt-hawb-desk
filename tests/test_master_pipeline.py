@@ -12,6 +12,7 @@ import company_api
 import config
 import master_pipeline as mp
 import vlm_extract
+import vlm_extract
 
 AMS_OUT = {"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "841290901", "SLAC": 10}
 ORDER = {"MASTER_NO": "176-62400004",
@@ -40,7 +41,7 @@ def _stub_extract(reply=None, calls=None):
     real = vlm_extract.extract_master
     box = calls if calls is not None else []
 
-    def fake(transcript):
+    def fake(transcript, **_kw):
         box.append(1)
         data = {c: None for c in mp.MASTER_COLS}
         data.update(reply if reply is not None else dict(AMS_OUT,
@@ -93,6 +94,59 @@ def test_public_exposes_group_labels_and_readonly_meta():
         _restore(old, tmp)
 
 
+def test_missed_ams_column_is_named_as_a_red_flag():
+    """公司 AMS_RECORD 里明明有值、模型却没取 → 报"漏取"并进提交门。
+    不区分"资料里没有"和"有但没提出来"，复核人只能对着一堆空格子猜；而整表写回会把
+    这列写成 NULL，等于用一次提交把公司库里已有的值抹掉。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    thin = {c: None for c in mp.MASTER_COLS}
+    thin.update({"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "841290901"})   # 故意漏掉发货人那一列
+    box, undo = _stub_extract(reply=thin)
+    order = dict(ORDER, AMS_RECORD=dict(ORDER["AMS_RECORD"],
+                                        SHIPPER_INFO_COMP_NAME="METSO (TIANJIN) INVESTMENT CO., LTD."))
+    try:
+        rec = mp.run_master("176-62400004", order)
+        flags = "\n".join(rec["qc"]["flags"])
+        assert "漏取" in flags and "SHIPPER_INFO_COMP_NAME" in flags, rec["qc"]["flags"]
+        assert "SHIPPER_INFO_COMP_NAME" in rec["qc"]["missed_cols"]
+        assert "NOTIFY_INFO_EMAIL" not in rec["qc"]["missed_cols"], "资料里本来就没有，不该算漏取"
+        assert rec["qc"]["needs_review"] is True, "漏取必须卡提交门"
+        # 提交门是服务端按当前值重算的，所以漏取也必须出现在 master_flags 里
+        again = mp.master_flags({"MAWB_NO": "176-62400004"}, rec["transcript"])
+        assert any("漏取" in f and "SHIPPER_INFO_COMP_NAME" in f for f in again), again
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_cache_invalidates_when_prompt_or_model_changes():
+    """2026-09-29 用户实撞：改了提示词/换了模型，旧缓存还在投喂过期结果（页面显示 5/36，
+    公司侧实有 21 列）。所以命中条件除资料指纹外还要看"提示词+列面"指纹和当时用的模型。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    old_prompt, old_model = vlm_extract.MASTER_PROMPT_HEAD, config.MASTER_VLM_MODEL
+    try:
+        assert mp.ensure("176-62400004", ORDER)["state"] == "done" and len(box) == 1
+        assert mp.ensure("176-62400004", ORDER)["state"] == "done" and len(box) == 1, "什么都没改不该重跑"
+
+        vlm_extract.MASTER_PROMPT_HEAD = old_prompt + "\n⑥ 新增一条口径\n"
+        mp.ensure("176-62400004", ORDER)
+        assert len(box) == 2, "提示词变了必须重解析"
+
+        vlm_extract.MASTER_PROMPT_HEAD = old_prompt
+        config.MASTER_VLM_MODEL = ""          # 换渠道（模型 id 变了）同样作废
+        mp.ensure("176-62400004", ORDER)
+        assert len(box) == 3, "换模型后必须重解析，否则对比不了、也看不到新模型的效果"
+    finally:
+        vlm_extract.MASTER_PROMPT_HEAD, config.MASTER_VLM_MODEL = old_prompt, old_model
+        undo()
+        _restore(old, tmp)
+
+
 def test_cache_hit_skips_the_model_and_revalidates_on_new_text():
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
@@ -132,7 +186,7 @@ def test_extract_failure_is_recorded_not_swallowed():
     old = _use_tmp(tmp)
     real = vlm_extract.extract_master
 
-    def boom(transcript):
+    def boom(transcript, **_kw):
         raise RuntimeError("模型无响应")
 
     vlm_extract.extract_master = boom
@@ -154,7 +208,7 @@ def test_inflight_master_is_not_parsed_twice():
     gate = threading.Event()
     real = vlm_extract.extract_master
 
-    def slow(transcript):
+    def slow(transcript, **_kw):
         gate.wait(3)
         return real(transcript)
 

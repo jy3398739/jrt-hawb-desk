@@ -32,6 +32,9 @@ os.environ["COMPANY_API_MODE"] = "mock"
 os.environ["COMPANY_API_URL"] = ""
 os.environ["COMPANY_MAWB_KEY"] = ""
 os.environ["COMPANY_HAWB_KEY"] = ""
+# 主单链默认走另一个渠道（MASTER_VLM_MODEL=qwen38-flash-bailian）。回归里钉成空串=跟分单同渠道，
+# 这样假客户端能拦住真实请求；不钉的话测试会真打百炼、真花钱。
+os.environ["MASTER_VLM_MODEL"] = ""
 
 
 def _load_modules(only: str):

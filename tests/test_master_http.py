@@ -63,7 +63,7 @@ def _stub_live(sent=None, master_rows=None):
             return {"code": 0, "data": []}
         raise AssertionError("未知路径 " + path)
 
-    def fake_extract(transcript):
+    def fake_extract(transcript, **_kw):
         data = {c: None for c in mp.MASTER_COLS}
         data.update(AMS)
         return data
@@ -162,7 +162,7 @@ def test_force_reparse_runs_the_model_again():
         # 计数桩要盖在 _stub_live 的假提取之上（反过来装会被它替换掉），结束后再还原
         real = vlm_extract.extract_master
 
-        def counting(tr):
+        def counting(tr, **_kw):
             calls.append(1)
             data = {c: None for c in mp.MASTER_COLS}
             data.update(AMS)

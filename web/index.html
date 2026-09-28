@@ -1016,6 +1016,7 @@ function renderMain(){
   if (MV){
     const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
     const vals = mvValues(), left = flags.filter(f => !MV.acked.includes(f));
+    const missed = (qc.missed_cols) || [];
     const chips = flags.map(f => {
       const done = MV.acked.includes(f);
       const hard = f.includes("缺失") || f.startsWith("保真") || f.includes("失败");
@@ -1040,12 +1041,14 @@ function renderMain(){
       openGroup(g);
       const v = vals[k] == null ? "" : String(vals[k]);
       const hit = flags.filter(f => f.includes(k)).length;
-      rows += `<tr id="mf-${k}" class="${hit ? "flag" : ""}">
+      const miss = missed.includes(k);
+      rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
         <td class="c v${k in MV.edit ? " edited" : ""}">${MV_LONG.has(k)
           ? `<textarea data-mk="${k}">${esc(v)}</textarea>` : `<input data-mk="${k}" value="${esc(v)}">`}</td>
-        <td class="s">${hit ? `<span class="badge warn">红旗 ${hit}</span>`
-          : (v ? `<span class="badge same">有值</span>` : `<span class="badge">空</span>`)}</td></tr>`;
+        <td class="s">${miss ? `<span class="badge miss">漏取</span>`
+          : hit ? `<span class="badge warn">红旗 ${hit}</span>`
+          : (v ? `<span class="badge same">有值</span>` : `<span class="badge">资料没提</span>`)}</td></tr>`;
     }
     const st = rec.state === "done" ? (left.length ? "解析完成，有红旗待处理" : "解析完成，无红旗")
              : rec.state === "parsing" ? "解析中（约 7-20 秒）…" : "解析失败";
