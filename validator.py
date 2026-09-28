@@ -4,7 +4,8 @@
 """
 import re
 
-from hawb2json import TAX_PREFIX_RE
+from hawb2json import TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax
+from master_fields import MASTER_LIMIT50
 
 # 电话国际区号 -> ISO2（只收录样本中出现的，按需扩充）
 TEL_COUNTRY_CODES = {
@@ -121,4 +122,71 @@ def validate_air(d: dict) -> list:
         v = str(d.get(k, "")).strip()
         if v and not re.fullmatch(r"[A-Z]{3}", v):
             warns.append(f"{k} 未转成 IATA 三字码: {v!r}（码表缺项，需补 CITY_IATA）")
+    return warns
+
+
+# ── 主单（MAWB）侧：公司 AMS_RECORD 是另一套列面，所以是另一张判据表 ──────────────
+# 判据与分单同源（区号↔国家、EORI 形态、单号格式、限长），只是作用在公司列名上。
+_MASTER_GROUPS = (("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
+                  ("CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_TEL"),
+                  ("NOTIFYE_INFO_COUNTRY", "NOTIFY_INFO_TEL"))
+_MASTER_EORI = ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI", "NOTIFY_INFO_EORI")
+_MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
+
+
+def validate_master(ams: dict, transcript: dict | None = None) -> list:
+    """主单可提交列的红旗。
+
+    主单表**没有税号列**：资料里印着 USCI/CNPJ/VAT 时要报"无处落点"交人工定夺，
+    而不是让模型把税号塞进 EORI（EORI 只能是两位国家字母开头的号码）。
+    限长 50 那九列是公司文档写死的 400 硬线，提前报出来比让人撞接口强。"""
+    d = ams or {}
+    warns: list[str] = []
+
+    mawb = str(d.get("MAWB_NO", "") or "").strip()
+    if not mawb:
+        warns.append("MAWB_NO 缺失（主单号是提交定位键）")
+    elif not _MAWB_HARD.match(mawb):
+        warns.append(f"MAWB_NO 格式必须为 3位-横杠-8位（如 176-62400004）: {mawb!r}，公司会直接 400")
+
+    slac = d.get("SLAC")
+    if isinstance(slac, str) and slac.strip():
+        try:
+            int(float(slac.strip()))
+        except ValueError:
+            warns.append(f"SLAC 必须为整数: {slac!r}")
+
+    for col in MASTER_LIMIT50:
+        v = str(d.get(col, "") or "")
+        if len(v) > 50:
+            warns.append(f"{col} 长度不能超过 50 字符（当前 {len(v)}），公司会直接 400")
+
+    for cfield, tfield in _MASTER_GROUPS:
+        tel = re.sub(r"\D", "", str(d.get(tfield, "") or ""))
+        country = str(d.get(cfield, "") or "").strip().upper()
+        if tel.startswith("00"):
+            tel = tel[2:]
+        if tel and len(country) == 2:
+            for cc, iso in sorted(TEL_COUNTRY_CODES.items(), key=lambda x: -len(x[0])):
+                if tel.startswith(cc):
+                    if iso != country:
+                        warns.append(f"{tfield} 电话区号 +{cc}({iso}) 与 {cfield} {country} 不一致，疑似电话串边")
+                    break
+
+    for k in _MASTER_EORI:
+        v = str(d.get(k, "") or "").strip()
+        if v and not re.fullmatch(r"[A-Za-z]{2}[A-Za-z0-9]{6,15}", v):
+            warns.append(f"{k} 形态异常: {v!r}（EORI 是两位国家字母开头；USCI/CNPJ 一类税号主单表没有列，别塞进来）")
+
+    if transcript:
+        text = transcript.get("full_text") or " ".join(
+            str(x.get("text", "")) for x in transcript.get("lines", []))
+        have = " ".join(str(v) for v in d.values() if isinstance(v, str))
+        seen = set()
+        for m in TAX_LABEL_RE.finditer(text):
+            label, num = str(m.group(1)), clean_tax(m.group(2))
+            if label.upper().startswith("EORI") or not num or num in seen or num in have:
+                continue
+            seen.add(num)
+            warns.append(f"资料里有税号 {label} {num}，但主单表没有税号列：确认公司侧落点，不要塞进 EORI")
     return warns

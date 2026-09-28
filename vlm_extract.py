@@ -60,6 +60,77 @@ PROMPT_TEXT_ONLY = """【本次没有图片】当前模型不支持图片输入�
 
 """
 
+# ── 主单（MAWB）侧：字段表由 master_fields 单一真源生成，prompt 与提交体不可能各说一套 ──
+import master_fields as mf  # noqa: E402  （放在常量之后：prompt 需要用到上面的转录段）
+
+_MASTER_COLS_TEXT = "\n".join(f"- {c}（{lab}）" for c, lab, _g in mf.MASTER_FIELDS)
+_MASTER_COUNT = len(mf.MASTER_COLS)
+
+MASTER_PROMPT_HEAD = f"""你是航空主单(MAWB)资料提取员。下面给你的是公司系统里这条主单的资料文本（每行形如「列名: 值」，另有几坨拼接资料块），本次没有票面图片，也没有分单。
+请只输出下面列出的 {_MASTER_COUNT} 个主单列，输出纯JSON（不要markdown代码块、不要解释文字、不要新增列）。
+
+【主单口径 —— 与分单不同】
+① 这是主单资料，不是分单票面：下面清单之外的东西一律不出现，尤其不要凭空造列、不要从发货人城市之类推算任何值。
+② 通知人（NOTIFY 开头那些列）是独立一组，只能从 NOTIFY_INFO 那段资料里取；严禁把通知人并进收货人 CONSIGNEE_*，也严禁反过来。
+③ 主单表没有税号列：USCI/CNPJ/RFC/GST 一类税号在这里没有落点，不要塞进 EORI（EORI 只能是两位国家字母开头的号码）。资料里有这类号而无处安放时，留空即可，由质检提示人工定夺。
+④ 列名照公司写法：通知人国家列就叫 NOTIFYE_INFO_COUNTRY（多个 E），收货人城市叫 CONSIGNEE_INFO_CITY（单 T）——那不是笔误，别改。
+
+【保真铁律】
+A. 每个字段值必须是资料文本的逐字摘录，能在上面找到完全相同的字符串（忽略换行与多余空白差异）。
+B. 禁止改写：国家照抄原文写法、公司名/地址照抄原样（不加空格、不改标点、不纠正疑似印刷错误）、电话/传真/EORI 照抄字符。
+C. 找不到的列填 null，不要猜、不要用常识补全。
+D. 唯一允许的改写：主单号统一成「3位数字-横杠-8位数字」。
+
+【列清单】
+{_MASTER_COLS_TEXT}
+
+只输出JSON。"""
+
+
+def extract_master(transcript: dict) -> dict:
+    """主单 L2：公司资料文本 → 36 列原文口径。
+
+    主单侧没有版式原件，所以**任何模型都不下发图片**（视觉模型也一样）——给一张不相干的
+    图或空图只会诱发它照图编字段。没有资料文本就直接失败，不能让模型凭空生成一条主单。"""
+    lines = (transcript or {}).get("lines") or []
+    if not lines:
+        raise RuntimeError("主单资料文本为空，无从解析：公司接口没返回这条主单的资料")
+    body = "\n".join(f"{x['i']}: {x['text']}" for x in lines)
+    prompt = MASTER_PROMPT_HEAD + PROMPT_TRANSCRIPT + body
+    return _chat_json(prompt, [], mf.MASTER_COLS, "主单", numeric=("SLAC",))
+
+
+def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
+               numeric: tuple = ("PIECES", "SLAC", "WEIGHT")) -> dict:
+    """发一次提取请求并解析 JSON，缺列补齐（数值列补 None，其余补空串）。失败按 VLM_RETRIES 重试。"""
+    client = _get_client()
+    content = [{"type": "image_url", "image_url": {"url": u}} for u in urls]
+    content.append({"type": "text", "text": prompt})
+    last_err = None
+    for attempt in range(config.VLM_RETRIES):
+        try:
+            resp = client.chat.completions.create(
+                model=config.VLM_MODEL,
+                messages=[{"role": "user", "content": content}],
+                max_tokens=config.model_max_tokens(),
+                temperature=0.0,
+                extra_body=config.model_extra_body(),
+            )
+            text = resp.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
+            data = json.loads(text)
+            # L2 保真：不对任何字段做格式化（归一化全部留到 L3/清洗）
+            for f in want:
+                if f not in data:
+                    data[f] = None if f in numeric else ""
+            return data
+        except Exception as e:
+            last_err = e
+            if attempt < config.VLM_RETRIES - 1:
+                time.sleep(3)
+    raise RuntimeError(f"L2 提取失败 {label}: {last_err}")
+
 FIELDS = [
     "MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_NAME",
     "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "GOODS_HS_CODE",
@@ -142,36 +213,11 @@ def extract_one(path, transcript: dict | None = None) -> dict:
             f"当前模型不支持图片输入（{config.VLM_MODEL}），这张票又没有文字层转录："
             "请在审核台顶栏或 .env 的 VLM_MODEL 切到视觉模型（intern-s2-official），"
             "或改用电子单、文字层 PDF 再提取")
-    client = _get_client()
     prompt = PROMPT_HEAD
     if not vision:
         prompt = PROMPT_TEXT_ONLY + prompt
     if has_tr:
         body = "\n".join(f"{x['i']}: {x['text']}" for x in transcript["lines"])
         prompt += PROMPT_TRANSCRIPT + body
-    content = [{"type": "image_url", "image_url": {"url": u}} for u in img_to_data_urls(path)] if vision else []
-    content.append({"type": "text", "text": prompt})
-    last_err = None
-    for attempt in range(config.VLM_RETRIES):
-        try:
-            resp = client.chat.completions.create(
-                model=config.VLM_MODEL,
-                messages=[{"role": "user", "content": content}],
-                max_tokens=config.model_max_tokens(),
-                temperature=0.0,
-                extra_body=config.model_extra_body(),
-            )
-            text = resp.choices[0].message.content.strip()
-            if text.startswith("```"):
-                text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
-            data = json.loads(text)
-            # L2 保真：不对 MAWB 等任何字段做格式化（归一化全部留到 L3）
-            for f in FIELDS:
-                if f not in data:
-                    data[f] = "" if f not in ("PIECES", "SLAC", "WEIGHT") else None
-            return data
-        except Exception as e:
-            last_err = e
-            if attempt < config.VLM_RETRIES - 1:
-                time.sleep(3)
-    raise RuntimeError(f"L2 提取失败 {path.name}: {last_err}")
+    urls = img_to_data_urls(path) if vision else []
+    return _chat_json(prompt, urls, FIELDS, path.name)

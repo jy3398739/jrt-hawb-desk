@@ -119,12 +119,12 @@ def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
     return list(dict.fromkeys(out))
 
 
-def find_missing_hs(raw: dict, transcript: dict) -> list[str]:
+def find_missing_hs(raw: dict, transcript: dict, field: str = "GOODS_HS_CODE") -> list[str]:
     """反向核查 HS 码漏抄：票面印着带 HS 标签的码（`HSCODE: 89031200` / `HS Codes: 85389000` / `HS:850152`），
     GOODS_HS_CODE 却没接住。按前 6 位归一比对——平台/国际口径只填 6 位，也算已捕获。
     无标签的裸数字形态（EDC `84742708 (4),84647039 (24)`）明确不覆盖：裸 6-10 位可能是电话/邮编/货值，
     拿它挂旗误报率不可控。CCSP 八票对格（2026-09-26）坐实 S2/MiMo 各漏过一例且旗全哑。"""
-    mine = re.sub(r"\D", "", str(raw.get("GOODS_HS_CODE", "") or ""))
+    mine = re.sub(r"\D", "", str(raw.get(field, "") or ""))
     out = []
     for x in transcript.get("lines", []):
         t = str(x.get("text", "") if isinstance(x, dict) else x)
@@ -213,9 +213,13 @@ def _date_ok(ct: tuple, cands: set, text: str) -> bool:
     return (None, mo, d) in cands and str(y) in text
 
 
-def verify_fidelity(raw: dict, transcript: dict) -> dict:
+def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
+                    long: list | None = None, hs_field: str = "GOODS_HS_CODE",
+                    tax: bool = True) -> dict:
     """L2 字段回查 L1 逐字转录原文（大小写敏感、逐字），并反向查票面主单号/税号是否漏抄。
     扫描件 L1 来自 VLM 转录，电子单 L1 来自 Excel 导出的 PDF 文字层——两者都是票面逐字真值。
+    short/long/hs_field/tax 是给主单侧复用时用的：主单是另一套列面（36 列、HS 叫
+    GOODS_INFO_HSCODE、压根没有税号列），默认值就是分单口径，分单调用方一个字都不用改。
     返回 {checked, passed, failed, sources}。"""
     lines = [x["text"] for x in transcript.get("lines", [])]
     nlines = [_norm(t) for t in lines]
@@ -258,10 +262,10 @@ def verify_fidelity(raw: dict, transcript: dict) -> dict:
                            "reason": "未在L1逐字转录中找到原文（可能被改写或转录遗漏）"})
 
     check("MAWB_NO", "mawb")
-    for f in SHORT_FIELDS:
+    for f in (SHORT_FIELDS if short is None else short):
         check(f, "alnum" if f.endswith(("_TEL", "_FAX", "_EORI", "_POSTAL", "_TAX_ID"))
               or f in ("HAWB_NO",) else "text")
-    for f in LONG_FIELDS:
+    for f in (LONG_FIELDS if long is None else long):
         check(f, "long")
 
     # 签发日期是唯一允许格式转换的字段，格式转换最容易把 20 抄成 26、把航班日期当签发日期
@@ -283,16 +287,17 @@ def verify_fidelity(raw: dict, transcript: dict) -> dict:
         failed.append({"field": "MAWB_NO", "value": cand,
                        "reason": "L1 转录里有、L2 没取的主单号（漏抄，需核票确认落点）"})
 
-    for label, val in find_missing_tax(raw, transcript):
-        checked += 1
-        failed.append({"field": "TAX_ID", "value": val,
-                       "reason": f"{label} 税号漏抄：票面有 {val}，"
-                                 f"需核票填 SHIPPER_INFO_TAX_ID 或 CONSIGNEE_INFO_TAX_ID"})
+    if tax:
+        for label, val in find_missing_tax(raw, transcript):
+            checked += 1
+            failed.append({"field": "TAX_ID", "value": val,
+                           "reason": f"{label} 税号漏抄：票面有 {val}，"
+                                     f"需核票填 SHIPPER_INFO_TAX_ID 或 CONSIGNEE_INFO_TAX_ID"})
 
-    for cand in find_missing_hs(raw, transcript):
+    for cand in find_missing_hs(raw, transcript, field=hs_field):
         checked += 1
-        failed.append({"field": "GOODS_HS_CODE", "value": cand,
-                       "reason": f"HS 码漏抄：票面印着带标签的 HS 码 {cand}，GOODS_HS_CODE 空或不包含，需核票补"})
+        failed.append({"field": hs_field, "value": cand,
+                       "reason": f"HS 码漏抄：票面印着带标签的 HS 码 {cand}，{hs_field} 空或不包含，需核票补"})
 
     return {"checked": checked, "passed": passed,
             "failed": failed, "sources": sources}
