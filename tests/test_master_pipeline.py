@@ -73,6 +73,26 @@ def test_run_master_produces_clean_editable_record():
         _restore(old, tmp)
 
 
+def test_public_exposes_group_labels_and_readonly_meta():
+    """分组名由后端给（前端抄一份迟早漂移）；JOB_ID 这类"主单多出来但不参与提交"的列
+    以只读 meta 形式进基础信息，让人看得见、也不会被当成可提交列发出去。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        rec = mp.public(mp.run_master("176-62400004", dict(ORDER, JOB_ID=40366281)))
+        assert rec["groups"]["base"] == "基础信息" and "notify" not in rec["groups"]
+        assert rec["meta"] == [{"col": "JOB_ID", "label": "公司任务号（只读，不提交）",
+                                "value": 40366281, "group": "base"}]
+        assert "JOB_ID" not in rec["ams"], "只读列绝不进可提交面"
+        assert not any(l["text"].startswith("JOB_ID") for l in rec["transcript"]["lines"]), \
+            "JOB_ID 不进 L1：模型没有这一列，给了只会诱发它编"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
 def test_cache_hit_skips_the_model_and_revalidates_on_new_text():
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))

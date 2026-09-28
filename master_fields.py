@@ -23,13 +23,20 @@ def _party(prefix: str, who: str, group: str, country_key: str | None = None) ->
     return out
 
 
+# 分组照分单那套给人看的排版（2026-09-28 用户定案）：基础信息在最前、收货人最后。
+# 通知人是主单比 分单 多出来的一块，不单列一段，并进基础信息；列名与中文标签照旧。
 MASTER_FIELDS = (
-    [("MAWB_NO", "主单号", "cargo"), ("GOODS_INFO_HSCODE", "海关编码 HS", "cargo"),
-     ("SLAC", "SLAC 计数", "cargo")]
+    [("MAWB_NO", "主单号", "base"), ("GOODS_INFO_HSCODE", "海关编码 HS", "base"),
+     ("SLAC", "SLAC 计数", "base")]
+    + _party("NOTIFY_INFO_", "通知人", "base", country_key="NOTIFYE_INFO_COUNTRY")
     + _party("SHIPPER_INFO_", "发货人", "shipper")
     + _party("CONSIGNEE_INFO_", "收货人", "consignee")
-    + _party("NOTIFY_INFO_", "通知人", "notify", country_key="NOTIFYE_INFO_COUNTRY")
 )
+
+MASTER_GROUP_LABELS = {"base": "基础信息", "shipper": "发货人 SHIPPER", "consignee": "收货人 CONSIGNEE"}
+
+# 主单比 分单 多出来、但**不参与提交**的列：只在基础信息里只读展示，不进 L1、不进提交体
+MASTER_META_COLS = [("JOB_ID", "公司任务号（只读，不提交）", "base")]
 
 MASTER_COLS = [c for c, _l, _g in MASTER_FIELDS]
 

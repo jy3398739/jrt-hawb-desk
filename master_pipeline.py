@@ -100,6 +100,7 @@ def run_master(mawb: str, mawb_order: dict) -> dict:
     t0 = time.time()
     rec = {"mawb": str(mawb or "").strip(), "text_md5": _md5(tr["full_text"]),
            "model": config.VLM_MODEL, "started_at": _now(), "transcript": tr,
+           "outer": {k: (mawb_order or {}).get(k) for k in mf.OUTER_REF_COLS},
            "ams": {}, "ams_raw": {}, "qc": None, "error": ""}
     try:
         raw = vlm_extract.extract_master(tr)
@@ -121,12 +122,16 @@ def run_master(mawb: str, mawb_order: dict) -> dict:
 
 
 def public(rec: dict | None) -> dict | None:
-    """给前端的形态：附上 36 列的列名/中文名/分组——这份表只有 master_fields 一个真源，
-    前端抄一份迟早和后端漂移。"""
+    """给前端的形态：附上 36 列的列名/中文名/分组，以及只读 meta 行（JOB_ID 那类主单多出来、
+    不参与提交的列）。这份表只有 master_fields 一个真源，前端抄一份迟早和后端漂移。"""
     if rec is None:
         return None
     out = dict(rec)
     out["fields"] = [list(f) for f in mf.MASTER_FIELDS]
+    out["groups"] = dict(mf.MASTER_GROUP_LABELS)
+    outer = rec.get("outer") or {}
+    out["meta"] = [{"col": c, "label": lab, "group": g, "value": outer.get(c)}
+                   for c, lab, g in mf.MASTER_META_COLS if outer.get(c) not in (None, "")]
     return out
 
 

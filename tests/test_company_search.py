@@ -110,7 +110,8 @@ def test_desk_master_view_parses_edits_and_submits():
     assert "transcript" in mv and "esc(" in mv, "左栏要展示 L1 原文（逐字、转义后）"
     assert "MV.rec" in mn and "parsed" not in mn, "右栏吃解析记录，不再吃手拆视图"
     assert "data-mk" in mn, "36 列必须可编辑（要提交就得能改）"
-    assert "fields" in mn, "列名/分组由后端给，前端不抄第二份表"
+    assert "fields" in mn and "meta" in mn and "groups" in mn, \
+        "列名/分组/只读列（JOB_ID 等）都由后端给，前端不抄第二份表"
     assert "确认无误" in mn, "红旗要能逐条确认（提交门认这个）"
     assert 'id="mvSubmit"' in html and "/master/submit" in html, "主单要有回传公司的出口"
     assert 'id="mvReparse"' in html and "force=1" in html, "换模型后要能强制重解析"

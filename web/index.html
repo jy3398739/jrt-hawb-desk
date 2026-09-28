@@ -1023,10 +1023,21 @@ function renderMain(){
         (done ? `<button class="ackb" data-munack="${esc(f)}">撤回</button>`
               : `<button class="ackb" data-mack="${esc(f)}">确认无误</button>`) + `</span>`;
     }).join("");
-    const MVG = {cargo:"单号与货物", shipper:"发货人 SHIPPER", consignee:"收货人 CONSIGNEE", notify:"通知人 NOTIFY"};
+    const MVG = rec.groups || {};
+    const metaBy = {};
+    (rec.meta || []).forEach(m => { (metaBy[m.group] = metaBy[m.group] || []).push(m); });
     let rows = "", last = "";
+    const openGroup = g => {
+      if (g === last) return;
+      rows += `<tr class="grp"><td colspan="3">${esc(MVG[g] || g)}</td></tr>`; last = g;
+      (metaBy[g] || []).forEach(m => {
+        rows += `<tr><td class="k"><div class="kk">${esc(m.label)}</div><div class="ky">${esc(m.col)}</div></td>
+          <td class="c"><div class="j" style="padding:7px 8px">${esc(String(m.value == null ? "" : m.value))}</div></td>
+          <td class="s"><span class="badge">只读</span></td></tr>`;
+      });
+    };
     for (const [k, lab, g] of (rec.fields || [])){
-      if (g !== last){ rows += `<tr class="grp"><td colspan="3">${MVG[g] || esc(g)}</td></tr>`; last = g; }
+      openGroup(g);
       const v = vals[k] == null ? "" : String(vals[k]);
       const hit = flags.filter(f => f.includes(k)).length;
       rows += `<tr id="mf-${k}" class="${hit ? "flag" : ""}">

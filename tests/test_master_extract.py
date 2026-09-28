@@ -168,6 +168,8 @@ def test_master_fidelity_does_not_flag_a_normalized_hs():
     assert fid["failed"] == [], fid["failed"]
 
 
-def test_field_table_groups_drive_the_ui_sections():
-    groups = {g for _c, _l, g in MASTER_FIELDS}
-    assert groups == {"cargo", "shipper", "consignee", "notify"}, groups
+def test_regrouping_does_not_change_what_the_model_must_output():
+    """分组只是给人看的排版；模型那份列清单必须还是 36 列一个不少（含通知人）。"""
+    cols = [c for c, _l, _g in MASTER_FIELDS]
+    assert len(cols) == 36
+    assert any(c.startswith("NOTIFY") for c in cols) and "NOTIFYE_INFO_COUNTRY" in cols
