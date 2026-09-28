@@ -93,6 +93,14 @@ def _int_or_none(v):
         return None
 
 
+def _hs_only(v) -> str:
+    """HS 列只留号码：模型常把「HS CODE:8526109 HS CODE:8412210」整串抄进来（逐字抄的，
+    保真回查还查不出来），公司要的是号码本身，多个用逗号连。一个数字都没有就原样留着，
+    交给红旗报——硬猜成空等于把问题藏起来。"""
+    runs = re.findall(r"\d{4,}", str(v or ""))
+    return ",".join(runs) if runs else _txt(v)
+
+
 def clean_ams(ams: dict) -> dict:
     """L2 原文口径 → 可提交口径：只动格式不动内容（与分单 to_air 同一条铁律）。
 
@@ -109,6 +117,8 @@ def clean_ams(ams: dict) -> dict:
             out[col] = norm_mawb_hyphen(v)
         elif col == "SLAC":
             out[col] = _int_or_none(v)
+        elif col == "GOODS_INFO_HSCODE":
+            out[col] = _hs_only(v)
         elif col.endswith(("_EORI", "_AEO")):
             out[col] = _txt(v).replace(" ", "").upper()
         elif col.endswith("_COUNTRY"):

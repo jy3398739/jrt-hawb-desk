@@ -103,6 +103,16 @@ def test_submit_body_carries_exactly_the_36_columns():
         assert k not in body, "服务端维护列不发"
 
 
+def test_clean_strips_hs_labels_to_digits_only():
+    """真跑撞到的：模型把「HS CODE:8526109 HS CODE:8412210」整串抄进 HS 列（保真回查还过了，
+    因为它确实是原文逐字）。公司要的是号码本身，标签得摘，多个码用逗号连。"""
+    ams = clean_ams({"GOODS_INFO_HSCODE": "HS CODE:8526109 HS CODE:8412210"})
+    assert ams["GOODS_INFO_HSCODE"] == "8526109,8412210"
+    assert clean_ams({"GOODS_INFO_HSCODE": "8526109"})["GOODS_INFO_HSCODE"] == "8526109"
+    assert clean_ams({"GOODS_INFO_HSCODE": "无"})["GOODS_INFO_HSCODE"] == "无", \
+        "一个数字都没有就原样留着，交给红旗报，别硬猜成空"
+
+
 def test_limit50_list_is_the_company_400_lines():
     assert set(MASTER_LIMIT50) == {
         "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE", "SHIPPER_INFO_POSTAL",

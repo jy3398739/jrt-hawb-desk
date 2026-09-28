@@ -99,19 +99,23 @@ def _fn(html: str, name: str) -> str:
     return html[start:nxt]
 
 
-def test_desk_master_view_shows_company_text_and_readonly_check():
-    """「送入预览与核对」这一路（2026-09-26 用户定案：只展示+核对，不接提交）：
-    左栏把公司主单资料块当票面原文展示，右栏按我方字段只读核对，拆不出的列进人工清单。"""
+def test_desk_master_view_parses_edits_and_submits():
+    """主单视图（2026-09-28 改口径）：检索即解析 → 左栏 L1 原文、右栏 36 列可编辑 + 红旗，
+    人工确认后按 mawb2 回传公司。旧版"只读、不接提交"的口径已废。"""
     html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
     pv, mn = _fn(html, "renderPreview"), _fn(html, "renderMain")
     assert "MV" in pv, "票面预览要有主单分支"
-    mv = _fn(html, "mvPreview")
-    assert "MV.order" in mv and "esc(" in mv, "预览要把公司资料块原文转义后摊开，不重排不补全"
     assert "MV" in mn, "核对区要有主单分支"
-    assert "parsed.notes" in mn, "拆不出的列要进人工清单"
-    assert mn.index("if (MV") < mn.index('id="submit"'), "主单分支要先 return，页面上不出现提交按钮"
-    assert "不提交" in mn, "主单核对区要写清这一路不提交"
-    assert 'id="mvBack"' in html, "要有退回分单核对的出口"
+    mv = _fn(html, "mvPreview")
+    assert "transcript" in mv and "esc(" in mv, "左栏要展示 L1 原文（逐字、转义后）"
+    assert "MV.rec" in mn and "parsed" not in mn, "右栏吃解析记录，不再吃手拆视图"
+    assert "data-mk" in mn, "36 列必须可编辑（要提交就得能改）"
+    assert "fields" in mn, "列名/分组由后端给，前端不抄第二份表"
+    assert "确认无误" in mn, "红旗要能逐条确认（提交门认这个）"
+    assert 'id="mvSubmit"' in html and "/master/submit" in html, "主单要有回传公司的出口"
+    assert 'id="mvReparse"' in html and "force=1" in html, "换模型后要能强制重解析"
+    assert "/master/" in html, "解析在后台跑，前端要轮询状态"
+    assert "只读核对，不提交" not in html, "旧口径残留会误导复核人"
     assert '$("#view").scrollIntoView' in html, \
         "窄屏（<1461px）时票面栏在核对区上方：滚动要停在票面栏，否则用户看着它空着以为没反应"
 

@@ -118,6 +118,14 @@ def test_validate_master_reports_tax_with_nowhere_to_go():
     assert any("税号" in w and ("USCI" in w or "VAT" in w) for w in warns), warns
 
 
+def test_validate_master_flags_hs_with_label_left():
+    """清洗兜不住的（模型给了个没标签的怪值）由红旗出声：HS 列只该是数字与逗号。"""
+    ams = {c: None for c in MASTER_COLS}
+    ams.update({"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "HS CODE:8526109"})
+    assert any("GOODS_INFO_HSCODE" in w for w in validate_master(ams)), \
+        "HS 列混进标签要报（与分单'税号混进了标签'同一条口径）"
+
+
 def test_validate_master_is_quiet_on_a_clean_record():
     ams = {c: None for c in MASTER_COLS}
     ams.update({"MAWB_NO": "176-62400004", "SLAC": 10,

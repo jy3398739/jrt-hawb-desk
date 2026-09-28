@@ -348,10 +348,14 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
-/* MV = 「主单资料」只读视图：公司主单检索结果借这两个面板展示（票面预览=公司原始资料，
-   核对=映射后的我方字段）。它不是票据，没有提交按钮——主单写接口 mawb2/ 待接。 */
+/* MV = 「主单」视图：公司主单检索 → 自动解析（L1 原文 / 36 列可编辑 / 红旗）→ 人工确认后
+   按 mawb2 回传公司。它不是分单票据：字段面、红旗判据、提交接口都是主单那一套。 */
 let MV = null;
-let MST_LAST = null;             // 最近一次主单检索的原始响应，「送入预览与核对」用它，不必再打一次公司接口
+let MST_LAST = null;             // 最近一次主单检索的原始响应，「送入主单核对」用它，不必再打一次公司接口
+let MV_TIMER = null;             // 解析中的轮询定时器
+const MV_LONG = new Set(["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
+                         "CONSIGNEE_INFO_COMP_NAME", "CONSIGNEE_INFO_COMP_ADDRESS",
+                         "NOTIFY_INFO_COMP_NAME", "NOTIFY_INFO_COMP_ADDRESS"]);
 let ME = null;   // 当前登录者 {name, role}：null = 未登录（显示登录遮罩）
 
 function toast(msg, kind){
@@ -567,19 +571,17 @@ function previewKey(t){
   if (t.file && fileKind(t.filename) !== "other") return "F|" + t.filename;
   return "A|" + (t.stem || t.filename) + (t.state === "done" ? "|d" : "|p");
 }
-/* 主单资料视图：公司 AMS 给的是几坨拼接文本（发货人/收货人/货描），这里原样摊开对着分单票面核，
-   不重排、不补全——猜出来的排版会让人误以为公司就是这么分的列。 */
-const MV_SKIP = {JOB_ID:1, SEND_STATUS:1, CREATE_TIME:1, HMY_ID:1, AMS_RECORD:1};
+/* 主单视图：左栏放 L1 原文（公司资料逐行），右栏放解析出来的 36 列可编辑面。
+   主单没有票面版式原件，所以这一栏是"资料文本"而不是"票面图"，点字段也不能定位——界面上说明白。 */
 function mvPreview(){
-  const mo = MV.order || {};
-  const blocks = Object.keys(mo).filter(k => !MV_SKIP[k] && typeof mo[k] === "string" && mo[k].trim())
-    .map(k => '<div class="t2">' + esc(k) + '</div><div class="j blk">' + esc(mo[k]) + '</div>');
-  if (mo.AMS_RECORD){
-    blocks.push('<div class="t2">AMS_RECORD · 公司已录入结果</div><div class="j blk">' +
-      esc(JSON.stringify(mo.AMS_RECORD, null, 1)) + '</div>');
-  }
-  if (!blocks.length) return '<div class="empty">公司侧这条主单没有原文资料块：接口没返回，或从未录入。</div>';
-  return '<div class="mvtxt">' + blocks.join("") + '</div>';
+  const tr = (MV.rec && MV.rec.transcript) || null;
+  const lines = tr && tr.lines && tr.lines.length
+    ? tr.lines : Object.keys(MV.order || {}).filter(k => k !== "AMS_RECORD" && typeof (MV.order[k]) === "string" && String(MV.order[k]).trim())
+      .map(k => ({i: 0, text: k + ": " + MV.order[k]}));
+  if (!lines.length) return '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
+  const rows = lines.map(x => '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) + '</div>').join("");
+  return '<div class="mvtxt"><div class="t2">L1 原文 · 公司主单资料（逐字，未加工）</div>' + rows +
+    '<p class="hint" style="padding:6px 0 0">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。</p></div>';
 }
 function renderPreview(){
   if (MV){
@@ -588,7 +590,7 @@ function renderPreview(){
     ++_pvSeq;                                   // 作废在飞的票面取回，别让原件盖掉公司资料
     PREVIEW.key = key;
     releasePreview();
-    $("#pvName").textContent = "主单 " + MV.mawb + " · 公司 AMS 原文（只读，非票面）";
+    $("#pvName").textContent = "主单 " + MV.mawb + " · L1 原文（公司资料逐行，非票面图）";
     $("#pvTools").hidden = true;
     pvBody(mvPreview());
     return;
@@ -1009,37 +1011,73 @@ function statusCell(t, k, fl){
 }
 function renderMain(){
   const el = $("#main"), t = current();
-  /* 主单资料视图：借这套字段壳只读展示，没有提交按钮——按 2026-09-26 定案，这一路只展示+核对 */
+  /* 主单视图：36 列可编辑 + 红旗逐条确认 → 提交回公司（mawb2）。列名/中文名/分组由后端
+     fields 表给（单一真源），红旗在提交时由服务端按当前值重算——前端只负责让人看清并确认。 */
   if (MV){
-    const f = MV.parsed.fields || {}, notes = MV.parsed.notes || [];
-    const has = k => f[k] !== undefined && String(f[k]) !== "";
-    const got = FIELDS.filter(([k]) => has(k)).length;
+    const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
+    const vals = mvValues(), left = flags.filter(f => !MV.acked.includes(f));
+    const chips = flags.map(f => {
+      const done = MV.acked.includes(f);
+      const hard = f.includes("缺失") || f.startsWith("保真") || f.includes("失败");
+      return `<span class="chip ${done ? "" : (hard ? "bad" : "warn")}">${esc(f)}` +
+        (done ? `<button class="ackb" data-munack="${esc(f)}">撤回</button>`
+              : `<button class="ackb" data-mack="${esc(f)}">确认无误</button>`) + `</span>`;
+    }).join("");
+    const MVG = {cargo:"单号与货物", shipper:"发货人 SHIPPER", consignee:"收货人 CONSIGNEE", notify:"通知人 NOTIFY"};
     let rows = "", last = "";
-    for (const [k, lab, g] of FIELDS){
-      if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
-      rows += `<tr><td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
-        <td class="c"><div class="j" style="padding:7px 8px">${has(k) ? esc(f[k]) : '<span class="hint">—</span>'}</div></td>
-        <td class="s">${has(k) ? '<span class="badge same">公司侧有值</span>' : '<span class="badge">公司侧空</span>'}</td></tr>`;
+    for (const [k, lab, g] of (rec.fields || [])){
+      if (g !== last){ rows += `<tr class="grp"><td colspan="3">${MVG[g] || esc(g)}</td></tr>`; last = g; }
+      const v = vals[k] == null ? "" : String(vals[k]);
+      const hit = flags.filter(f => f.includes(k)).length;
+      rows += `<tr id="mf-${k}" class="${hit ? "flag" : ""}">
+        <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
+        <td class="c v${k in MV.edit ? " edited" : ""}">${MV_LONG.has(k)
+          ? `<textarea data-mk="${k}">${esc(v)}</textarea>` : `<input data-mk="${k}" value="${esc(v)}">`}</td>
+        <td class="s">${hit ? `<span class="badge warn">红旗 ${hit}</span>`
+          : (v ? `<span class="badge same">有值</span>` : `<span class="badge">空</span>`)}</td></tr>`;
     }
+    const st = rec.state === "done" ? (left.length ? "解析完成，有红旗待处理" : "解析完成，无红旗")
+             : rec.state === "parsing" ? "解析中（约 7-20 秒）…" : "解析失败";
+    const fid = qc.fidelity;
     el.innerHTML = `
       <div class="hd">
-        <span class="dot warn" style="margin-top:6px"></span>
-        <div><div class="nm">主单 ${esc(MV.mawb)} · 公司 AMS 资料</div>
-          <div class="meta">只读核对，不提交（主单写接口 mawb2/ 未接）· 来源：${MV.parsed.source === "ams_record"
-            ? "公司已录入结果，按列名平移" : "公司资料块确定性拆解（只认带标签的值）"}
-            · 我方 ${FIELDS.length} 列里有值 ${got} 列</div></div>
+        <span class="dot ${rec.state === "failed" ? "bad" : rec.state === "parsing" ? "busy"
+          : (left.length ? "warn" : "ok")}" style="margin-top:6px"></span>
+        <div><div class="nm">主单 ${esc(MV.mawb)} · 公司 AMS 解析</div>
+          <div class="meta">${st} · 模型 ${esc(rec.model || "—")} · ${rec.elapsed || 0}s
+            ${fid ? ` · 保真 ${fid.passed}/${fid.checked} 列有资料出处` : ""}
+            ${Object.keys(MV.edit).length ? ` · 已改 ${Object.keys(MV.edit).length} 列` : ""}
+            ${MV.submitted ? ` · 已回传 ${esc(MV.submitted.at)}` : ""}</div></div>
         <span class="sp"></span>
+        <button class="btn sm" id="mvReparse">重新解析</button>
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
-      <div class="tools">
-        <span class="hint">对照左边公司原文逐列看；<b>缺的列不要在这里改</b>，改动只走分单核对区并提交</span>
+      ${chips ? `<div class="chips">${chips}</div>` : ""}
+      ${rec.state === "failed" ? `<div class="empty" style="color:var(--bad)">解析失败：${esc(rec.error || "未知错误")}<br>
+        <span style="font-size:12px;color:var(--ink3)">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
+      <div class="ft top">
+        <button class="btn pri" id="mvSubmit">提交主单回公司</button>
+        <span class="sp"></span>
+        <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
       </div>
-      ${notes.length ? `<div class="t2" style="padding:10px 12px 0">公司主单侧给不了 / 拆不出的列 · 按分单票面人工确认（${notes.length}）</div>
-        <ul class="mvnotes">${notes.map(n => `<li class="j">${esc(n)}</li>`).join("")}</ul>` : ""}
+      <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
+        主单表没有件重/航路/税号列，<b>别把 USCI/CNPJ 那类税号塞进 EORI</b>。</span></div>
       <table><thead><tr>
-        <th>字段</th><th class="g">公司 AMS 值 · 只读</th><th style="text-align:right">状态</th>
+        <th>字段</th><th class="g">公司 AMS 列 · 可改</th><th style="text-align:right">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
-    $("#mvBack").addEventListener("click", () => { MV = null; render(); });
+    el.querySelectorAll("[data-mk]").forEach(inp => {
+      inp.addEventListener("change", () => mvTouch(inp));
+      autoGrow(inp);
+    });
+    el.querySelectorAll("[data-mack]").forEach(b => b.addEventListener("click", () => {
+      MV.acked.push(b.dataset.mack); MV.msg = ""; render();
+    }));
+    el.querySelectorAll("[data-munack]").forEach(b => b.addEventListener("click", () => {
+      MV.acked = MV.acked.filter(x => x !== b.dataset.munack); render();
+    }));
+    $("#mvBack").addEventListener("click", () => { clearTimeout(MV_TIMER); MV = null; render(); });
+    $("#mvReparse").addEventListener("click", mvReparse);
+    $("#mvSubmit").addEventListener("click", mvSubmit);
     return;
   }
   if (!t){
@@ -1353,9 +1391,10 @@ function mstCard(j, mawb){
   const rows = keys.length
     ? '<table><tbody>' + keys.map(k => '<tr><th>' + esc(k) + '</th><td class="j">' + mstFmtVal(mo[k]) + '</td></tr>').join("") + '</tbody></table>'
     : '<p class="hint">主单业务字段为空（公司侧无该主单，或接口未返回）</p>';
-  const use = (j.parsed && Object.keys(j.parsed.fields || {}).length)
-    ? '<button class="btn sm" data-mv="' + esc(mawb) + '">送入预览与核对</button>' : "";
-  return '<div class="t2">主单 ' + esc(mawb) + '　' + src + '　' + use + '</div>' + rows;
+  const use = Object.keys(mo).length
+    ? '<button class="btn sm" data-mv="' + esc(mawb) + '">送入主单核对</button>' : "";
+  const st = ({parsing:"解析中…", done:"已解析", failed:"解析失败"})[j.master && j.master.state] || "待解析";
+  return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>' + rows;
 }
 function mstTable(list){
   if (!list.length) return "";
@@ -1367,31 +1406,113 @@ function mstTable(list){
   return '<div class="t2">名下分单</div><table><thead><tr><th>分单号</th><th>主单号</th><th>复核人</th><th>提交时间</th><th>票面原件</th><th>CCSP</th></tr></thead><tbody>' +
     rows + '</tbody></table><div id="webplanBox" style="margin-top:14px" hidden></div>';
 }
-async function mstSearch(){
+async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
   if (!m){ st.textContent = "请先填主单号"; return; }
   st.textContent = "检索中…";
   try{
-    const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m));
+    const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m) + (force ? "&force=1" : ""));
     if (r.status === 401){ $("#gate").hidden = false; throw new Error("登录已过期，请重新登录"); }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     st.textContent = "主单 " + m + " · 名下 " + (j.hawb_orders || []).length + " 张分单（" + j.mode + "）";
     MST_LAST = j;
     $("#mstResult").innerHTML = mstCard(j, m) + mstTable(j.hawb_orders || []);
+    if (j.master && j.master.state === "parsing") mstPoll(m);   // 解析在后台跑，卡片跟着刷新状态
   }catch(e){ st.textContent = "检索失败：" + (e.message || e); $("#mstResult").innerHTML = ""; }
 }
-$("#mstGo").addEventListener("click", mstSearch);
-$("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(); });
+/* 解析中每 2 秒取一次结果：卡片状态、以及（如果已经打开）主单核对区一起更新 */
+function mstPoll(mawb){
+  setTimeout(async () => {
+    try{
+      const r = await fetch(BASE + "/master/" + encodeURIComponent(mawb));
+      if (!r.ok){ mstPoll(mawb); return; }
+      const rec = await r.json();
+      if (!MST_LAST || MST_LAST.mawb !== mawb) return;
+      MST_LAST.master = rec;
+      $("#mstResult").innerHTML = mstCard(MST_LAST, mawb) + mstTable(MST_LAST.hawb_orders || []);
+      if (MV && MV.mawb === mawb){ MV.rec = rec; render(); }
+      if (rec.state === "parsing") mstPoll(mawb);
+    }catch(e){ mstPoll(mawb); }
+  }, 2000);
+}
+/* ── 主单核对与提交 ─────────────────────────────────────────────────── */
+function mvValues(){
+  const rec = MV.rec || {};
+  return Object.assign({}, rec.ams || {}, MV.edit || {});
+}
+function mvFlags(){
+  const base = (MV.rec && MV.rec.qc && MV.rec.qc.flags) || [];
+  return [...new Set(base.concat(MV.extraFlags || []))];
+}
+function mvTouch(inp){
+  const k = inp.dataset.mk, v = inp.value;
+  const orig = (MV.rec.ams || {})[k];
+  if ((v || "") === (orig == null ? "" : String(orig))) delete MV.edit[k]; else MV.edit[k] = v;
+  inp.closest("td").classList.toggle("edited", k in MV.edit);
+  autoGrow(inp);
+  const msg = $("#mvMsg");
+  if (msg) msg.textContent = Object.keys(MV.edit).length
+    ? "已改 " + Object.keys(MV.edit).length + " 列（提交时服务端按当前值重算红旗）" : "";
+}
+async function mvReparse(){
+  if (!MV) return;
+  MV.msg = "重新解析中…"; render();
+  await mstSearch(true);                       // force=1：越过缓存，换模型后也能重跑
+  if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ MV.rec = MST_LAST.master || MV.rec; render(); mvPoll(); }
+}
+function mvPoll(){
+  clearTimeout(MV_TIMER);
+  if (!MV || !MV.rec || MV.rec.state !== "parsing") return;
+  MV_TIMER = setTimeout(async () => {
+    try{
+      const r = await fetch(BASE + "/master/" + encodeURIComponent(MV.mawb));
+      if (r.ok){ MV.rec = await r.json(); render(); if (MV && MV.rec.state === "parsing") mvPoll(); }
+      else if (MV) mvPoll();
+    }catch(e){ if (MV) mvPoll(); }
+  }, 2000);
+}
+async function mvSubmit(){
+  const who = $("#reviewer").value.trim();
+  if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
+  const left = mvFlags().filter(f => !MV.acked.includes(f));
+  if (left.length){
+    toast("还有未确认的红旗：逐条点「确认无误」才能回传公司（" + left[0] +
+          (left.length > 1 ? " 等 " + left.length + " 条" : "") + "）", "bad");
+    return;
+  }
+  const btn = $("#mvSubmit"); if (btn) btn.disabled = true;
+  try{
+    const r = await fetch(BASE + "/master/submit", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({mawb: MV.mawb, reviewer: who, ams: mvValues(), acked_flags: MV.acked})});
+    const j = await r.json().catch(() => ({}));
+    const d = j.detail || {};
+    if (!r.ok){
+      if (r.status === 400 && d.flags){        // 服务端重算出新红旗：接过来让人逐条确认
+        MV.extraFlags = d.flags;
+        MV.msg = "服务端重算后仍有 " + d.flags.length + " 条红旗，确认后再提交";
+        toast(MV.msg, "bad");
+      } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
+    } else {
+      MV.submitted = {at: nowTxt(), mode: j.mode};
+      MV.edit = {}; MV.rec = Object.assign({}, MV.rec, {ams: mvValues()});
+      MV.msg = ""; toast("主单 " + MV.mawb + " 已回传公司（" + (j.action || "ok") + "）", "ok");
+    }
+  }catch(e){ toast("提交失败：" + (e.message || e), "bad"); MV.msg = "提交失败：" + (e.message || e); }
+  finally{ if (btn) btn.disabled = false; render(); }
+}
+$("#mstGo").addEventListener("click", () => mstSearch(false));
+$("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(false); });
 $("#mstResult").addEventListener("click", async e => {
   const use = e.target.closest("[data-mv]");
   if (use){
-    if (!MST_LAST || !MST_LAST.parsed) return;
+    if (!MST_LAST) return;
     if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
-    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, parsed: MST_LAST.parsed};
-    render();
+    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, rec: MST_LAST.master || {},
+          edit: {}, acked: [], extraFlags: [], msg: "", submitted: null};
+    render(); mvPoll();
     $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静
-    toast("已载入主单 " + MV.mawb + " 的公司资料（只读核对，不提交）", "ok");
+    toast("已载入主单 " + MV.mawb + " 的解析结果（36 列可改，提交前由服务端重算红旗）", "ok");
     return;
   }
   const btn = e.target.closest("[data-wp]");

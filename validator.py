@@ -156,6 +156,11 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
         except ValueError:
             warns.append(f"SLAC 必须为整数: {slac!r}")
 
+    hs = str(d.get("GOODS_INFO_HSCODE", "") or "").strip()
+    if hs and not re.fullmatch(r"\d{4,}(?:\s*,\s*\d{4,})*", hs):
+        warns.append(f"GOODS_INFO_HSCODE 只填号码本身（多个用逗号），现 {hs!r}"
+                     "（清洗已摘过一次标签，还在多半是模型给了别的东西，需核）")
+
     for col in MASTER_LIMIT50:
         v = str(d.get(col, "") or "")
         if len(v) > 50:
