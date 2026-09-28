@@ -30,7 +30,7 @@ import argparse, json, re, shutil, tempfile, time
 from pathlib import Path
 
 import uvicorn
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -38,6 +38,7 @@ from starlette.concurrency import run_in_threadpool
 import auth
 import company_api
 import config
+import master_pipeline
 import store
 import web_bridge
 import xlsx2pdf
@@ -218,17 +219,57 @@ def _company_submit(payload: dict) -> dict:
 
 
 @app.get("/company/mawb")
-def company_mawb(mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
+def company_mawb(background: BackgroundTasks,
+                 mawb: str = Query(..., description="主单号（可带连字符/空格，检索前归一化）"),
                  _: None = Depends(require_web)):
-    """按主单号检索：返回该主单 + 名下分单，分单带上本机原件 stem（供 /source 打开对票面核对），
-    并自带 parsed=主单资料确定性拆成的我方字段视图（审核台只读核对，不接提交）。
-    2026-09-26 起对任意登录角色开放——录入员检索台已并入制单台。
+    """按主单号检索：返回该主单原生资料 + 名下分单（带上本机原件 stem 供 /source 对票面核对），
+    并**就地起主单解析**（用户定案：检索到就解析；同一主单并发只有一个真跑）。
 
-    数据来自 company_api.search_mawb：mock 模式主单业务字段是空壳、分单来自本机提交台账里该主单号
-    下已提交的票；live 模式换成 j9 AMS 接口的真读结果。结构一致，前端不必分辨。"""
+    响应里的 `master` 是解析记录：命中缓存就是 done（不再花钱），刚起任务是 parsing，
+    前端拿 /master/{mawb} 轮询到 done/failed。2026-09-26 起对任意登录角色开放——录入员台已并入。"""
     if not store.norm_no(mawb):
         raise HTTPException(400, "主单号不能为空")
-    return company_api.search_mawb(mawb)   # 结果自带 parsed（master_parse 的我方字段视图），前端只读核对用
+    res = company_api.search_mawb(mawb)
+    order = res.get("mawb_order") or {}
+    if order:
+        res["master"] = master_pipeline.read_master(mawb) or {"state": "parsing", "mawb": mawb}
+        background.add_task(master_pipeline.ensure, mawb, order)
+    else:
+        # 没资料就没得解析：就地记下 failed，让页面能说清"为什么没有结果"而不是空着
+        res["master"] = master_pipeline.ensure(mawb, order)
+    return res
+
+
+@app.get("/master/{mawb}")
+def master_result(mawb: str, _: None = Depends(require_web)):
+    """主单解析记录（state/ams 36 列/qc 红旗与保真/L1 原文）。没解析过就 404。"""
+    rec = master_pipeline.read_master(mawb)
+    if rec is None:
+        raise HTTPException(404, "这条主单还没有解析结果（先在审核台检索一次主单号）")
+    return rec
+
+
+class MasterSubmitBody(BaseModel):
+    mawb: str = ""
+    reviewer: str = ""
+    ams: dict = {}
+    acked_flags: list = []
+
+
+@app.post("/master/submit")
+def master_submit(body: MasterSubmitBody, _: None = Depends(require_web)):
+    """把人工核对过的主单回传公司（j9 mawb2）。这是主单侧唯一对外写出口，只有人工点才发。
+
+    门与错误码与分单同构：红旗未清/未署名 → 400（红旗在服务端按当前值重算，前端藏旗无效）；
+    公司侧 SEND_STATUS 非 0/2（已发送锁定）→ 409 且不发写请求；接口不通/没配 → 502，绝不写台账。"""
+    try:
+        return master_pipeline.submit_master(body.model_dump())
+    except master_pipeline.MasterFlagged as e:
+        raise HTTPException(400, str(e))
+    except company_api.CompanyLocked as e:
+        raise HTTPException(409, str(e))
+    except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
+        raise HTTPException(502, str(e))
 
 
 @app.get("/webplan/{stem}")
