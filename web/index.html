@@ -348,12 +348,10 @@ const LONG = new Set(["SHIPPER_INFO","CONSIGNEE_INFO","GOODS_INFO",
   "SHIPPER_INFO_COMP_ADDRESS","CONSIGNEE_INFO_COMP_ADDRESS"]);
 const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm",".xls"];
 
-/* 提交接口尚未开通：后端就绪后只改这一行（其余逻辑不变，失败会自动本地暂存） */
-const SUBMIT_URL = "/submit";
-
 /* 页面可能被反代挂在子路径下（服务器上是 /hawb/）：接口前缀跟着当前目录走。
    根路径下为空串，与从前完全一致；/hawb/ 与 /hawb/index.html 下均为 "/hawb"。 */
 const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
+const SUBMIT_URL = BASE + "/submit";
 
 const LS = {draft:"hawb.review.drafts"};
 const $ = s => document.querySelector(s);
@@ -1101,7 +1099,8 @@ function renderMain(){
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
       </div>
       <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
-        主单表没有件重/航路/税号列，<b>别把 USCI/CNPJ 那类税号塞进 EORI</b>。</span></div>
+        主单表没有件重/航路/税号列，<b>18 位 USCI 按公司口径填同主体的 EORI 列</b>；
+        CNPJ/RFC/GST/VAT 那类仍不要塞进 EORI，走人工确认。</span></div>
       <table><thead><tr>
         <th>字段</th><th class="g">公司 AMS 列 · 可改</th><th style="text-align:right">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;

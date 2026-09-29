@@ -201,6 +201,17 @@ def test_main_starts_and_seeds_accounts():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_desk_page_calls_every_endpoint_under_its_mount_prefix():
+    """服务器把审核台挂在 /hawb/ 子路径下（nginx 443 反代），页面里所有请求都必须带 BASE 前缀。
+    分单提交吃过这个亏：`SUBMIT_URL = "/submit"` 写死根路径，POST 打到域名根 → 404 →
+    前端按"接口尚未开通"本地暂存，用户在服务器上以为没开通（2026-09-29 实测）。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'const SUBMIT_URL = BASE + "/submit"' in html, "分单提交口要跟着挂载前缀走"
+    bare = [m.group(1).strip()[:46] for m in re.finditer(r"fetch\(\s*([^,)\n]+)", html)
+            if not m.group(1).strip().startswith(("BASE", "LOC.base", "SUBMIT_URL"))]
+    assert not bare, f"这些 fetch 没有 BASE 前缀，挂到 /hawb/ 下会打到域名根：{bare}"
+
+
 def test_desk_page_is_served_without_login():
     """登录页本身免会话（不然还没登录就看不到表单）：/ 只发静态壳，但不能漏发 charset。"""
     client = TestClient(server.app)
