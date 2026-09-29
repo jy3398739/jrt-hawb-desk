@@ -169,3 +169,53 @@ def test_desk_has_retry_for_failed_parse():
     html = WEB.read_text(encoding="utf-8")
     assert "重试解析" in html
     assert "async function retryParse" in html
+
+
+def test_company_submit_failure_is_logged_with_the_numbers():
+    """用户在服务器上连点两次都是 502，journalctl 里只有访问码，公司拒的原因哪都没落
+    （2026-09-29 实测 G26090906：502、502、然后 200）。回传失败要记一条 warning，
+    带主单/分单号与公司原话，运维才有的可查。"""
+    import logging
+
+    import company_api
+    old_submit, old_ledger, old_users = server._company_submit, config.SUBMIT_LEDGER, auth.USERS_FILE
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER, auth.USERS_FILE = tmp / "submitted.json", tmp / "users.json"
+    got = []
+
+    class _Cap(logging.Handler):
+        def emit(self, record):
+            got.append(record.getMessage())
+
+    def boom(payload):
+        raise company_api.CompanyApiError("公司返回 400：SHIPPER_INFO 超长")
+
+    handler = _Cap()
+    server.LOG.addHandler(handler)
+    lvl = server.LOG.level
+    server.LOG.setLevel(logging.WARNING)
+    try:
+        server._company_submit = boom
+        client = _logged_client(tmp)
+        r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+        assert r.status_code == 502, r.text
+        assert store.ledger() == {}, "公司没收下的票不能进台账"
+    finally:
+        server.LOG.removeHandler(handler)
+        server.LOG.setLevel(lvl)
+        server._company_submit, config.SUBMIT_LEDGER, auth.USERS_FILE = old_submit, old_ledger, old_users
+        shutil.rmtree(tmp, ignore_errors=True)
+    assert any("96146363" in m and "CLA26090022" in m and "超长" in m for m in got), \
+        f"日志要同时有号和原因：{got}"
+
+
+def test_desk_master_search_explains_unsubmitted_house_orders():
+    """用户 09:13 上传解析、09:15 检索主单看到"没有分单"，其实那张票 09:35 提交后公司才有行
+    ——解析≠提交。名下分单为空时要说清这条，并把本台还没提交的同主单票数报出来。"""
+    html = WEB.read_text(encoding="utf-8")
+    assert "提交回公司" in html and "这里才会有记录" in html, "空表要说明白：先提交，公司才有这条分单"
+    assert "function pendingUnder(" in html, "要能按主单号找出本台已解析未提交的分单"
+    body = html[html.index("function pendingUnder("):]
+    body = body[:min(x for x in (body.find("\nfunction "), body.find("\nasync function ")) if x > 0)]
+    assert "S.tickets" in body and "drafts()" in body, "两处都要看：本次列表里的 + 浏览器暂存里的"
+    assert "pendingUnder(mawb)" in html, "检索结果落位时要用上"

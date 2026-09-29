@@ -26,7 +26,7 @@
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
   GET  /render/{stem}      把归档票面按页转成 PNG（?page=&scale=），定位模式的底图（需登录会话）
 """
-import argparse, json, re, shutil, tempfile, time
+import argparse, json, logging, re, shutil, tempfile, time
 from pathlib import Path
 
 import uvicorn
@@ -44,6 +44,9 @@ import xlsx2pdf
 from jobs import handle_file
 
 app = FastAPI(title="HAWB 分单识别服务", version=config.APP_VERSION)
+# 回传失败的原因只在这次 HTTP 响应里，页面关掉就查无实据（2026-09-29 用户连吃两个 502 无从下手），
+# 所以带号落到服务日志里，journalctl -u hawb-desk 能直接对着票查。
+LOG = logging.getLogger("hawb.desk")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 CHUNK = 1 << 20
 # 进程启动时刻：用来发现「源码改了但服务没重启」。审核台曾因此一直拿不到票面原件
@@ -274,8 +277,10 @@ def master_submit(body: MasterSubmitBody, _: None = Depends(require_web)):
         # detail 带结构化红旗：前端逐条出「确认无误」按钮，不用解析提示文案
         raise HTTPException(400, {"message": str(e), "flags": e.flags})
     except company_api.CompanyLocked as e:
+        LOG.warning("主单回传被公司锁行：%s → %s", body.mawb, e)
         raise HTTPException(409, str(e))
     except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
+        LOG.warning("主单回传失败：%s → %s", body.mawb, e)
         raise HTTPException(502, str(e))
 
 
@@ -309,8 +314,10 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
         try:
             receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem, "air": rec})
         except company_api.CompanyLocked as e:
+            LOG.warning("分单回传被公司锁行：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
             raise HTTPException(409, str(e))
         except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
+            LOG.warning("分单回传失败：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
             raise HTTPException(502, f"回传公司失败：{e}")
         acked = tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else []
         entry = store.mark_submitted(stem, mawb, hawb,
