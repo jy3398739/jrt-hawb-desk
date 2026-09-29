@@ -29,9 +29,9 @@
 `MAWB_NO` / `GOODS_INFO_HSCODE` / `SLAC` + 发货人 11 列 + 收货人 11 列 + 通知人 11 列。
 每组的 11 列：`COMP_NAME COMP_ADDRESS CITY COUNTRY STATE POSTAL TEL FAX EORI AEO EMAIL`。
 
-列名按公司原样，两处历史拼写**不"修正"**：
-- `NOTIFYE_INFO_COUNTRY` 多一个 E；
-- 主单表收货人城市是单 T `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只属于分单表）。
+列名按公司原样，只有一处历史拼写在 2026-09-29 被 IT 改掉：
+- 通知人国家**曾用** `NOTIFYE_INFO_COUNTRY`（多一个 E），现接口/库表统一为 `NOTIFY_INFO_COUNTRY`。旧名从此算未识别字段——列面若还留旧名，既写不进值，又会在整表写回时把公司那一列抹成 NULL。
+- 仍然不变的：主单表收货人城市是单 T `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只属于分单表）。
 
 主单表**没有**：货名列、税号列、件数/毛重、始发/目的/航路、签发日期、分单号。
 所以：

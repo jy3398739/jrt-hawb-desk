@@ -2,25 +2,22 @@
 """主单（MAWB）字段面：公司 `AMS_RECORD` 的 36 列，也就是 `POST /api/v1/j9/mawb2/` 的提交体。
 
 2026-09-28 用户定案「主单是主单，分单是分单」：这里一律用**公司列名原样**，不套我方分单
-40 字段契约——通知人国家那列公司写成 `NOTIFYE_INFO_COUNTRY`（多个 E）是库表原样，收货人城市
+40 字段契约——通知人国家列叫 `NOTIFY_INFO_COUNTRY`（IT 2026-09-29 把库里多一个 E 的旧拼写
+`NOTIFYE_INFO_COUNTRY` 改掉了，接口以新名为准；旧名从此算未识别字段），收货人城市
 是单 T 的 `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只在分单表）。主单表没有货名列、没有税号列、
 没有件重/航路/签发日期，所以外层 7 字段（含 GOODS_NAME/GOODS_DESC）只能当只读参考。
 """
 import re
 
-# 三组当事人各 11 列，写法一致（通知人的国家列名例外）
+# 三组当事人各 11 列，写法一致
 _PARTY_SUFFIXES = (("COMP_NAME", "公司名"), ("COMP_ADDRESS", "地址"), ("CITY", "城市"),
                    ("COUNTRY", "国家"), ("STATE", "州省"), ("POSTAL", "邮编"),
                    ("TEL", "电话"), ("FAX", "传真"), ("EORI", "EORI"),
                    ("AEO", "AEO"), ("EMAIL", "邮箱"))
 
 
-def _party(prefix: str, who: str, group: str, country_key: str | None = None) -> list:
-    out = []
-    for suf, lab in _PARTY_SUFFIXES:
-        key = country_key if (suf == "COUNTRY" and country_key) else prefix + suf
-        out.append((key, f"{who} · {lab}", group))
-    return out
+def _party(prefix: str, who: str, group: str) -> list:
+    return [(prefix + suf, f"{who} · {lab}", group) for suf, lab in _PARTY_SUFFIXES]
 
 
 # 分组照分单那套给人看的排版（2026-09-28 用户定案）：基础信息在最前、收货人最后。
@@ -28,7 +25,7 @@ def _party(prefix: str, who: str, group: str, country_key: str | None = None) ->
 MASTER_FIELDS = (
     [("MAWB_NO", "主单号", "base"), ("GOODS_INFO_HSCODE", "海关编码 HS", "base"),
      ("SLAC", "SLAC 计数", "base")]
-    + _party("NOTIFY_INFO_", "通知人", "base", country_key="NOTIFYE_INFO_COUNTRY")
+    + _party("NOTIFY_INFO_", "通知人", "base")
     + _party("SHIPPER_INFO_", "发货人", "shipper")
     + _party("CONSIGNEE_INFO_", "收货人", "consignee")
 )
@@ -48,7 +45,7 @@ AMS_SERVER_COLS = ("HMY_ID", "CREATE_TIME", "SEND_STATUS")
 # 公司文档写死的限长 50 列：超长直接 400，不写库
 MASTER_LIMIT50 = ("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE", "SHIPPER_INFO_POSTAL",
                   "CONSIGNEE_INFO_CITY", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE",
-                  "NOTIFY_INFO_CITY", "NOTIFYE_INFO_COUNTRY", "NOTIFY_INFO_STATE")
+                  "NOTIFY_INFO_CITY", "NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_STATE")
 
 _WS = re.compile(r"\s+")
 

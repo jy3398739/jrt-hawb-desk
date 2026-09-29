@@ -2,7 +2,8 @@
 """主单字段面与 L1 文本拼装（2026-09-28 用户定案：主单是主单、分单是分单）。
 
 主单解析的目标形状就是公司 `POST /api/v1/j9/mawb2/` 要的 `AMS_RECORD`，所以这里一律用
-**公司列名原样**（含 NOTIFYE_INFO_COUNTRY 多出来的那个 E、CONSIGNEE_INFO_CITY 单 T），
+**公司列名原样**（通知人国家是 `NOTIFY_INFO_COUNTRY`——IT 在 2026-09-29 把库里多一个 E 的旧拼写
+`NOTIFYE_INFO_COUNTRY` 改掉了；收货人城市是单 T 的 `CONSIGNEE_INFO_CITY`），
 不套我方分单 40 字段契约（分单侧城市列是库表原拼写 CITTY，那是分单表的事）。
 """
 from master_fields import (AMS_SERVER_COLS, MASTER_COLS, MASTER_FIELDS, MASTER_GROUP_LABELS,
@@ -24,7 +25,7 @@ ORDER = {
         "SHIPPER_INFO_CITY": "SHANGHAI", "SHIPPER_INFO_COUNTRY": "CN",
         "CONSIGNEE_INFO_COMP_NAME": "MAADEN GOLD AND BASE METALS CO NATIONAL",
         "CONSIGNEE_INFO_CITY": "KINGDOM", "CONSIGNEE_INFO_EORI": " sa4827430 ",
-        "NOTIFY_INFO_COMP_NAME": "MOHAMMED SALEEM", "NOTIFYE_INFO_COUNTRY": "SA",
+        "NOTIFY_INFO_COMP_NAME": "MOHAMMED SALEEM", "NOTIFY_INFO_COUNTRY": "SA",
     },
 }
 
@@ -48,7 +49,8 @@ def test_field_table_is_the_company_master_shape():
     cols = [c for c, _lab, _grp in MASTER_FIELDS]
     assert len(cols) == 36, f"公司主单表是 36 列，实际 {len(cols)}"
     assert cols.count("MAWB_NO") == 1 and cols.count("SLAC") == 1 and cols.count("GOODS_INFO_HSCODE") == 1
-    assert "NOTIFYE_INFO_COUNTRY" in cols, "通知人国家列名多个 E 是库表原样，不是笔误"
+    assert "NOTIFY_INFO_COUNTRY" in cols, "通知人国家以接口现名为准（旧拼写多一个 E 已被 IT 改掉）"
+    assert not any("NOTIFYE" in c for c in cols), "旧名一旦留在列面里，提交体就带不上公司那一列 → 整表写回会抹成 NULL"
     assert "CONSIGNEE_INFO_CITY" in cols and "CONSIGNEE_INFO_CITTY" not in cols, \
         "单 T 是公司主单表写法；双 T CITTY 属于分单表契约，别串"
     for absent in ("PIECES", "WEIGHT", "ORIGIN_NAME", "DEST_NAME", "TO1", "HAWB_NO",
@@ -132,5 +134,5 @@ def test_limit50_list_is_the_company_400_lines():
     assert set(MASTER_LIMIT50) == {
         "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE", "SHIPPER_INFO_POSTAL",
         "CONSIGNEE_INFO_CITY", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE",
-        "NOTIFY_INFO_CITY", "NOTIFYE_INFO_COUNTRY", "NOTIFY_INFO_STATE"}, \
+        "NOTIFY_INFO_CITY", "NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_STATE"}, \
         "这九列超 50 字符公司直接 400，红旗要提前报出来"

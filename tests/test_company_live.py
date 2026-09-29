@@ -19,6 +19,8 @@ def _patch_post(monkey_rows, monkey_master=None, sent=None):
             return {"code": 0, "count": len(monkey_rows), "data": monkey_rows}
         if path.endswith("/mawb/"):
             return {"code": 0, "count": 1, "data": monkey_master or []}
+        if path.endswith("/mawb2/"):
+            return {"code": 0, "success": True, "action": "update", "rows": 1}
         if path.endswith("/hawb2"):
             return {"code": 0, "success": True, "action": "update", "rows": 1}
         raise AssertionError("未知路径 " + path)
@@ -99,6 +101,34 @@ def test_submit_live_reads_then_sends_full_merged_row():
     assert rec["SHIPPER_INFO_COMP_NAME"] == AIR_REVIEWED["SHIPPER_INFO_COMP_NAME"], "复核值覆盖读到的旧值"
     assert "GOODS_HS_CODE" not in rec, "分单表没有 HS 列，塞进去会当未识别字段"
     assert rec["HAWB_ID"] == 448 and rec["SEND_STATUS"] == 0, "读到的原样键要带上（服务端忽略状态/时间/ID）"
+
+
+def test_master_submit_live_carries_the_renamed_notify_country():
+    """2026-09-29 IT 改了列名：NOTIFYE_INFO_COUNTRY（多一个 E）→ NOTIFY_INFO_COUNTRY，旧名从此是
+    "未识别字段"。列面停在旧名会双向吃亏：我们填的通知人国家提不上去，同时读-改-写只带我们那 36 列，
+    公司那一列不在提交体里 → 整表写回把它抹成 NULL（把已有值删掉）。"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = "km", "kh"
+    master = [{"MASTER_NO": "176-62400004",
+               "AMS_RECORD": {"MAWB_NO": "176-62400004", "NOTIFY_INFO_COUNTRY": "SA",
+                              "NOTIFY_INFO_COMP_NAME": "MOHAMMED SALEEM", "SEND_STATUS": 0,
+                              "HMY_ID": 1, "CREATE_TIME": "2026-09-26T13:49:15.677000"}}]
+    sent = []
+    restore = _patch_post([], monkey_master=master, sent=sent)
+    try:
+        company_api.submit_master({"mawb": "176-62400004", "ams": {"MAWB_NO": "176-62400004"}})
+        rec = sent[-1]["body"]["AMS_RECORD"]
+        assert "NOTIFYE_INFO_COUNTRY" not in rec, "旧名不该再出现在提交体里"
+        assert rec.get("NOTIFY_INFO_COUNTRY") == "SA", \
+            f"读到而没改的列要原样带回，否则整表写回把它抹成 NULL：{sorted(rec)}"
+        sent.clear()
+        company_api.submit_master({"mawb": "176-62400004",
+                                   "ams": {"NOTIFY_INFO_COUNTRY": "CN"}})
+        assert sent[-1]["body"]["AMS_RECORD"]["NOTIFY_INFO_COUNTRY"] == "CN", "人工改的值要覆盖读到旧值"
+    finally:
+        restore()
+        config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = old
 
 
 def test_submit_live_refuses_locked_row_without_writing():

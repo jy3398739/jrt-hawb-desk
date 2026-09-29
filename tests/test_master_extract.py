@@ -22,7 +22,7 @@ ORDER = {
                    "SHIPPER_INFO_COMP_NAME": "METSO (TIANJIN) INVESTMENT CO., LTD.",
                    "CONSIGNEE_INFO_COMP_NAME": "MAADEN GOLD AND BASE METALS CO NATIONAL",
                    "CONSIGNEE_INFO_EORI": "SA4827430", "NOTIFY_INFO_COMP_NAME": "MOHAMMED SALEEM",
-                   "NOTIFYE_INFO_COUNTRY": "SA", "HMY_ID": 12, "SEND_STATUS": 0},
+                   "NOTIFY_INFO_COUNTRY": "SA", "HMY_ID": 12, "SEND_STATUS": 0},
 }
 
 
@@ -100,7 +100,7 @@ def test_validate_master_flags_company_400_lines():
     ams.update({"MAWB_NO": "176-6240004",                       # 少一位：公司直接 400
                 "SHIPPER_INFO_POSTAL": "201413" + "x" * 50,
                 "NOTIFY_INFO_TEL": "+861069479536",
-                "NOTIFYE_INFO_COUNTRY": "SA",                   # 区号 +86 对不上 SA
+                "NOTIFY_INFO_COUNTRY": "SA",                   # 区号 +86 对不上 SA
                 "SHIPPER_INFO_EORI": "12345"})
     warns = validate_master(ams)
     joined = "\n".join(warns)
@@ -168,7 +168,7 @@ def test_validate_master_is_quiet_on_a_clean_record():
     ams.update({"MAWB_NO": "176-62400004", "SLAC": 10,
                 "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_TEL": "+86 22 25322285",
                 "CONSIGNEE_INFO_COUNTRY": "SA", "CONSIGNEE_INFO_EORI": "SA4827430",
-                "NOTIFYE_INFO_COUNTRY": "SA"})
+                "NOTIFY_INFO_COUNTRY": "SA"})
     assert validate_master(ams) == [], "干净记录不该有旗（否则复核的人会忽略真旗）"
     # 同一份值配上带 USCI/VAT 的资料文本，就该只剩"税号无处落点"这两条
     only_tax = validate_master(ams, build_transcript(ORDER))
@@ -209,4 +209,4 @@ def test_regrouping_does_not_change_what_the_model_must_output():
     """分组只是给人看的排版；模型那份列清单必须还是 36 列一个不少（含通知人）。"""
     cols = [c for c, _l, _g in MASTER_FIELDS]
     assert len(cols) == 36
-    assert any(c.startswith("NOTIFY") for c in cols) and "NOTIFYE_INFO_COUNTRY" in cols
+    assert any(c.startswith("NOTIFY") for c in cols) and "NOTIFY_INFO_COUNTRY" in cols

@@ -144,7 +144,7 @@ def test_master_result_carries_the_labeled_field_table():
             c.get("/company/mawb", params={"mawb": "176-62400004"})
             j = c.get("/master/176-62400004").json()
             cols = [f[0] for f in j["fields"]]
-            assert len(cols) == 36 and "NOTIFYE_INFO_COUNTRY" in cols and "CONSIGNEE_INFO_CITY" in cols
+            assert len(cols) == 36 and "NOTIFY_INFO_COUNTRY" in cols and "CONSIGNEE_INFO_CITY" in cols
             assert all(len(f) == 3 for f in j["fields"]), "每列都要带中文名与分组，前端才有段落标题"
         finally:
             undo()

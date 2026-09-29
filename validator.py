@@ -129,7 +129,7 @@ def validate_air(d: dict) -> list:
 # 判据与分单同源（区号↔国家、EORI 形态、单号格式、限长），只是作用在公司列名上。
 _MASTER_GROUPS = (("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
                   ("CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_TEL"),
-                  ("NOTIFYE_INFO_COUNTRY", "NOTIFY_INFO_TEL"))
+                  ("NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_TEL"))
 _MASTER_EORI = ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI", "NOTIFY_INFO_EORI")
 _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
 
