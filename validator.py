@@ -137,8 +137,8 @@ _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
 def validate_master(ams: dict, transcript: dict | None = None) -> list:
     """主单可提交列的红旗。
 
-    主单表**没有税号列**：资料里印着 USCI/CNPJ/VAT 时要报"无处落点"交人工定夺，
-    而不是让模型把税号塞进 EORI（EORI 只能是两位国家字母开头的号码）。
+    主单表**没有税号列**：按公司口径（2026-09-29 用户定案）中国的 18 位 USCI 就放同主体的
+    EORI 列；CNPJ/RFC/GST/VAT 那类印在资料里而列面无处放时要报"无处落点"交人工定夺，不许塞进 EORI。
     限长 50 那九列是公司文档写死的 400 硬线，提前报出来比让人撞接口强。"""
     d = ams or {}
     warns: list[str] = []
@@ -180,8 +180,10 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
 
     for k in _MASTER_EORI:
         v = str(d.get(k, "") or "").strip()
-        if v and not re.fullmatch(r"[A-Za-z]{2}[A-Za-z0-9]{6,15}", v):
-            warns.append(f"{k} 形态异常: {v!r}（EORI 是两位国家字母开头；USCI/CNPJ 一类税号主单表没有列，别塞进来）")
+        if v and not re.fullmatch(r"[A-Za-z]{2}[A-Za-z0-9]{6,15}", v) \
+                and not re.fullmatch(r"[0-9A-Z]{18}", v.upper()):
+            warns.append(f"{k} 形态异常: {v!r}（EORI 要么是两位国家字母开头的号码，"
+                         "要么是按公司口径填进来的 18 位 USCI；CNPJ/VAT 那类不该出现在这一列）")
 
     if transcript:
         text = transcript.get("full_text") or " ".join(
@@ -193,5 +195,6 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
             if label.upper().startswith("EORI") or not num or num in seen or num in have:
                 continue
             seen.add(num)
-            warns.append(f"资料里有税号 {label} {num}，但主单表没有税号列：确认公司侧落点，不要塞进 EORI")
+            warns.append(f"资料里有税号 {label} {num}，主单表没有税号列：USCI 填同主体的 EORI 列，"
+                         "其它号（CNPJ/RFC/GST/VAT）先与公司确认落点，别塞进 EORI")
     return warns

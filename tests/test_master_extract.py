@@ -2,6 +2,7 @@
 """主单解析引擎回归：主单专用 prompt（36 列 + 主单口径 + 无图）、主单红旗、保真按主单列面回查。
 全程不打真实模型：客户端换成假的（照 test_model_switch 的写法）。"""
 import json
+import re
 from types import SimpleNamespace
 
 import config
@@ -100,22 +101,58 @@ def test_validate_master_flags_company_400_lines():
                 "SHIPPER_INFO_POSTAL": "201413" + "x" * 50,
                 "NOTIFY_INFO_TEL": "+861069479536",
                 "NOTIFYE_INFO_COUNTRY": "SA",                   # 区号 +86 对不上 SA
-                "SHIPPER_INFO_EORI": "911201117706402073"})
+                "SHIPPER_INFO_EORI": "12345"})
     warns = validate_master(ams)
     joined = "\n".join(warns)
     assert "MAWB_NO" in joined and "3位-横杠-8位" in joined
     assert any("SHIPPER_INFO_POSTAL" in w and "50" in w for w in warns), "限长 50 列要提前报，别等公司 400"
     assert any("NOTIFY_INFO_TEL" in w for w in warns), "通知人那组也要查（三组同规则，不是只查收发货人）"
-    assert any("SHIPPER_INFO_EORI" in w for w in warns), "USCI 那类税号不是 EORI 形态"
+    assert any("SHIPPER_INFO_EORI" in w for w in warns), "怪值仍要报（USCI 是按 18 位形态放行的，不是什么都放行）"
     assert not any("CONSIGNEE_INFO_COUNTRY 电话" in w for w in warns)
 
 
 def test_validate_master_reports_tax_with_nowhere_to_go():
-    """主单表没有税号列：资料里印着 USCI/VAT 时要出声，而不是让模型硬塞进 EORI。"""
+    """主单表没有税号列：资料里印着 USCI/VAT 而列面里一份都没有时要出声，交人工定夺。"""
     ams = {c: None for c in MASTER_COLS}
     ams["MAWB_NO"] = "176-62400004"
     warns = validate_master(ams, build_transcript(ORDER))
     assert any("税号" in w and ("USCI" in w or "VAT" in w) for w in warns), warns
+
+
+def test_validate_master_accepts_usci_in_the_party_eori_column():
+    """2026-09-29 用户定案：主单表没税号列，中国的统一社会信用代码（USCI）就放同主体的 EORI 列。
+    所以 18 位 USCI 出现在 EORI 里不是形态异常，资料里那条 USCI 也不再报"无处落点"；
+    但用户只给了 USCI 这一条，VAT/CNPJ 那类照旧要出声——别把口径悄悄放大成"什么号都能塞"。"""
+    ams = {c: None for c in MASTER_COLS}
+    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "911201117706402073"})
+    warns = validate_master(ams, build_transcript(ORDER))
+    assert not any("SHIPPER_INFO_EORI" in w for w in warns), warns
+    assert not any("911201117706402073" in w for w in warns), \
+        f"USCI 已落到 EORI，不该再报无处放: {warns}"
+    assert any("VAT" in w for w in warns), f"非 USCI 的税号仍要出声: {warns}"
+
+
+def test_validate_master_still_flags_odd_eori_values():
+    """放行只针对"18 位 USCI"这一种形态：短号、带标签、位数不对的一律还是异常，
+    否则模型把任何东西写进 EORI 都会被当成合规。"""
+    for bad in ("91120111770640207", "USCI 911201117706402073", "12345"):
+        ams = {c: None for c in MASTER_COLS}
+        ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": bad})
+        assert any("SHIPPER_INFO_EORI" in w for w in validate_master(ams)), f"{bad} 该报形态异常"
+
+
+def test_master_prompt_sends_usci_into_the_party_eori_column():
+    """口径改了，提示词必须跟着改（提示词进缓存指纹，旧解析会自动失效重跑）。
+    要有一条把 USCI 明确**放进** EORI 的话，且原来"USCI…没有落点"那句必须消失；
+    非 USCI 的税号仍然禁止塞 EORI。"""
+    head = vlm_extract.MASTER_PROMPT_HEAD
+    lines = head.splitlines()
+    assert any("USCI" in ln and "EORI" in ln and re.search(r"(填进|放进|写入|落到)", ln)
+               for ln in lines), f"缺一条把 USCI 指向 EORI 的口径: {lines}"
+    assert not any("USCI" in ln and "没有落点" in ln for ln in lines), \
+        "旧口径那句（USCI 没有落点）还在，模型会继续留空"
+    assert any(("CNPJ" in ln or "VAT" in ln) and "EORI" in ln and "不要" in ln
+               for ln in lines), "非 USCI 的税号仍然不许塞进 EORI"
 
 
 def test_validate_master_flags_hs_with_label_left():

@@ -313,6 +313,14 @@ def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
     assert '$("#btnMawb").hidden = !ME' in html, "入口对所有登录角色可见，只在未登录时藏"
 
 
+def test_desk_master_hint_matches_the_usci_into_eori_ruling():
+    """界面提示原来写"别把 USCI 塞进 EORI"，与 2026-09-29 用户定案（USCI 就放同主体 EORI）相反，
+    会把复核的人往错方向带。措辞要跟口径一致。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert "别把 USCI/CNPJ 那类税号塞进 EORI" not in html, "旧口径那句要撤掉"
+    assert "同主体的 EORI" in html and "USCI" in html, "要写清 USCI 落 EORI、别的税号仍不塞"
+
+
 def test_house_list_under_master_moves_to_a_full_width_strip():
     """名下分单表不能留在 264px 的左栏里：一多就挤成竖排（用户实测截图）。
     左栏只留入口，分单表落到 .wrap 网格之外的一条整宽卡上。"""

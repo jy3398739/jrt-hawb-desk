@@ -72,7 +72,7 @@ MASTER_PROMPT_HEAD = f"""你是航空主单(MAWB)资料提取员。下面给你�
 【主单口径 —— 与分单不同】
 ① 这是主单资料，不是分单票面：下面清单之外的东西一律不出现，尤其不要凭空造列、不要从发货人城市之类推算任何值。
 ② 通知人（NOTIFY 开头那些列）是独立一组，只能从 NOTIFY_INFO 那段资料里取；严禁把通知人并进收货人 CONSIGNEE_*，也严禁反过来。
-③ 主单表没有税号列：USCI/CNPJ/RFC/GST 一类税号在这里没有落点，不要塞进 EORI（EORI 只能是两位国家字母开头的号码）。资料里有这类号而无处安放时，留空即可，由质检提示人工定夺。
+③ 主单表没有税号列，公司把中国的统一社会信用代码放 EORI：USCI（18 位字母数字）填进**同主体**那一组的 *_INFO_EORI（发货人的号进 SHIPPER_INFO_EORI，收货人的进 CONSIGNEE_INFO_EORI，通知人的进 NOTIFY_INFO_EORI）。CNPJ/RFC/GST/VAT 一类其它税号不要塞进 EORI（除 USCI 外，EORI 只能是两位国家字母开头的号码），留空由质检提示人工定夺。
 ④ 列名照公司写法：通知人国家列就叫 NOTIFYE_INFO_COUNTRY（多个 E），收货人城市叫 CONSIGNEE_INFO_CITY（单 T）——那不是笔误，别改。
 ⑤ GOODS_INFO_HSCODE 只填号码本身：资料里的「HS CODE:8526109」取 8526109，多个码用英文逗号连接；不要把 "HS CODE" 这类标签一起抄进值里。
 
