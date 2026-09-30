@@ -61,8 +61,9 @@ if [ "$DRY" = "1" ]; then
   exit 0
 fi
 
-if [ "$NO_RESTART" = "1" ] && printf '%s\n' "$CHANGED" | grep -q '\.py$'; then
-  die "--no-restart 只给纯前端改动用：这次要推的里有 .py（$(printf '%s\n' "$CHANGED" | grep '\.py$' | head -3 | tr '\n' ' ')），改了服务端代码必须重启才生效"
+if [ "$NO_RESTART" = "1" ]; then
+  NEEDS="$(printf '%s\n' "$CHANGED" | grep '\.py$' | grep -v '^tests/' || true)"
+  [ -z "$NEEDS" ] || die "--no-restart 只给纯前端改动用：这次要推的里有服务端 .py（$(printf '%s\n' "$NEEDS" | head -3 | tr '\n' ' ')），改了代码必须重启才生效"
 fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
