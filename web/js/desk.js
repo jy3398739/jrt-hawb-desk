@@ -42,7 +42,7 @@ const S = {tickets:[], sel:null, running:false};
    按 mawb2 回传公司。它不是分单票据：字段面、红旗判据、提交接口都是主单那一套。 */
 let MV = null;
 let MST_LAST = null;             // 最近一次主单检索的原始响应，「送入主单核对」用它，不必再打一次公司接口
-let MV_TIMER = null;             // 解析中的轮询定时器
+let MV_POLL = null;             // 主单核对区那个轮询的句柄（退出视图要停）
 const MV_LONG = new Set(["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
                          "CONSIGNEE_INFO_COMP_NAME", "CONSIGNEE_INFO_COMP_ADDRESS",
                          "NOTIFY_INFO_COMP_NAME", "NOTIFY_INFO_COMP_ADDRESS"]);
@@ -62,6 +62,35 @@ function toast(msg, kind){
   setTimeout(() => el.remove(), kind === "bad" ? 9000 : 3500);       // 失败留久一点：那是要拿去改的东西
 }
 const esc = L.esc;
+/* ── 轮度调度器：三处"等结果"共用一个（主单检索、主单核对、解析作业） ──────────────
+   从前各自 setTimeout 递归：固定节奏、失败也照打、页面切走还在打，登录一过期就变成
+   401 死循环——制单员看着像卡死，其实是客户端在敲一扇不再开的门。
+   这里统一：越等越稀疏、有总时限、页面隐藏就停、切回来立刻补一次；run 返回 true 表示别再打了。 */
+const POLLERS = new Set();
+function poller(run, opts){
+  const o = Object.assign({every: 2000, cap: 15000, maxMs: 30 * 60 * 1000, giveUp: () => {}}, opts || {});
+  const p = {started: Date.now(), tries: 0, timer: null, paused: false};
+  p.step = () => {
+    p.tries++;
+    const again = () => {
+      if (!POLLERS.has(p)) return;
+      if (Date.now() - p.started > o.maxMs){ POLLERS.delete(p); o.giveUp(); return; }
+      p.timer = setTimeout(p.step, L.pollDelay(p.tries, o.every, o.cap));
+    };
+    Promise.resolve().then(() => run(p.tries))
+      .then(stop => { if (stop) POLLERS.delete(p); else again(); })
+      .catch(() => again());          // 网络抖也按同一退避继续等，别把制单员的结果弄丢
+  };
+  POLLERS.add(p);
+  p.timer = setTimeout(p.step, o.every);
+  return {stop(){ clearTimeout(p.timer); p.paused = false; POLLERS.delete(p); }};
+}
+document.addEventListener("visibilitychange", () => {
+  POLLERS.forEach(p => {
+    if (document.hidden){ clearTimeout(p.timer); p.paused = true; }
+    else if (p.paused){ p.paused = false; p.timer = setTimeout(p.step, 0); }   // 切回来立刻补一次
+  });
+});
 function txt(o, k){ return L.str(o, k); }
 function toNum(k, v){
   const s = String(v).replace(/,/g, "").trim();
@@ -583,22 +612,27 @@ async function extract(t){
 /* 解析改成就绪取：入队后轮询 /job。位次变了就刷一行状态，人才知道不是卡住了。
    作业表只在内存里——服务重启后旧作业 404，这里自动重传一次，不再让制单员手动重来。 */
 async function waitJob(job, t){
-  for (let i = 0; i < 1200; i++){               // 上限 30 分钟，超了就报错，别无限转
-    await new Promise(res => setTimeout(res, 1500));
-    const r = await fetch(BASE + "/job/" + encodeURIComponent(job));
-    if (r.status === 404){
-      if (t._requeued) throw new Error("服务重启过，重传后仍未取回结果");
-      t._requeued = 1;
-      return extract(t);
-    }
-    const d = await r.json().catch(() => ({}));
-    if (d.state === "done") return d.result;
-    if (d.state === "failed") throw new Error(d.error || "解析失败");
-    t.hint = d.state === "queued" ? ("排队中 · 前面 " + Math.max(0, (d.position || 1) - 1) + " 张") : "";
-    if (!t.hint && d.waiting) t.hint = "排队中 · 前面 " + d.waiting + " 张";
-    render();
-  }
-  throw new Error("解析超过 30 分钟未返回（模型或公司接口可能在抖），可点「重试解析」");
+  return await new Promise((res, rej) => {
+    poller(async () => {
+      const r = await fetch(BASE + "/job/" + encodeURIComponent(job));
+      if (r.status === 401){                        // 一直 401 的轮询只会让人以为票丢了：停下并把遮罩亮出来
+        $("#gate").hidden = false; rej(new Error("登录已过期，请重新登录后再传")); return true;
+      }
+      if (r.status === 404){
+        if (t._requeued){ rej(new Error("服务重启过，重传后仍未取回结果")); return true; }
+        t._requeued = 1;                            // 作业表只在内存里：丢了就自己重传一次，别让人手动重来
+        res(await extract(t)); return true;
+      }
+      const d = await r.json().catch(() => ({}));
+      if (d.state === "done"){ res(d.result); return true; }
+      if (d.state === "failed"){ rej(new Error(d.error || "解析失败")); return true; }
+      t.hint = d.state === "queued" ? ("排队中 · 前面 " + Math.max(0, (d.position || 1) - 1) + " 张") : "";
+      if (!t.hint && d.waiting) t.hint = "排队中 · 前面 " + d.waiting + " 张";
+      render();
+      return false;
+    }, {every: 1500, cap: 8000, maxMs: 30 * 60 * 1000,
+        giveUp: () => rej(new Error("解析超过 30 分钟未返回（模型或公司接口可能在抖），可点「重试解析」"))});
+  });
 }
 async function runQueue(){
   if (S.running) return;
@@ -832,7 +866,7 @@ function renderMain(){
     el.querySelectorAll("[data-munack]").forEach(b => b.addEventListener("click", () => {
       MV.acked = MV.acked.filter(x => x !== b.dataset.munack); mvSave(); render();
     }));
-    $("#mvBack").addEventListener("click", () => { clearTimeout(MV_TIMER); MV = null; render(); });
+    $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
     $("#mvSubmit").addEventListener("click", mvSubmit);
     return;
@@ -1009,7 +1043,7 @@ $("#pvNew").addEventListener("click", () => {
 $("#list").addEventListener("click", e => {
   const row = e.target.closest(".row"); if (!row) return;
   const t = S.tickets[+row.dataset.i]; if (!t) return;
-  MV = null;                     // 选中分单就退出"主单资料"视图，回到该票自己的核对与提交
+  mvOff();                       // 选中分单就退出"主单资料"视图，回到该票自己的核对与提交
   S.sel = t.stem || t.filename; render();
 });
 $("#drafts").addEventListener("click", e => {
@@ -1215,7 +1249,7 @@ function mstRender(j, mawb){
    不需要制单员重新上传原件。改完还是走 /submit，红旗由服务端按当前值重算。 */
 async function openHouse(stem){
   const hit = S.tickets.find(t => t.stem === stem);
-  if (hit){ MV = null; S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  if (hit){ mvOff(); S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
   try{
     const r = await fetch(BASE + "/ticket/" + encodeURIComponent(stem));
     if (!r.ok){
@@ -1229,7 +1263,7 @@ async function openHouse(stem){
                raw:d.raw || {}, air:d.air || {}, airE:dr.airE || {}, ackF:dr.ackF || [],
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
                                          reviewer:d.submitted.reviewer} : null};
-    S.tickets.push(t); MV = null; S.sel = stem; render();
+    S.tickets.push(t); mvOff(); S.sel = stem; render();
     $("#view").scrollIntoView({behavior:"smooth", block:"start"});
     toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + (t.submitted ? "已提交过，改动需再点提交"
           : "本机结果，改完点提交") + "）", "ok");
@@ -1252,18 +1286,21 @@ async function mstSearch(force){
 }
 /* 解析中每 2 秒取一次结果：入口状态、以及（如果已经打开）主单核对区一起更新 */
 function mstPoll(mawb){
-  setTimeout(async () => {
-    try{
-      const r = await fetch(BASE + "/master/" + encodeURIComponent(mawb));
-      if (!r.ok){ mstPoll(mawb); return; }
-      const rec = await r.json();
-      if (!MST_LAST || MST_LAST.mawb !== mawb) return;
-      MST_LAST.master = rec;
-      $("#mstResult").innerHTML = mstCard(MST_LAST, mawb);
-      if (MV && MV.mawb === mawb){ mvSetRec(rec); render(); }
-      if (rec.state === "parsing") mstPoll(mawb);
-    }catch(e){ mstPoll(mawb); }
-  }, 2000);
+  if (mstPoll._h) mstPoll._h.stop();               // 换一张主单：上一路轮询必须先停，否则两张卡的状态互相盖
+  mstPoll._h = poller(async () => {
+    const r = await fetch(BASE + "/master/" + encodeURIComponent(mawb));
+    if (r.status === 401){                          // 登录过期后服务器只会一直回 401：停下来把遮罩亮出来
+      $("#gate").hidden = false; toast("登录已过期，请重新登录", "bad"); return true;
+    }
+    if (!r.ok) return false;                        // 取不到就按退避再试，别在这里自己递归
+    const rec = await r.json();
+    if (!MST_LAST || MST_LAST.mawb !== mawb) return true;
+    MST_LAST.master = rec;
+    $("#mstResult").innerHTML = mstCard(MST_LAST, mawb);
+    if (MV && MV.mawb === mawb){ mvSetRec(rec); render(); }
+    return rec.state !== "parsing";
+  }, {every: 2000, cap: 10000, maxMs: 3 * 60 * 1000,
+      giveUp: () => toast("主单解析三分钟内没回话：稍后重新检索，或点「重新解析」再试", "bad")});
 }
 /* ── 主单核对与提交 ─────────────────────────────────────────────────── */
 function mvValues(){
@@ -1320,16 +1357,21 @@ async function mvReparse(){
   if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ mvSetRec(MST_LAST.master || MV.rec); render(); mvPoll(); }
 }
 function mvPoll(){
-  clearTimeout(MV_TIMER);
+  if (MV_POLL) MV_POLL.stop();
   if (!MV || !MV.rec || MV.rec.state !== "parsing") return;
-  MV_TIMER = setTimeout(async () => {
-    try{
-      const r = await fetch(BASE + "/master/" + encodeURIComponent(MV.mawb));
-      if (r.ok){ mvSetRec(await r.json()); render(); if (MV && MV.rec.state === "parsing") mvPoll(); }
-      else if (MV) mvPoll();
-    }catch(e){ if (MV) mvPoll(); }
-  }, 2000);
+  MV_POLL = poller(async () => {
+    const r = await fetch(BASE + "/master/" + encodeURIComponent(MV.mawb));
+    if (r.status === 401){ $("#gate").hidden = false; toast("登录已过期，请重新登录", "bad"); return true; }
+    if (!r.ok) return false;
+    const rec = await r.json();
+    if (!MV) return true;                          // 核对区已经关了：这一轮拿到什么都不要写回去
+    mvSetRec(rec); render();
+    return rec.state !== "parsing";
+  }, {every: 2000, cap: 10000, maxMs: 3 * 60 * 1000,
+      giveUp: () => toast("主单解析三分钟内没回话：可点「重新解析」再试", "bad")});
 }
+/* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。 */
+function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
 async function mvSubmit(){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }

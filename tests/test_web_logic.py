@@ -20,6 +20,16 @@ def test_logic_file_is_loaded_before_desk_js():
     assert "L.draft" in web_src.part("js/desk.js"), "desk.js 要走 logic，别再自己抄一份算式"
 
 
+def test_poll_backoff_grows_and_is_capped():
+    """越等越稀疏：解析慢的时候按秒敲服务器没有意义；但也不能无限指数涨上去。"""
+    assert _eval("L.pollDelay(1, 2000, 15000)") == 2000, "第一次就退避会把正常速度的结果也拖慢"
+    steps = [_eval("L.pollDelay(n, 2000, 15000)", n=n) for n in range(1, 13)]
+    assert all(b >= a for a, b in zip(steps, steps[1:])), "间隔必须单调不降：忽长忽短像是坏了"
+    assert max(steps) <= 15000, f"退避要有上限：{max(steps)}"
+    assert steps[5] > steps[1], f"到第 6 次还没退避就不是调度器：{steps[:6]}"
+
+
+
 def test_draft_merge_keeps_human_edits_and_flags_only_moved_columns():
     """恢复草稿时人改的值照单恢复；只有'草稿当时的原值 ≠ 现在解析出的原值'的列才算打架。
     解析没动的列偏要报打架，制单员就得白重改一遍，几次之后这条提示没人再看。"""

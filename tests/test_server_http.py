@@ -86,6 +86,25 @@ def test_desk_waits_for_the_parse_job_instead_of_blocking_on_upload():
     assert "t.hint" in busy, "busy 状态要能显示队列给的位置，只显示「解析中…」等于没说"
 
 
+def test_desk_polls_through_one_scheduler_that_backs_off_and_pauses():
+    """三处"等结果"从前各自 setTimeout 递归：固定节奏、失败也照打、页面切走还在打，
+    登录一过期就变成 401 死循环——制单员看着像卡死，其实是客户端在敲一扇不再开的门。"""
+    js = web_src.part("js/desk.js")
+    assert "function poller(" in js and "POLLERS" in js, "要有一个统一调度器，而不是三处各自递归"
+    assert js.count("L.pollDelay(") == 1, "退避算法只该有一处：两处算间隔就会长成两个节奏"
+    assert 'document.addEventListener("visibilitychange"' in js, \
+        "页面切走要停手：制单员切去 Excel 的那几分钟不该继续打服务器"
+    assert "visibilitychange" in js and "p.step" in js, "切回前台要立刻补一次，而不是等下一个退避周期"
+    for a, b, tag in (("function mstPoll(", "/* ── 主单核对与提交", "mstPoll"),
+                      ("function mvPoll(", "async function mvSubmit(", "mvPoll"),
+                      ("async function waitJob(", "async function runQueue(", "waitJob")):
+        body = js[js.index(a):js.index(b, js.index(a))]
+        assert "poller(" in body, tag + "：还在自己排期，没走调度器"
+        assert "401" in body, tag + "：拿回 401 要停下并把登录遮罩亮出来，否则就是 401 死循环"
+        assert "setTimeout(async" not in body, tag + "：递归排期没清干净"
+    assert "MV_TIMER" not in js, "主单核对的轮询句柄要交给调度器管，留着裸 timer 就会漏停"
+
+
 def test_web_assets_are_served_no_store_and_traversal_free():
     """拆成 css/ js/ 之后，页面靠 /web/{路径} 取资源：免登录（登录页也得有样式），
     但只能拿这两个目录下的一段文件名，且一律 no-store——缓存里留半份旧脚本就是"点了没反应"。"""

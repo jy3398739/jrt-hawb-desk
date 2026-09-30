@@ -13,6 +13,12 @@ const L = {
      后端将来加角色，宁可原样显示，也别替他猜一个别人的身份。 */
   roleCn(role){ return ({admin:"管理员", reviewer:"制单员", inputter:"录入员"})[role] || String(role); },
 
+  /* 轮询的下一间隔：第一次就退避会把正常速度的结果也拖慢，所以第 1 次就是基础值；
+     之后越等越稀疏（解析慢的时候按秒敲服务器没有意义），但要有上限。 */
+  pollDelay(tries, every, cap){
+    return Math.min(Math.round(every * Math.pow(1.6, Math.max(0, (tries | 0) - 1))), cap);
+  },
+
   /* 打开主单 / 重新解析之后，把本机草稿并回当前解析。
      人改过的列照单恢复；只有"草稿当时的原值 ≠ 现在解析出的原值"的列才算打架——
      底层解析动了，人对着旧值改的那一格可能已经不对，要点名复核。

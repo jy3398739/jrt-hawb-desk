@@ -119,6 +119,6 @@ def test_desk_strip_hawb_number_opens_that_ticket():
     op = _html_fn(html, "openHouse")
     assert "/ticket/" in op, "要向后端取落盘结果，不是只在本地暂存里翻"
     assert "S.tickets.push" in op and "S.sel" in op, "取回应进票据列表并选中"
-    assert "MV = null" in op, "打开分单要退出主单视图"
+    assert "mvOff()" in op, "打开分单要退出主单视图，并停掉那张主单的轮询"
     assert "loadPreview" in op or "render()" in op, "落位后要把票面与核对区渲染出来"
     assert '$("#mstHawbBox").addEventListener' in html, "整宽条上要有 openHouse 的点击委托"
