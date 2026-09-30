@@ -12,11 +12,11 @@ VLM 调用与重试、保真回查、红旗/提交门/台账范式；不共用�
 import datetime
 import hashlib
 import json
-import os
 import re
 import threading
 import time
 
+import atomic
 import config
 import company_api
 import master_fields as mf
@@ -77,14 +77,7 @@ def _write(rec: dict) -> dict:
     p = path_for(rec.get("mawb", ""))
     if p is None:
         raise ValueError(f"主单号不合法，无法落盘: {rec.get('mawb')!r}")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(rec, ensure_ascii=False, indent=2), encoding="utf-8")
-    try:
-        os.chmod(tmp, 0o600)
-    except OSError:
-        pass                                  # Windows 的 chmod 只管只读位
-    os.replace(tmp, p)
+    atomic.write_json(p, rec, mode=0o600)      # 主单缓存里是公司资料，新建就收 600
     rec["path"] = str(p)
     return rec
 

@@ -22,6 +22,7 @@ import secrets
 import time
 from pathlib import Path
 
+import atomic
 import config
 
 # === 可调项（都有合理默认，一般不用配） ===
@@ -85,18 +86,9 @@ def seed_data() -> dict:
 
 
 def _write(data: dict) -> None:
-    """原子写盘并保住权限：里面既有口令哈希又有签名 secret，posix 上收进 600。
-    tmp 按 umask 建，os.replace 会把原文件权限一起换掉——先按原 mode（或新建则 600）chmod tmp，
-    否则每改一次口令就放宽一档（.env 曾踩过同样的坑）。"""
-    USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = USERS_FILE.with_name(USERS_FILE.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    mode = (USERS_FILE.stat().st_mode & 0o7777) if USERS_FILE.exists() else 0o600
-    try:
-        os.chmod(tmp, mode)
-    except OSError:
-        pass                              # Windows 的 chmod 只管只读位，失败不拦写入
-    os.replace(tmp, USERS_FILE)
+    """原子写盘并保住权限：里面既有口令哈希又有签名 secret，新建时收进 600，
+    已存在则沿用原权限（os.replace 会把临时文件的权限一起带过去，见 atomic.py）。"""
+    atomic.write_json(USERS_FILE, data, mode=0o600)
 
 
 def load() -> dict:

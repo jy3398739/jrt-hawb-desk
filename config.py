@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import atomic
+
 # 版本标识：V1 = 2026-09-26 定版的现役形态（票面 PDF/图片 → L1 转录 → L2 提取 → 审核台核对 → mock 回传）。
 # V2 是另一套形态（对接真实网页制单，测试用、不走公司系统），两台会并存，所以 /health 与页面标题都得带它。
 APP_VERSION = "V1"
@@ -258,17 +260,7 @@ def persist_model_choice(choice: str, env_key: str = "VLM_MODEL") -> None:
         if out and out[-1].strip():
             out.append("")
         out.append(f"{env_key}={choice}")
-    tmp = ENV_FILE.with_name(ENV_FILE.name + ".tmp")
-    with tmp.open("w", encoding="utf-8", newline="") as f:
-        f.write(nl.join(out) + nl)
-    if ENV_FILE.exists():
-        try:
-            # 原子替换会把原文件的权限一起换掉（tmp 按 umask 建）。服务器上 .env 是 600，
-            # 不补这一步每切一次模型就放宽成 664——.env 里放着令牌。
-            os.chmod(tmp, ENV_FILE.stat().st_mode & 0o7777)
-        except OSError:
-            pass    # Windows 的 chmod 只认只读位，失败也不该拦住切模型
-    os.replace(tmp, ENV_FILE)
+    atomic.write_text(ENV_FILE, nl.join(out) + nl, mode=0o600)   # .env 里放着令牌：新建就收 600
 
 # === 目录 ===
 BASE_DIR = Path(__file__).resolve().parent

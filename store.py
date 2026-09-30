@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """结果落盘、L0 原件归档与汇总。"""
-import json, hashlib, os, shutil, datetime, threading, re
+import json, hashlib, shutil, datetime, threading, re
 from pathlib import Path
 
 import config
+import atomic
 
 
 def _write(path: Path, data: dict):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic.write_json(path, data)
 
 
 def md5_of(path: Path) -> str:
@@ -43,7 +43,7 @@ def archive_original(path: Path) -> dict:
         "size_bytes": path.stat().st_size,
         "archived_at": datetime.datetime.now().isoformat(timespec="seconds"),
     }
-    manifest_p.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic.write_json(manifest_p, manifest)      # 归档台账也不能裸写：截断一次这份原件就查无来源
     return manifest
 
 
@@ -106,10 +106,8 @@ def rebuild_summary():
                 if not f.name.startswith("all_")]
     raws = collect(config.OUTPUT_RAW_DIR)
     airs = collect(config.OUTPUT_AIR_DIR)
-    (config.OUTPUT_RAW_DIR / "all_hawbs.json").write_text(
-        json.dumps(raws, ensure_ascii=False, indent=2), encoding="utf-8")
-    (config.OUTPUT_AIR_DIR / "all_hawbs_air.json").write_text(
-        json.dumps(airs, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic.write_json(config.OUTPUT_RAW_DIR / "all_hawbs.json", raws)
+    atomic.write_json(config.OUTPUT_AIR_DIR / "all_hawbs_air.json", airs)
     return len(raws), len(airs)
 
 
@@ -170,18 +168,8 @@ def _load_ledger(path=None) -> dict:
 
 
 def _write_ledger(data: dict, path=None) -> None:
-    """原子写并收紧权限：内容含复核人姓名与回执，posix 上收进 600（同 auth._write 的套路，
-    否则 tmp 按 umask 建、os.replace 会把原文件 600 放宽成 664）。"""
-    path = path or config.SUBMIT_LEDGER
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    mode = (path.stat().st_mode & 0o7777) if path.exists() else 0o600
-    try:
-        os.chmod(tmp, mode)
-    except OSError:
-        pass                                  # Windows 的 chmod 只管只读位，失败不拦写入
-    os.replace(tmp, path)
+    """原子写并收紧权限：内容含复核人姓名与回执，posix 上新建的台账收进 600（已存在沿用原权限）。"""
+    atomic.write_json(path or config.SUBMIT_LEDGER, data, mode=0o600)
 
 
 def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
