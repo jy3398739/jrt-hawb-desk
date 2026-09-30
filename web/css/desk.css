@@ -42,6 +42,10 @@ input,textarea{font:inherit;color:inherit}
 .btn.pri{background:var(--edit);border-color:var(--edit);color:#fff}
 .btn.pri:hover:not(:disabled){background:#18519f}
 .btn.sm{padding:2px 8px;font-size:12px;min-height:28px}   /* 点按目标要够大：从前只有 22px 高 */
+/* 视图切换（核对工作台 / 今日台账）：一副分段控件，选中段实心。白字压在 --edit 上约 5.1:1 */
+.seg{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg .btn{border:0;border-radius:0;background:var(--panel);color:var(--ink2);min-height:30px;padding:2px 12px}
+.seg .btn.on{background:var(--edit);color:#fff;font-weight:600}
 .btn.gh{border-style:dashed;color:var(--ink2);background:transparent}
 .list{max-height:calc(100vh - 250px);overflow:auto}
 /* 票行 / 还原 / 字段名 / 分单号 / 红旗跳转从前是带 cursor:pointer 的 div、span、a：

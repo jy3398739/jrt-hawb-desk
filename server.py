@@ -573,6 +573,19 @@ def results(_: None = Depends(require_web)):
     }
 
 
+@app.get("/day")
+def day(date: str = "", _: None = Depends(require_web)):
+    """今日台账：这台机器某天经手的票一张表看完（解析/红旗/提交/原件）。date 省略=今天。
+    台账是本机的、两台机器各记各账，这一页就是把"今天谁做了什么"摊开在同一张桌子上；
+    公司侧的发送状态要按主单查（限流），所以不混进这一页，去「主单检索」看。"""
+    d = (date or time.strftime("%Y-%m-%d")).strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+        raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
+    rows = store.day_rows(d)
+    who = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
+    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who)}
+
+
 def _archive_dir(stem: str):
     """URL 里的 stem 只当单段目录名用：'..' / 带分隔符 / 空名一律不认，
     否则 ../../ 就能越过归档根去读服务器上任何目录。"""

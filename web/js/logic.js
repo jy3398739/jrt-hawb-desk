@@ -19,6 +19,20 @@ const L = {
     return Math.min(Math.round(every * Math.pow(1.6, Math.max(0, (tries | 0) - 1))), cap);
   },
 
+  /* 今日台账的报数口径：pending 是"还没回公司"的张数（含解析失败的），
+     制单员每天说的"还剩几张没发"就是这个数，别把它算成 total-submitted-failed。 */
+  daySummary(rows){
+    const rs = rows || [];
+    let submitted = 0, failed = 0, flags = 0;
+    rs.forEach(r => {
+      if (r.submitted) submitted++;
+      if (r.failed) failed++;
+      flags += r.flags || 0;
+    });
+    return {total: rs.length, submitted: submitted, pending: rs.length - submitted,
+            failed: failed, flags: flags};
+  },
+
   /* 打开主单 / 重新解析之后，把本机草稿并回当前解析。
      人改过的列照单恢复；只有"草稿当时的原值 ≠ 现在解析出的原值"的列才算打架——
      底层解析动了，人对着旧值改的那一格可能已经不对，要点名复核。

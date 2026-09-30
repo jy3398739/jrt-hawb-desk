@@ -365,7 +365,8 @@ def test_house_list_under_master_moves_to_a_full_width_strip():
     srch = _fn(html, "mstSearch")
     assert "mstRender(j, m)" in srch, "检索结果要统一走 mstRender（搜索与轮询共用一份落位逻辑）"
     render = _fn(html, "mstRender")
-    assert "mstHawbBox" in render and "mstHawbCard" in render, "分单表要写进底部整宽卡"
+    assert "mstHawbBox" in render and "syncCards()" in render, \
+        "分单表要写进底部整宽卡；整卡显隐交 syncCards（今日台账视图要能把它让开）"
     assert _fn(html, "mstCard").count("<table") == 0, "左栏卡片里不该再有表格"
     tab = _fn(html, "mstTable")
     assert "发送状态" in tab or "状态" in tab, "整宽了就把 j9 的发送状态一并显示（录入员要看哪张已发）"

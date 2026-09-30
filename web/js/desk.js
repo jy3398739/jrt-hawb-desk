@@ -1148,6 +1148,7 @@ async function saveAcct(name, password, role){
 }
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
 $("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"滚过去 + 聚焦输入框"
+  setView("desk");                                // 在今日台账里点它，要先回到工作台才看得见那张卡
   const box = $("#mstNo");
   box.scrollIntoView({behavior: "smooth", block: "center"});
   box.focus();
@@ -1244,7 +1245,8 @@ function mstTable(list, pend){
 function mstRender(j, mawb){
   $("#mstResult").innerHTML = mstCard(j, mawb);
   const list = j.hawb_orders || [], pend = pendingUnder(mawb);
-  $("#mstHawbCard").hidden = !(list.length || pend.length);
+  MST_CARD_ON = !!(list.length || pend.length);
+  syncCards();
   $("#mstHawbCnt").textContent = (list.length || pend.length)
     ? ("主单 " + mawb + " · 公司 " + list.length + " 张" + (pend.length ? " · 本台待提交 " + pend.length + " 张" : ""))
     : "";
@@ -1432,5 +1434,83 @@ $("#mstResult").addEventListener("click", async e => {
           + "（36 列可改，提交前由服务端重算红旗）", "ok");
     return;
   }
+});
+/* ── 两个视图（§3.3）：核对工作台 / 今日台账，同一页互切，票据与草稿都不重载 ─────
+   今日台账读 /day：那一天这台机器经手过哪些票、谁提交的、还有几张没回公司。
+   公司的发送状态不在这张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
+const VIEW = {cur: "desk", rows: [], date: ""};
+let MST_CARD_ON = false;
+function syncCards(){
+  const desk = VIEW.cur === "desk";
+  $("#wrap").hidden = !desk;
+  $("#dayCard").hidden = desk;
+  $("#mstHawbCard").hidden = desk || !MST_CARD_ON;
+}
+function setView(v){
+  VIEW.cur = v === "day" ? "day" : "desk";
+  const desk = VIEW.cur === "desk";
+  $("#viewDesk").classList.toggle("on", desk);
+  $("#viewDay").classList.toggle("on", !desk);
+  $("#viewDesk").setAttribute("aria-selected", String(desk));
+  $("#viewDay").setAttribute("aria-selected", String(!desk));
+  syncCards();
+  if (!desk) loadDay();
+}
+const todayStr = () => {
+  const n = new Date(), p = x => String(x).padStart(2, "0");
+  return n.getFullYear() + "-" + p(n.getMonth() + 1) + "-" + p(n.getDate());
+};
+async function loadDay(){
+  const box = $("#dayBox");
+  box.innerHTML = '<div class="empty">正在读今天的台账…</div>';
+  try{
+    const picked = $("#dayDate").value;
+    const r = await fetch(BASE + "/day" + (picked && picked !== VIEW.date ? "?date=" + encodeURIComponent(picked) : ""));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    VIEW.date = j.date; VIEW.rows = j.rows || [];
+    $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
+    renderDay();
+  }catch(e){
+    box.innerHTML = `<div class="empty" style="color:var(--bad)">读台账失败：${esc(e.message || e)}</div>`;
+  }
+}
+function renderDay(){
+  const s = L.daySummary(VIEW.rows);
+  $("#dayCnt").textContent = `${s.total} 张 · 已提交 ${s.submitted} · 待提交 ${s.pending}`
+    + (s.failed ? ` · 失败 ${s.failed}` : "") + (s.flags ? ` · 红旗 ${s.flags} 条` : "");
+  if (!VIEW.rows.length){
+    $("#dayBox").innerHTML = '<div class="empty">这一天这台机器没经手过票。换个日期，或点「刷新」。</div>';
+    return;
+  }
+  const rows = VIEW.rows.map(r => `<tr class="${r.failed ? "flag" : ""}">
+    <td>${r.has_original
+      ? `<button type="button" class="lk" data-open="${esc(r.stem)}" title="回到工作台接着核这张票">${esc(r.hawb || r.stem)}</button>`
+      : esc(r.hawb || "没取到分单号")}</td>
+    <td>${esc(r.mawb || "—")}</td>
+    <td>${r.failed ? '<span class="badge miss">解析失败</span>'
+      : r.submitted ? '<span class="badge same">已提交</span>' : '<span class="badge warn">未提交</span>'}</td>
+    <td>${r.flags ? `<span class="badge warn">红旗 ${r.flags}</span>` : '<span class="badge">无</span>'}</td>
+    <td>${r.submitted ? esc(r.submitted.reviewer + " · " + r.submitted.at +
+                             (r.submitted.action ? " · " + r.submitted.action : "")) : "—"}</td>
+    <td>${esc((r.channel || "—") + " · " + (r.elapsed || 0) + "s")}</td>
+    <td>${r.has_original
+      ? `<a href="${BASE}/source/${encodeURIComponent(r.stem)}" target="_blank" rel="noopener">看原件</a>`
+      : '<span class="hint">没归档原件</span>'}</td></tr>`).join("");
+  $("#dayBox").innerHTML = `<table><thead><tr>
+      <th>分单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
+      <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <p class="hint" style="padding:10px 12px">「公司发送状态」不在这一页：它要按主单去公司系统查（限流 10 次/秒）。
+      要看哪张已发给航司，点顶栏「主单检索」按主单号查那张主单下的全部票。</p>`;
+}
+$("#viewDesk").addEventListener("click", () => setView("desk"));
+$("#viewDay").addEventListener("click", () => setView("day"));
+$("#dayGo").addEventListener("click", loadDay);
+$("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(); });
+$("#dayBox").addEventListener("click", e => {
+  const b = e.target.closest("[data-open]"); if (!b) return;
+  setView("desk");                       // 回工作台，再复用同一条打开已归档分单的链路
+  openHouse(b.dataset.open);
 });
 checkAuth();

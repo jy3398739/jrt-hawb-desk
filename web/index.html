@@ -21,6 +21,10 @@
   <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
     <input type="checkbox" id="doSave" checked>落盘留档</label>
   <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
+  <span class="seg" role="tablist" aria-label="视图切换">
+    <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
+    <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日台账</button>
+  </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
@@ -60,7 +64,7 @@
   </div>
 </div>
 
-<div class="wrap">
+<div class="wrap" id="wrap">
   <div id="side">
     <section class="card">
       <div class="t">上传分单<span class="sp"></span><span class="n" id="cnt">0 票</span></div>
@@ -126,6 +130,14 @@
 <section class="card" id="mstHawbCard" hidden style="margin-top:14px">
   <div class="t">名下分单<span class="sp"></span><span class="n" id="mstHawbCnt"></span></div>
   <div id="mstHawbBox"></div>
+</section>
+
+<section class="card" id="dayCard" hidden style="margin-top:14px">
+  <div class="t">今日台账<span class="sp"></span>
+    <label class="f">日期<input id="dayDate" type="date" aria-label="台账日期"></label>
+    <button class="btn sm" id="dayGo" type="button">刷新</button>
+    <span class="n" id="dayCnt"></span></div>
+  <div id="dayBox"></div>
 </section>
 
 <div id="toasts" aria-live="polite"></div>

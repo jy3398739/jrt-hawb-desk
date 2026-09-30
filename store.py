@@ -247,3 +247,44 @@ def submitted_by_mawb(mawb: str) -> list:
     if not want:
         return []
     return [e for e in _load_ledger().values() if norm_no(e.get("mawb", "")) == want]
+
+
+def day_rows(date: str) -> list:
+    """某一天经手过的票：质检记录是"经手"的凭据（每解析一张必落一份 QC），
+    再联结 L3 的单号、提交台账与原件归档。今日台账这一页读的就是它。
+
+    解析了但没提交的票也要在表里——它正是"今天还差哪几张没回公司"的答案；
+    解析失败的更要摆出来，不然制单员只知道"它没出现在提交记录里"。
+    """
+    if not config.OUTPUT_QC_DIR.exists():
+        return []
+    led = _load_ledger()
+    found = []
+    for f in sorted(config.OUTPUT_QC_DIR.glob("*.json")):
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue                     # 一条坏记录不该拖挂整页（与 load_qc 同口径）
+        if str(rec.get("processed_at", "")).startswith(date):
+            found.append((f.stem, rec))
+    found.sort(key=lambda kv: str(kv[1].get("processed_at")))
+    rows = []
+    for stem, rec in found:
+        try:
+            air = json.loads((config.OUTPUT_AIR_DIR / f"{stem}.json").read_text(encoding="utf-8"))
+        except Exception:
+            air = {}
+        e = led.get(stem) or {}
+        rows.append({"stem": stem, "source_name": rec.get("source_name") or stem,
+                     "channel": rec.get("channel") or "", "elapsed": rec.get("elapsed"),
+                     "processed_at": rec.get("processed_at") or "",
+                     "mawb": e.get("mawb") or air.get("MAWB_NO", ""),
+                     "hawb": e.get("hawb") or air.get("HAWB_NO", ""),
+                     "flags": len(rec.get("flags") or []),
+                     "needs_review": bool(rec.get("needs_review")),
+                     "failed": bool(rec.get("error")),
+                     "error": rec.get("error") or "",
+                     "submitted": ({"reviewer": e.get("reviewer") or "", "at": e.get("submitted_at") or "",
+                                    "action": e.get("company_action") or ""} if e else None),
+                     "has_original": (config.ARCHIVE_DIR / stem).is_dir()})
+    return rows
