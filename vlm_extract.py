@@ -217,21 +217,26 @@ def _encode(img: Image.Image) -> str:
 
 
 def img_to_data_urls(path) -> list[str]:
-    """读图片/PDF，每页一个 data URL。多页 PDF 全部下发，避免第二页字段丢失。"""
+    """读图片/PDF，每页一个 data URL。多页 PDF 全部下发，避免第二页字段丢失。
+
+    **逐页渲染 → 编码 → 丢**：原来先把每页都攒成 PIL 对象再整批编码，一张四页票同时握着
+    pixmap + PIL + base64 三份。省下来的不是流量，是内存闸（撞满 MemoryMax 时 systemd 杀的是
+    整个服务，不是那一张票）。这里不降采样——IMAGE_LONG_EDGE 是过去所有模型横评的前提，
+    动它属于改准确率口径，不属于"行为不变的加固"。"""
     path = Path(path)
     if path.suffix.lower() == ".pdf":
         import pymupdf
+        out = []
         doc = pymupdf.open(str(path))
         try:
-            imgs = []
             for page in doc:
                 pix = page.get_pixmap(matrix=pymupdf.Matrix(2, 2))
-                imgs.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
+                out.append(_encode(Image.frombytes("RGB", (pix.width, pix.height), pix.samples)))
         finally:
             doc.close()
-    else:
-        imgs = [Image.open(path)]
-    return [_encode(img) for img in imgs]
+        return out
+    with Image.open(path) as img:
+        return [_encode(img)]
 
 
 def extract_one(path, transcript: dict | None = None) -> dict:

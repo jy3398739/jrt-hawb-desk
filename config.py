@@ -313,6 +313,8 @@ IMAGE_LONG_EDGE = int(os.getenv("IMAGE_LONG_EDGE", "0"))  # 0=原图(魔搭接�
 # === 电子单 Excel → PDF（LibreOffice 无头转换，转完走 VLM 通道）===
 SOFFICE_PATH = os.getenv("SOFFICE_PATH", "").strip()  # 留空则自动探测常见安装位置
 XLSX_PDF_TIMEOUT = int(os.getenv("XLSX_PDF_TIMEOUT", "120"))
+# 同时最多开几个 LibreOffice 子进程（每个约 300MB）。机器上还跑着别的服务，默认 1 个。
+XLSX_PDF_SLOTS = int(os.getenv("XLSX_PDF_SLOTS", "1"))
 
 # PDF 文字层少于此字符数即视为照片型扫描件，L1 退回 VLM 转录
 L1_TEXT_MIN_CHARS = int(os.getenv("L1_TEXT_MIN_CHARS", "200"))

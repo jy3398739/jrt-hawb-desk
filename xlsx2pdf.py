@@ -6,10 +6,15 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 
 import config
+
+# 一个 soffice 子进程约 300MB，并发上限要由这里定，而不是由"同一秒传了几张电子单"定：
+# 内存闸（MemoryMax）撞满时 systemd 杀的是整个服务，不只杀那张票。
+_SOFFICE_SEM = threading.BoundedSemaphore(config.XLSX_PDF_SLOTS)
 
 _WIN_CANDIDATES = (
     r"C:\Program Files\LibreOffice\program\soffice.exe",
@@ -60,16 +65,17 @@ def convert_excel_to_pdf(path, out_dir=None) -> Path:
         "--outdir", str(out_dir),
         str(path),
     ]
-    try:
-        proc = subprocess.run(
-            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=config.XLSX_PDF_TIMEOUT,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"Excel 转 PDF 超时({config.XLSX_PDF_TIMEOUT}s): {path.name}")
-    finally:
-        shutil.rmtree(profile, ignore_errors=True)
+    with _SOFFICE_SEM:
+        try:
+            proc = subprocess.run(
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=config.XLSX_PDF_TIMEOUT,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"Excel 转 PDF 超时({config.XLSX_PDF_TIMEOUT}s): {path.name}")
+        finally:
+            shutil.rmtree(profile, ignore_errors=True)
 
     pdf = out_dir / (path.stem + ".pdf")
     if not pdf.exists():

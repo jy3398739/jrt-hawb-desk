@@ -4,7 +4,10 @@
 """
 import io
 import json
+import tempfile
+import time
 import urllib.error
+from pathlib import Path
 
 import company_api
 import config
@@ -86,6 +89,94 @@ def _stub_urlopen(errors, ok_body=None, calls=None):
 
     company_api.urllib.request.urlopen = fake
     return calls
+
+
+def test_pdf_pages_do_not_all_sit_in_memory_at_once():
+    """原来一页一张 PIL 图先攒成 list，再整批 base64：一张 6 页扫描票能同时握住
+    pixmap + PIL + base64 三份，撞的是整服务的内存上限（MemoryMax 一到是 SIGKILL，不只杀这张票）。"""
+    import gc
+
+    import vlm_extract
+
+    live = [0]
+
+    class _FakeImg:
+        def __init__(self):
+            live[0] += 1
+
+        def __del__(self):
+            live[0] -= 1
+
+    peak = []
+
+    def fake_encode(img):
+        peak.append(live[0])       # 编码这一页时，内存里同时活着几页
+        return "data:image/png;base64,AA"
+
+    real_from, real_enc = vlm_extract.Image.frombytes, vlm_extract._encode
+    vlm_extract.Image.frombytes = lambda mode, size, samples: _FakeImg()
+    vlm_extract._encode = fake_encode
+    try:
+        import pymupdf
+        tmp = Path(tempfile.mkdtemp(prefix="hawb_pages_")) / "p.pdf"
+        doc = pymupdf.open()
+        for _ in range(4):
+            doc.new_page(width=200, height=300)
+        doc.save(str(tmp))
+        doc.close()
+        urls = vlm_extract.img_to_data_urls(tmp)
+    finally:
+        vlm_extract.Image.frombytes, vlm_extract._encode = real_from, real_enc
+        gc.collect()
+    assert len(urls) == 4, f"4 页要出 4 张图：{len(urls)}"
+    assert max(peak) == 1, f"内存里同一时刻最多该有 1 页：峰值 {max(peak)}，逐页释放没做到"
+
+
+def test_soffice_conversions_are_serialized():
+    """LibreOffice 一个子进程约 300MB。并发上限不该由"同时上传了几张电子单"决定——
+    内存闸撞满时 systemd 杀的是整个服务，不是那一张票。"""
+    import threading
+
+    import xlsx2pdf
+
+    live = [0]
+    peak = [0]
+    lock = threading.Lock()
+
+    class _Proc:
+        returncode, stdout, stderr = 0, "", ""
+
+    def fake_run(cmd, **kw):
+        with lock:
+            live[0] += 1
+            peak[0] = max(peak[0], live[0])
+        time.sleep(0.05)
+        with lock:
+            live[0] -= 1
+        src, out_dir = Path(cmd[-1]), Path(cmd[-2])
+        (out_dir / (src.stem + ".pdf")).write_bytes(b"%PDF-1.4\n")   # soffice 的产物
+        return _Proc()
+
+    real_run, real_find = xlsx2pdf.subprocess.run, xlsx2pdf.find_soffice
+    xlsx2pdf.subprocess.run = fake_run
+    xlsx2pdf.find_soffice = lambda: "/usr/bin/soffice"
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_lo_"))
+    try:
+        (tmp / "out").mkdir()
+        srcs = []
+        for i in range(3):
+            p = tmp / f"t{i}.xlsx"
+            p.write_bytes(b"PK")
+            srcs.append(p)
+        ts = [threading.Thread(target=xlsx2pdf.convert_excel_to_pdf, args=(p,),
+                               kwargs={"out_dir": tmp / "out"}) for p in srcs]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+    finally:
+        xlsx2pdf.subprocess.run, xlsx2pdf.find_soffice = real_run, real_find
+    assert peak[0] == 1, f"soffice 同一时刻最多该跑 1 个：峰值 {peak[0]}"
 
 
 def test_j9_retries_a_429_then_succeeds():
