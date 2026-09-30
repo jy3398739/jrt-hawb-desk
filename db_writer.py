@@ -13,10 +13,10 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 
 import config
-import hawb2json
+import codes
 import store
 
-COLS = list(hawb2json.TARGET_KEYS_OUT)
+COLS = list(codes.TARGET_KEYS_OUT)
 INT_COLS = ("PIECES", "SLAC")
 FLOAT_COLS = ("WEIGHT",)
 QC_COLS = ("needs_review", "review_flags")

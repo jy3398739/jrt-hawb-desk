@@ -8,7 +8,7 @@ import json
 import re
 from pathlib import Path
 
-import hawb2json as h
+import codes
 import to_air
 import web_src
 import validator
@@ -20,26 +20,26 @@ USCI = "911201117706402073"
 
 def test_field_contract_is_40_and_shared():
     """字段清单只有一个真值源：后端契约、prompt 要抽的字段、前端表格行三处必须同集合。"""
-    assert len(h.TARGET_KEYS_OUT) == 40 and len(set(h.TARGET_KEYS_OUT)) == 40
-    assert set(h.TARGET_KEYS_OUT) == set(vlm_fields()), (
+    assert len(codes.TARGET_KEYS_OUT) == 40 and len(set(codes.TARGET_KEYS_OUT)) == 40
+    assert set(codes.TARGET_KEYS_OUT) == set(vlm_fields()), (
         "prompt 的字段清单与后端契约不一致，模型抽出来的键会对不上列")
-    assert set(h.TARGET_KEYS_OUT) == set(desk_keys()), (
+    assert set(codes.TARGET_KEYS_OUT) == set(desk_keys()), (
         "审核台字段行与后端契约不一致，制单员看不到就是没审核")
     for k in ("SHIPPER_INFO_TAX_ID", "CONSIGNEE_INFO_TAX_ID", "GOODS_HS_CODE"):
-        assert k in h.TARGET_KEYS_OUT
+        assert k in codes.TARGET_KEYS_OUT
 
 
 def test_hs_code_extracted_from_description():
     """GOODS_HS_CODE：货物描述里 HS CODE(S) 标签后的号码，点号归一、多个逗号连、非纯数字丢弃。"""
     def hs(desc):
-        return h._hs_code_text([{"description": desc}])
+        return codes.hs_code_text([{"description": desc}])
     assert hs("HSCODE: 8471.30.00") == "84713000"
     assert hs("HS Code: 8471.30, 8517.12") == "847130,851712"
     assert hs("HS CODES: 8471300000, 8517120000") == "8471300000,8517120000"
     assert hs("HS CODE 999999999999999") == "", "超过 12 位不是 HS 码，宁空勿错"
     assert hs("玩具 TOYS") == "", "没标签绝不猜"
     assert hs("HS CODE: AB1234") == "", "非纯数字丢弃"
-    assert h._hs_code_text([]) == ""
+    assert codes.hs_code_text([]) == ""
 
 
 def vlm_fields():
@@ -126,14 +126,14 @@ def test_l3_does_not_duplicate_tax_already_in_another_column():
 def test_l2_tax_id_wins_over_address_leftovers():
     """L2 已单列税号时以它为准，地址里重复出现只清列；两者不一致也不能被地址覆盖。"""
     addr = "HAIDIAN DISTRICT, USCI:9111010880211232X4"
-    addr2, tax = to_air._pull_tax(addr, h.clean_tax(" 9111010880211232x4 "), set())
+    addr2, tax = to_air._pull_tax(addr, codes.clean_tax(" 9111010880211232x4 "), set())
     assert tax == "9111010880211232X4" and "USCI" not in addr2
 
 
 def test_l3_falls_back_to_merged_info_string():
     """模型只把 USCI 留在 L2 合并串里（地址、电话都干净）时，L3 重建合并串前要先把它摘出来。
     BJS00032108 发货人即如此：不兜底则整号随合并串被重写而丢失。"""
-    l2 = {k: "" for k in h.TARGET_KEYS_OUT}
+    l2 = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2.update({"MAWB_NO": "999-30825351", "HAWB_NO": "BJS00032108",
                "SHIPPER_INFO": "BEIJING SHUNYI CO LTD, ROOM 101 BEIJING CN, "
                                "TEL: +861065766886 USCI:91110105562078969J",
@@ -148,7 +148,7 @@ def test_l3_falls_back_to_merged_info_string():
 
 def test_to_air_end_to_end_keeps_tax_and_clean_phone():
     """票面同一格 TEL 与 USCI 并存：L3 电话只剩号码，税号进自己的列，两者都不丢。"""
-    l2 = {k: "" for k in h.TARGET_KEYS_OUT}
+    l2 = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2.update({"MAWB_NO": "999-30825351", "HAWB_NO": "TSN10359645",
                "SHIPPER_INFO_COMP_NAME": "PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
                "SHIPPER_INFO_COMP_ADDRESS": "NO 21 HONGYUAN ROAD, TIANJIN 300385 CN, "
@@ -188,11 +188,11 @@ def test_validator_tax_shape():
 def test_l3_strips_ticket_label_off_the_tax_number():
     """票面把 'VAT#769638661' 整格印出来，模型照抄就带着标签：L3 摘标签只留号码，
     L2 保持照抄但要冒红旗，让复核的人知道这一列被加工过。"""
-    assert h.clean_tax("VAT#769638661") == "769638661"
-    assert h.clean_tax("TAX ID 123456789") == "123456789"
-    assert h.clean_tax("PL7010468168") == "PL7010468168", "两位国家码开头的是号码本身"
-    assert h.clean_tax("00.280.273/0001-37") == "00.280.273/0001-37"
-    l2 = {k: "" for k in h.TARGET_KEYS_OUT}
+    assert codes.clean_tax("VAT#769638661") == "769638661"
+    assert codes.clean_tax("TAX ID 123456789") == "123456789"
+    assert codes.clean_tax("PL7010468168") == "PL7010468168", "两位国家码开头的是号码本身"
+    assert codes.clean_tax("00.280.273/0001-37") == "00.280.273/0001-37"
+    l2 = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2.update({"HAWB_NO": "TAO-7268550",
                "CONSIGNEE_INFO_COMP_NAME": "BIG METAL LTD",
                "CONSIGNEE_INFO_COMP_ADDRESS": "OCCUPATIONAL ROAD 1, LONDON SE17 3BE GB",

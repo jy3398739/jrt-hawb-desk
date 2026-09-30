@@ -1,7 +1,7 @@
 @echo off
 cd /d %~dp0
 echo 离线回归测试：不联网、不调用魔搭 API，几秒钟跑完。
-echo 改动 to_air.py / hawb2json.py 码表 / fidelity.py / validator.py 之后都应该先跑一遍。
+echo 改动 to_air.py / codes.py 码表 / fidelity.py / validator.py 之后都应该先跑一遍。
 echo.
 python tests\run_tests.py %*
 echo.

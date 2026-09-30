@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 """第一遍原文口径 JSON -> 第二遍航空口径 JSON。
-复用 hawb2json.py 的 _parse_party / COUNTRY_ISO2 / _lookup_city / _iata_place。
+复用 codes.py 的 parse_party / COUNTRY_ISO2 / lookup_city / iata_place。
 """
 import re
-import hawb2json as h
-from validator import TEL_COUNTRY_CODES
+import codes
 
-_ISO2 = set(h.COUNTRY_ISO2.values())
-_ISO2_FULL = {v: k for k, v in h.COUNTRY_ISO2.items()}
+_ISO2 = set(codes.COUNTRY_ISO2.values())
+_ISO2_FULL = {v: k for k, v in codes.COUNTRY_ISO2.items()}
 
 _EXTRA_COUNTRY = {
     "REPUBLIC OF IRELAND": "IE",
@@ -35,7 +34,7 @@ def country_to_iso2(c: str) -> str:
     if len(u) == 2 and u in _ALL_ISO2:
         return u
     name, code = _split_paren(u)
-    return h.COUNTRY_ISO2.get(name) or _EXTRA_COUNTRY.get(name) or code or name or u
+    return codes.COUNTRY_ISO2.get(name) or _EXTRA_COUNTRY.get(name) or code or name or u
 
 
 def country_full(c: str) -> str:
@@ -77,7 +76,7 @@ def _clean_phone(val: str) -> str:
     # 前导 ' 强制文本的号码：按已知国际区号把 + 补回来
     if _APOS_INTL.match(s) and not out.startswith("+") \
             and len(digits) >= 10 and not digits.startswith("0"):
-        for cc in sorted(TEL_COUNTRY_CODES, key=len, reverse=True):
+        for cc in sorted(codes.TEL_COUNTRY_CODES, key=len, reverse=True):
             if digits.startswith(cc):
                 return "+" + digits
     return out
@@ -158,11 +157,11 @@ def _alnum0(v) -> str:
 def _pull_tax(addr: str, tax: str, taken: set) -> tuple:
     """地址串里嵌着带标签的税号（USCI/CNPJ/VAT NO…）时摘出来单独成列。
     只认标签，裸数字一律不动；号码已在电话/邮编等列里出现过则不再重复建列。"""
-    m = h.TAX_LABEL_RE.search(addr or "")
+    m = codes.TAX_LABEL_RE.search(addr or "")
     if not m:
         return addr, tax
     cleaned = re.sub(r"\s{2,}", " ", addr[:m.start()] + " " + addr[m.end():]).strip(" ,;/")
-    val = h.clean_tax(m.group(2))
+    val = codes.clean_tax(m.group(2))
     return cleaned, tax or ("" if _alnum0(val) in taken else val)
 
 
@@ -172,13 +171,13 @@ def to_air(d: dict) -> dict:
     out.pop("_error", None)
     out.pop("_file", None)
 
-    out["ORIGIN_NAME"] = h._iata_place(d.get("ORIGIN_NAME", ""))
-    out["DEST_NAME"] = h._iata_place(d.get("DEST_NAME", ""))
+    out["ORIGIN_NAME"] = codes.iata_place(d.get("ORIGIN_NAME", ""))
+    out["DEST_NAME"] = codes.iata_place(d.get("DEST_NAME", ""))
     # 航路：L2 可能照抄票面城市名（To3 格印 MANAUS），L3 必须落到三字码；已是三字码则原样
     for k in ("TO1", "TO2", "TO3"):
-        out[k] = h._iata_place(d.get(k, ""))
+        out[k] = codes.iata_place(d.get(k, ""))
     # L3 航空口径：主单号 3位-8位连写（L2 可能照抄票面带 4-4 空格）
-    out["MAWB_NO"] = h._fmt_mawb(d.get("MAWB_NO", ""))
+    out["MAWB_NO"] = codes.fmt_mawb(d.get("MAWB_NO", ""))
 
     for pfx in ("SHIPPER", "CONSIGNEE"):
         name = d.get(pfx + "_INFO_COMP_NAME", "")
@@ -194,7 +193,7 @@ def to_air(d: dict) -> dict:
 
         # 税号：L2 已单列则照抄；模型把 "USCI: 91..." 连号留在地址或整串里时摘出来单独成列
         taken = {_alnum0(x) for x in (tel0, fax0, eori0, d.get(pfx + "_INFO_POSTAL", ""))}
-        tax = h.clean_tax(d.get(pfx + "_INFO_TAX_ID", ""))
+        tax = codes.clean_tax(d.get(pfx + "_INFO_TAX_ID", ""))
         addr, pulled = _pull_tax(addr, "", taken)
         if not pulled:      # 只留在合并串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
             _, pulled = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
@@ -215,7 +214,7 @@ def to_air(d: dict) -> dict:
                  "tel": tel0, "fax": fax0}
             if eori0:
                 p["tax_id"] = eori0
-            pp = h._parse_party(p)
+            pp = codes.parse_party(p)
             street = pp["street"] or addr_fixed
             locality = pp["locality"]
 
@@ -226,7 +225,7 @@ def to_air(d: dict) -> dict:
             locality = re.sub(r"[,\s]+" + re.escape(tail) + r"\s*$", "",
                               locality, flags=re.I).strip(" ,")
 
-        city_code = h._lookup_city(city0) or city0
+        city_code = codes.lookup_city(city0) or city0
         tel = _clean_phone(_first_phone(tel0) or pp["tel"])
         fax = _clean_phone(_first_phone(fax0) or pp["fax"])
 
@@ -247,4 +246,4 @@ def to_air(d: dict) -> dict:
             parts.append("FAX: " + fax)
         out[pfx + "_INFO"] = ", ".join(parts)
 
-    return {k: out.get(k, "") for k in h.TARGET_KEYS_OUT}
+    return {k: out.get(k, "") for k in codes.TARGET_KEYS_OUT}

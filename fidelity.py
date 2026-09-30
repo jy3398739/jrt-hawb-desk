@@ -4,7 +4,7 @@
 """
 import re
 
-import hawb2json as h
+import codes
 
 # 需要回查原文的文本字段（INFO 合并串是系统拼接、数值/日期是类型转换，不参与）
 LONG_FIELDS = ["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
@@ -111,8 +111,8 @@ def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
                  " ".join(x["text"] for x in transcript.get("lines", [])))
     captured = _alnum(" ".join(str(v) for v in raw.values() if v))
     out = []
-    for m in h.TAX_LABEL_RE.finditer(text):
-        label, val = re.sub(r"\s+", " ", m.group(1).upper()).strip(), h.clean_tax(m.group(2))
+    for m in codes.TAX_LABEL_RE.finditer(text):
+        label, val = re.sub(r"\s+", " ", m.group(1).upper()).strip(), codes.clean_tax(m.group(2))
         if len(_alnum(val)) < 8 or _alnum(val) in captured:
             continue
         out.append((label, val))

@@ -1,18 +1,13 @@
 # === 核心（必装，纯 CPU，无需显卡）===
+# 票面按页渲染与文字层直读都用 pymupdf；numpy / OCR 栈（rapidocr+onnxruntime+opencv）
+# 随退役规则层一起删掉了——本地 OCR 兜底通道 2026-09 已退役，扫描件一律走 PDF + 视觉模型。
 openai>=3.0
 pillow>=10.0
 pymupdf>=1.24
-numpy>=1.24
 
 # === 汇总导出 XLSX（5_导出Excel.bat）；电子单本身走 LibreOffice 转 PDF，不在此列 ===
 pandas>=2.0
 openpyxl>=3.1
-xlrd>=2.0            # 仅 hawb2json.py 旧规则层直读 .xls 时用
-
-# === 以下仅在退回本地 OCR 兜底时需要（VLM 通道不需要）===
-rapidocr-onnxruntime>=1.4
-opencv-python>=4.8
-onnxruntime>=1.17
 
 # === 自动化形态 ===
 fastapi>=0.110       # HTTP 接口

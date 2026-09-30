@@ -12,7 +12,7 @@ import json, sys, time, argparse
 from pathlib import Path
 
 import config
-import hawb2json
+import codes
 import store
 import to_air
 from fidelity import verify_fidelity
@@ -31,7 +31,7 @@ def recheck_all() -> int:
     for f in files:
         stored = json.loads(f.read_text(encoding="utf-8"))
         # 字段契约加列时老结果补齐键位：缺的键填空串，值仍在票面原文里（如税号曾粘在地址上）
-        raw = {k: stored.get(k, "") for k in hawb2json.TARGET_KEYS_OUT}
+        raw = {k: stored.get(k, "") for k in codes.TARGET_KEYS_OUT}
         air = to_air.to_air(raw)                     # L3 是 L2 的纯函数，重算即可，不碰模型
         store.save_result(f.stem, raw, air)
         tr_p = config.TRANSCRIPT_DIR / f.name

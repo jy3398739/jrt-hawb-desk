@@ -13,7 +13,7 @@ import pandas as pd
 import config
 import db_writer
 import export_excel
-import hawb2json
+import codes
 import run_batch
 import store
 
@@ -178,7 +178,7 @@ def test_recheck_recomputes_l3_and_backfills_new_columns():
         run_batch.recheck_all()
         raw = json.loads((config.OUTPUT_RAW_DIR / "999_30825351.json").read_text(encoding="utf-8"))
         air = json.loads((config.OUTPUT_AIR_DIR / "999_30825351.json").read_text(encoding="utf-8"))
-        assert len(raw) == len(hawb2json.TARGET_KEYS_OUT) and raw["SHIPPER_INFO_TAX_ID"] == "", \
+        assert len(raw) == len(codes.TARGET_KEYS_OUT) and raw["SHIPPER_INFO_TAX_ID"] == "", \
             "老结果要补齐新列；L2 是照抄口径，号仍在地址串里"
         assert air["SHIPPER_INFO_TAX_ID"] == "9111010880211232X4", air
         assert "USCI" not in air["SHIPPER_INFO_COMP_ADDRESS"], air["SHIPPER_INFO_COMP_ADDRESS"]

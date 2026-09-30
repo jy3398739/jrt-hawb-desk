@@ -10,10 +10,10 @@ from pathlib import Path
 import pandas as pd
 
 import config
-import hawb2json
+import codes
 import store
 
-COLS = list(hawb2json.TARGET_KEYS_OUT)
+COLS = list(codes.TARGET_KEYS_OUT)
 QC_COLS = ["_需复核", "_复核提示"]
 CN_HEADERS = {
     "MAWB_NO": "主单号", "HAWB_NO": "分单号", "SHIPPER_INFO": "发货人信息",

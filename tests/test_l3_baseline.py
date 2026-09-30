@@ -38,4 +38,4 @@ def test_l3_has_no_iata_warnings():
         w = validate_air(_read(p))
         if w:
             bad.append(f"{p.name}: {w}")
-    assert not bad, "L3 存在未映射的地名（补 hawb2json.CITY_IATA 后 --update-baseline）：\n    " + "\n    ".join(bad)
+    assert not bad, "L3 存在未映射的地名（补 codes.CITY_IATA 后 --update-baseline）：\n    " + "\n    ".join(bad)

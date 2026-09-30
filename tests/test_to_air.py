@@ -3,7 +3,7 @@
 每对 (输入, 期望) 都对应一个真实缺陷回归，注释里标了票号，别当噪声删掉。
 源码只用 \\uXXXX 转义写特殊字符：Windows 上直接贴 U+2010 会被编辑器/管道改成别的字符。
 """
-import hawb2json as h
+import codes
 import to_air
 import validator
 
@@ -45,7 +45,7 @@ def test_first_phone():
 
 def test_iata_place_mapping():
     for src, want in IATA_CASES:
-        got = h._iata_place(src)
+        got = codes.iata_place(src)
         assert got == want, f"_iata_place({src!r}) -> {got!r}，期望 {want!r}"
 
 
@@ -61,7 +61,7 @@ def test_country_with_parenthesised_iso2():
 
 def test_party_info_has_no_duplicated_country():
     """整格照抄的收货人：街道/城市/国家分栏后，合并串里国家只出现一次且为 ISO2。"""
-    l2 = {k: "" for k in h.TARGET_KEYS_OUT}
+    l2 = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2.update({"MAWB_NO": "999-95764815", "HAWB_NO": "SL0001",
                "CONSIGNEE_INFO_COMP_NAME": "ERBOS s. r. o.",
                "CONSIGNEE_INFO_COMP_ADDRESS": "Horna Trnovska 432/105, 010 01 Zilina, Slovak Republic (SK)",
@@ -82,7 +82,7 @@ def test_accented_city_name_folds():
     """带重音的地名要能和 ASCII 写的码表键对上（_fold_ascii）。"""
     acc = {"A": "\u00c4", "E": "\u00c9", "I": "\u00cd", "O": "\u00d6", "U": "\u00dc"}
     key = accented = None
-    for k in h.CITY_IATA:
+    for k in codes.CITY_IATA:
         if not k.isascii():
             continue
         for c in k:
@@ -92,7 +92,7 @@ def test_accented_city_name_folds():
         if key:
             break
     assert key, "CITY_IATA 里找不到可注入重音的键，测试需换写法"
-    assert h._lookup_city(accented) == h._lookup_city(key), \
+    assert codes.lookup_city(accented) == codes.lookup_city(key), \
         f"{accented!r} 未折叠回 {key!r} 的码值"
 
 

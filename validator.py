@@ -4,17 +4,8 @@
 """
 import re
 
-from hawb2json import TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax
+from codes import TEL_COUNTRY_CODES, TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax
 from master_fields import MASTER_LIMIT50
-
-# 电话国际区号 -> ISO2（只收录样本中出现的，按需扩充）
-TEL_COUNTRY_CODES = {
-    "86": "CN", "46": "SE", "39": "IT", "49": "DE", "36": "HU",
-    "358": "FI", "91": "IN", "52": "MX", "55": "BR", "81": "JP",
-    "82": "KR", "353": "IE", "41": "CH", "1": "US", "852": "HK",
-    "65": "SG", "971": "AE", "90": "TR",
-}
-
 
 def _alnum_upper(v) -> str:
     """税号/电话比对用：去掉所有分隔符再比，票面 00.280.273/0001-37 与 00280273000137 是同一个号。"""
