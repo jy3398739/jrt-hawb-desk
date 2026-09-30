@@ -140,6 +140,51 @@ def test_every_css_token_is_defined():
     assert not (used - defined), f"这些令牌用了却没人定义：{sorted(used - defined)}"
 
 
+def _lum(h: str) -> float:
+    f = lambda c: c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+
+
+def _ratio(fg: str, bg: str) -> float:
+    hi, lo = sorted([_lum(fg), _lum(bg)], reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_text_tokens_pass_wcag_aa_on_both_backgrounds():
+    """正文与说明文字要过 AA（4.5:1）。--ink3 从前是 ≈2.6:1：浅底上小字糊成一片，
+    制单员在强光下的屏幕上核票就是看不清（§3.2）。这里算的是真比值，不是"看着还行"。"""
+    raw = dict(re.findall(r"(--[\w-]+)\s*:\s*#([0-9a-fA-F]{3,6})", web_src.part("web/css/tokens.css")))
+    # #fff 这种三位缩写先展开，否则比值算的是另一个颜色
+    tokens = {k: ("".join(c * 2 for c in v) if len(v) == 3 else v) for k, v in raw.items()}
+    for name in ("--bg", "--panel"):
+        bg = tokens[name]
+        for ink in ("--ink", "--ink2", "--ink3"):
+            r = _ratio(tokens[ink], bg)
+            assert r >= 4.5, f"{ink} 在 {name}(#{bg}) 上只有 {r:.2f}:1，正文小字要 ≥4.5:1"
+
+
+def test_desk_clickables_are_real_buttons_with_visible_focus():
+    """可点的非元素（票行、字段名、chip、还原、分单号）从前是带 cursor:pointer 的 div/span/a：
+    键盘 Tab 到不了、回车不触发、读屏器念不出它是可点的（§3.4 第 2 条）。
+    另外 textarea/input 的 focus 描边被 outline:none 吃掉过——改哪一格看不见光标在哪。"""
+    js, css, page = web_src.part("js/desk.js"), web_src.part("css/desk.css"), web_src.part("index.html")
+    for frag, why in (('class="row', "票行"), ('class="rs"', "还原"), ('data-jump', "红旗 chip"),
+                      ('data-open', "分单号"), ('data-jump-field', "字段名定位")):
+        hits = [l for l in js.splitlines() if frag in l and "<button" in l]
+        assert hits, f"{why} 要变成真正的 <button>"
+    assert "outline:none" not in css, "focus 描边被抹掉：改字段时看不见光标落在哪一格"
+    assert ":focus-visible" in css, "要有键盘可见的 focus 描边（鼠标点击不必显示）"
+    assert 'aria-current' in js, "选中的票行要让读屏器知道哪一条是当前"
+    assert "role=\"status\"" in page or 'aria-live="polite"' in page, "错误提示与状态文字要能被读屏器念出来"
+    for i in ("mstNo", "acName", "acPass"):
+        assert re.search(r'id="%s"[^>]*(aria-label|aria-labelledby)' % i, page) or \
+               re.search(r'<label[^>]*>[^<]*<input[^>]*id="%s"' % i, page), f"{i} 只有 placeholder：占位文字不是标签"
+    sm = css[css.index(".btn.sm"):]
+    assert "min-height" in sm[:200], "触屏/拖拽目标要够大（原先 .btn.sm 只有 22px 高）"
+
+
+
 def test_health_says_which_build_is_running():
     """部署是手工 tar 推文件，中断/漏推就会新旧混跑；stale_files 只说"有些文件比进程新"，
     说不出"这台跑的是哪一版、什么时候的代码"。/health 要能一句话回答。"""

@@ -743,10 +743,10 @@ function render(){
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
     const [c, label] = statusOf(t), n = editedList(t).length;
     const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
-    return `<div class="row ${isCur ? "sel" : ""}" data-i="${i}">
-      <span class="dot ${c}" style="margin-top:5px"></span>
+    return `<button type="button" class="row${isCur ? " sel" : ""}" data-i="${i}"${isCur ? ' aria-current="true"' : ""}>
+      <span class="dot ${c}" style="margin-top:5px" aria-hidden="true"></span>
       <span class="nm">${esc(t.filename)}<br><span class="m">${esc(t.stem || "等待解析")}</span></span>
-      <span class="st">${label}${n ? `<br><span style="color:var(--edit)">改 ${n} 项</span>` : ""}</span></div>`;
+      <span class="st">${label}${n ? `<br><span style="color:var(--edit)">改 ${n} 项</span>` : ""}</span></button>`;
   }).join("") : `<div class="empty">尚无票据。</div>`;
   renderMain(); renderDrafts(); renderPreview();
 }
@@ -755,9 +755,10 @@ function renderDrafts(){
   const keys = Object.keys(d).filter(k => !S.tickets.some(t => t.stem === k));
   $("#drafts").innerHTML = keys.length ? keys.map(k => {
     const t = d[k], n = Object.keys(t.airE || {}).length;
-    return `<div class="row" data-load="${esc(k)}"><span class="dot warn" style="margin-top:5px"></span>
+    return `<button type="button" class="row" data-load="${esc(k)}">
+      <span class="dot warn" style="margin-top:5px" aria-hidden="true"></span>
       <span class="nm">${esc(k)}<br><span class="m">${esc(t.savedAt || "")} · 改 ${n} 项 · 未提交</span></span>
-      <span class="st"><button class="btn sm">载入</button></span></div>`;
+      <span class="st">载入</span></button>`;
   }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功后仍可在此回看。</div>`;
 }
 function control(t, k){
@@ -780,7 +781,7 @@ function statusCell(t, k, fl){
   else if (!l3.trim()) head = `<span class="badge miss">航空口径空</span>`;
   else head = `<span class="badge same">已归一</span>`;
   const edits = (k in t.airE) ? `<div class="note"><span class="e">已改</span>
-      <span class="rs" data-restore="${esc(k)}">还原</span></div>` : "";
+      <button type="button" class="rs" data-restore="${esc(k)}">还原</button></div>` : "";
   const notes = ck.slice(0, 3).map(x => `<div class="note"><span class="${x[1] === "bad" ? "b" : "q"}">${esc(x[0])}</span></div>`).join("");
   return head + edits + notes;
 }
@@ -895,14 +896,20 @@ function renderMain(){
     const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
                               f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
     const hard = f.startsWith("保真") || f.includes("缺失");
-    return `<span class="chip ${hard ? "bad" : "warn"}" data-jump="${k || ""}" title="${esc(f)}">${esc(f)}<button class="ackb" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button></span>`;
+    /* chip 里两个动作各一个按钮：跳转（对字段）与确认（对这条提示）。
+       从前是 span 套 button，点哪儿都算跳转，确认要 stopPropagation 才不被带着走。 */
+    const chip = `<span class="chip ${hard ? "bad" : "warn"}">` +
+      (k ? `<button type="button" class="chipb" data-jump="${k}" title="点击：跳到并高亮这个字段">${esc(f)}</button>`
+         : `<span class="chipx">${esc(f)}</span>`) +
+      `<button class="ackb" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button></span>`;
+    return chip;
   }).join("");
   let rows = "", last = "";
   for (const [k, lab, g] of FIELDS){
     if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
     const fl = fm.map[k] || [];
     rows += `<tr id="f-${k}" class="${fl.length ? "flag" : ""}">
-      <td class="k loc" title="点击：在左边票面上定位并放大这个值"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
+      <td class="k loc"><button type="button" class="kbtn" data-jump-field="${k}" title="点击：在左边票面上定位并放大这个值"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></button></td>
       <td class="c v" data-cell="air">${control(t, k)}</td>
       <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
   }
@@ -957,10 +964,9 @@ function wireMain(t){
   if (!$("#main")._locWired){
     $("#main")._locWired = true;
     $("#main").addEventListener("click", e => {
-      const td = e.target.closest("td.k"); if (!td) return;
-      const tr = td.closest("tr"); if (!tr || tr.id.slice(0, 2) !== "f-") return;
+      const b = e.target.closest("[data-jump-field]"); if (!b) return;
       const t2 = current(); if (!t2) return;
-      enterLocate(t2, tr.id.slice(2));
+      enterLocate(t2, b.dataset.jumpField);
     });
   }
   $("#main").querySelectorAll("[data-k]").forEach(inp => {
@@ -975,15 +981,14 @@ function wireMain(t){
   $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
   }));
-  $("#main").querySelectorAll(".chip[data-jump]").forEach(ch => ch.addEventListener("click", () => {
+  $("#main").querySelectorAll("[data-jump]").forEach(ch => ch.addEventListener("click", () => {
     const k = ch.dataset.jump; if (!k) return;
     const row = $("#f-" + CSS.escape(k)); if (!row) return;
     row.scrollIntoView({behavior:"smooth", block:"center"});
     row.style.background = "#fff3d6"; setTimeout(() => row.style.background = "", 1500);
     const inp = row.querySelector("[data-k]"); if (inp) inp.focus();
   }));
-  $("#main").querySelectorAll(".chip [data-ack]").forEach(b => b.addEventListener("click", e => {
-    e.stopPropagation();                          // 别触发 chip 本身的定位跳转
+  $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
     const f = b.dataset.ack;
     t.ackF = t.ackF || [];
     if (!t.ackF.includes(f)) t.ackF.push(f);
@@ -1210,7 +1215,7 @@ function mstTable(list, pend){
   const rows = list.map(o => {
     const ss = o.send_status === undefined || o.send_status === null ? "—"
              : (SEND_TXT[o.send_status] || o.send_status);
-    const no = o.stem ? '<a href="#" data-open="' + esc(o.stem) + '" title="点开这张分单的核对页">' + esc(o.hawb) + '</a>'
+    const no = o.stem ? '<button type="button" class="lk" data-open="' + esc(o.stem) + '" title="点开这张分单的核对页">' + esc(o.hawb) + '</button>'
                       : esc(o.hawb);
     return "<tr><td>" + no + "</td><td>" + esc(o.mawb) +
       "</td><td>" + esc(o.reviewer || "—") + "</td><td>" +

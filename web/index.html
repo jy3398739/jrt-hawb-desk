@@ -11,7 +11,7 @@
 
 <header class="hdr">
   <h1>主分单审核台 · 制单台<span class="ver" id="verTag" title="当前服务端版本"></span></h1>
-  <span class="svc"><span class="dot" id="svcDot"></span><span id="svcTxt">正在连接提取服务…</span></span>
+  <span class="svc"><span class="dot" id="svcDot" aria-hidden="true"></span><span id="svcTxt">正在连接提取服务…</span></span>
   <span class="sp"></span>
   <label class="f" id="fModel" title="分单（HAWB）提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
     分单模型<select id="modelSel"></select></label>
@@ -33,7 +33,7 @@
       <form id="loginForm" autocomplete="on">
         <label class="lf">账号<input id="lgName" type="text" autocomplete="username" placeholder="管理员 admin / 制单员姓名"></label>
         <label class="lf">密码<input id="lgPass" type="password" autocomplete="current-password" placeholder="口令"></label>
-        <div class="lgerr" id="lgErr" hidden></div>
+        <div class="lgerr" id="lgErr" role="status" aria-live="polite" hidden></div>
         <button class="btn pri lgbtn" id="lgBtn" type="submit">登录</button>
       </form>
       <div class="lghint">管理员 admin 登录后，可在「账号管理」给制单员（马殿齐 / 宛平 / 陈新 / 叶庭伸 / 赵文宇 / 杨皓荃 / 隗一航 / 董文志）下发或重置密码。</div>
@@ -46,16 +46,16 @@
     <div class="t">账号管理<span class="sp"></span><button class="btn sm gh" id="acctClose">关闭</button></div>
     <div class="acctlist" id="acctList"></div>
     <div class="acctadd">
-      <input id="acName" type="text" placeholder="账号名（姓名，或已存在账号名以重置口令/改角色）">
-      <input id="acPass" type="text" placeholder="新口令（≥6 位；留空=只改角色/占位）" autocomplete="new-password">
-      <select id="acRole" title="角色">
+      <input id="acName" type="text" aria-label="账号名" placeholder="账号名（姓名，或已存在账号名以重置口令/改角色）">
+      <input id="acPass" type="text" aria-label="新口令" placeholder="新口令（≥6 位；留空=只改角色/占位）" autocomplete="new-password">
+      <select id="acRole" aria-label="角色" title="角色">
         <option value="reviewer">制单员</option>
         <option value="inputter">录入员</option>
         <option value="admin">管理员</option>
       </select>
       <button class="btn sm pri" id="acAdd">保存</button>
     </div>
-    <div class="lgerr" id="acctErr" hidden></div>
+    <div class="lgerr" id="acctErr" role="status" aria-live="polite" hidden></div>
     <div class="lghint">制单员可上传、看票面、核对与提交；主单检索（原录入员检索台）已并入制单台：登录后点顶栏「主单检索」或滚到该卡片即可；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
   </div>
 </div>
@@ -70,12 +70,12 @@
         <div class="btns"><button class="btn pri" id="pick">选择文件</button></div>
       </div>
       <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
-      <div class="list" id="list"><div class="empty">尚无票据。</div></div>
+      <div class="list" id="list" role="group" aria-label="待核对的分单"><div class="empty">尚无票据。</div></div>
     </section>
     <section class="card" style="margin-top:14px">
-      <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus"></span></div>
+      <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus" role="status" aria-live="polite"></span></div>
       <div class="f" style="gap:8px;margin-bottom:6px">
-        <input id="mstNo" type="text" placeholder="主单号，如 235-96146363" size="18">
+        <input id="mstNo" type="text" aria-label="主单号" placeholder="主单号，如 235-96146363" size="18">
         <button class="btn sm pri" id="mstGo">检索</button>
       </div>
       <div class="hint">按主单号取回主单原生资料并自动解析；名下分单列在页面底部长条里，原件点开即看。原录入员检索台已并入本页。</div>
@@ -83,7 +83,7 @@
     </section>
     <section class="card" style="margin-top:14px">
       <div class="t">本地暂存<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
-      <div class="list" id="drafts" style="max-height:210px"></div>
+      <div class="list" id="drafts" role="group" aria-label="本机暂存的编辑" style="max-height:210px"></div>
     </section>
   </div>
 

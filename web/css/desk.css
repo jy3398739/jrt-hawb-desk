@@ -2,6 +2,9 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 "Microsoft YaHei","Segoe UI",system-ui,sans-serif}
 button{font:inherit;cursor:pointer}
+/* 键盘焦点必须看得见：从前输入框聚焦时把描边关掉了，改哪一格看不见光标落在哪。
+   :focus-visible 让鼠标点击不描边、Tab 到了一定描边。 */
+:focus-visible{outline:2px solid var(--edit);outline-offset:2px}
 input,textarea{font:inherit;color:inherit}
 .hdr{position:sticky;top:0;z-index:20;background:var(--panel);border-bottom:1px solid var(--line);
   padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
@@ -38,10 +41,16 @@ input,textarea{font:inherit;color:inherit}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn.pri{background:var(--edit);border-color:var(--edit);color:#fff}
 .btn.pri:hover:not(:disabled){background:#18519f}
-.btn.sm{padding:2px 8px;font-size:12px}
+.btn.sm{padding:2px 8px;font-size:12px;min-height:28px}   /* 点按目标要够大：从前只有 22px 高 */
 .btn.gh{border-style:dashed;color:var(--ink2);background:transparent}
 .list{max-height:calc(100vh - 250px);overflow:auto}
-.row{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid #eff3f7;cursor:pointer}
+/* 票行 / 还原 / 字段名 / 分单号 / 红旗跳转从前是带 cursor:pointer 的 div、span、a：
+   键盘 Tab 到不了、回车不触发、读屏器念不出"这里可以点"。换成 <button> 后把 UA 默认外观抹掉，
+   版面照旧（reset 必须在下面这些规则之前，border 才不会被覆盖）。 */
+.row,.rs,.kbtn,.chipb,.lk{appearance:none;-webkit-appearance:none;background:transparent;border:0;
+  font:inherit;color:inherit;text-align:left}
+.row{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid #eff3f7;cursor:pointer;
+  width:100%;text-align:left}
 .row:hover{background:#f7faff}
 .row.sel{background:#eef5ff;box-shadow:inset 3px 0 0 var(--edit)}
 .row .nm{flex:1;min-width:0;font-size:12.5px;line-height:1.35;word-break:break-all}
@@ -53,9 +62,11 @@ input,textarea{font:inherit;color:inherit}
 .hd .meta{color:var(--ink3);font-size:12px;margin-top:2px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:#fff8f1;border-bottom:1px solid #f3e3d3}
 .chip{font-size:12px;background:var(--chip);border:1px solid var(--line);border-radius:99px;padding:2px 9px;
-  color:var(--ink2);cursor:pointer;max-width:100%}
+  color:var(--ink2);max-width:100%;display:inline-flex;align-items:center;gap:2px;min-height:28px}
+/* chip 里两个动作各一个按钮：跳到字段（chipb）与确认这条提示（ackb）。没有对应字段的（chipx）就只有文字。 */
+.chip .chipb{padding:0;text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}
 .chip .ackb{cursor:pointer;margin-left:6px;padding:0 7px;font-size:11px;border:1px solid currentColor;
-  border-radius:99px;background:transparent;color:inherit;opacity:.7}
+  border-radius:99px;background:transparent;color:inherit;opacity:.7;min-height:24px}
 .chip .ackb:hover{opacity:1;background:#fff}
 .chip:hover{border-color:#c8b39a}
 .chip.warn{background:#fdf1e6;border-color:#eccdb0;color:#8c4a17}
@@ -79,11 +90,13 @@ td.v textarea,td.v input{width:100%;border:1px solid transparent;background:tran
   padding:6px 7px;resize:vertical;font-size:13px;line-height:1.45;min-height:32px}
 td.v textarea{max-height:320px;overflow-y:auto}
 td.v textarea:hover,td.v input:hover{border-color:#dfe6ee;background:#fff}
-td.v textarea:focus,td.v input:focus{outline:none;border-color:#9cc3ee;background:#fff;box-shadow:0 0 0 3px #e6f0fb}
+td.v textarea:focus,td.v input:focus{outline:2px solid #9cc3ee;outline-offset:-1px;border-color:#9cc3ee;
+  background:#fff;box-shadow:0 0 0 3px #e6f0fb}
 td.s{width:120px;padding:8px 10px;text-align:right}
 .note{font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .note .q{color:var(--warn)}.note .b{color:var(--bad)}.note .e{color:var(--edit)}
-.note .rs{color:var(--ink3);cursor:pointer;text-decoration:underline dotted}
+.note .rs{color:var(--ink3);cursor:pointer;text-decoration:underline dotted;display:inline-block;
+  min-height:28px;padding:0 4px}
 .badge{font-size:11px;padding:1px 6px;border-radius:4px;background:var(--chip);color:var(--ink2);white-space:nowrap}
 .badge.miss{background:#fdeceb;color:#9c2b20}.badge.warn{background:#fdf1e6;color:#8c4a17}
 .badge.same{background:#eef7f0;color:#1f8b4d}
@@ -127,7 +140,11 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 /* 字段→票面定位：点右边字段名，把 L1 转录 bbox 叠在按页渲染的票面图上并自动放大。
    浏览器内嵌 PDF 阅读器做不到按区域高亮/缩放，所以定位模式换页图打底。 */
 td.k.loc{cursor:pointer}
-td.k.loc:hover .kk{color:var(--edit)}
+td.k.loc .kbtn{display:block;width:100%;min-height:28px;padding:0;cursor:pointer;text-align:inherit}
+td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--edit)}
+/* 名下分单号：点开那张分单的核对页，不跳转页面，所以是 button 而不是 a */
+.lk{color:var(--edit);text-decoration:underline;text-underline-offset:2px;cursor:pointer;
+  display:inline-block;min-height:28px;padding:0}
 .pvtools #pvLoc{display:flex;gap:6px;align-items:center}
 .pvtools #pvLoc[hidden]{display:none}
 .pv .page{position:relative;display:inline-block;text-align:left}
