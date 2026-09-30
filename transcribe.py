@@ -3,11 +3,12 @@
 输出 {lines:[{i, text, bbox:[x1,y1,x2,y2](0-1000归一化, 粗定位用)}], full_text}。
 保真铁律：不纠错、不补全、不改大小写/空格/标点、不翻译、不合并。
 """
-import json, time
+import json
 from pathlib import Path
 from openai import OpenAI
 
 import config
+import retry
 from vlm_extract import img_to_data_urls
 
 TRANSCRIBE_PROMPT = """你是一台纯OCR转录机。请把这张航空分单(HAWB)上印刷/打印的所有文字逐行转录出来。
@@ -75,6 +76,7 @@ def transcribe_one(path) -> dict:
     content = [{"type": "image_url", "image_url": {"url": u}} for u in img_to_data_urls(path)]
     content.append({"type": "text", "text": TRANSCRIBE_PROMPT})
     last = None
+    timeout_tries = 0
     for attempt in range(config.VLM_RETRIES):
         try:
             resp = client.chat.completions.create(
@@ -87,8 +89,12 @@ def transcribe_one(path) -> dict:
             return _parse(resp.choices[0].message.content)
         except Exception as e:
             last = e
+            if "timeout" in type(e).__name__.lower():
+                timeout_tries += 1
+                if timeout_tries >= config.VLM_TIMEOUT_TRIES:      # 与 L2 同一条：超时不连撞三次
+                    break
             if attempt < config.VLM_RETRIES - 1:
-                time.sleep(3)
+                retry.wait(attempt)
     raise RuntimeError(f"L1 转录失败 {path.name}: {last}")
 
 

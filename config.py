@@ -290,9 +290,12 @@ VLM_RETRIES = int(os.getenv("VLM_RETRIES", "3"))
 # 单次 API 调用超时（秒）。魔搭上真有模型收下请求后长时间不回：实测 deepseek-pro-0813
 # 同一账号下小 prompt 1.6 秒就回，换成真实票 prompt 则 14 分钟无响应。不设上限时 SDK
 # 默认 600s 且自己再重试 2 次，叠上 VLM_RETRIES=3 最坏要静默等 90 分钟才报错；显式给定
-# 并关掉 SDK 层重试后，重试只剩 VLM_RETRIES 这一层，最坏 3×600s。慢模型单票实测
-# 90-260 秒，600s 留了两倍余量；想更早失败就在 .env 调小。
-VLM_TIMEOUT = float(os.getenv("VLM_TIMEOUT", "600"))
+# 并关掉 SDK 层重试后，重试只剩我们这一层。
+# 300s 是"慢但成功"与"不再拖死人"的折中：慢模型单票实测 90-260 秒，留 15% 余量。
+# 关键约束是**超时只再试一次**（VLM_TIMEOUT_TRIES）：慢模型重跑一遍五分钟往往还是慢，
+# 按 VLM_RETRIES 连撞三次就是 15 分钟起，那才是审核台"点了没反应"的来源。
+VLM_TIMEOUT = float(os.getenv("VLM_TIMEOUT", "300"))
+VLM_TIMEOUT_TRIES = int(os.getenv("VLM_TIMEOUT_TRIES", "2"))
 IMAGE_LONG_EDGE = int(os.getenv("IMAGE_LONG_EDGE", "0"))  # 0=原图(魔搭接受PNG)；网络慢可设1600
 
 # === 电子单 Excel → PDF（LibreOffice 无头转换，转完走 VLM 通道）===
@@ -324,6 +327,13 @@ COMPANY_API_MODE = (os.getenv("COMPANY_API_MODE", "mock") or "mock").strip().low
 COMPANY_API_URL = os.getenv("COMPANY_API_URL", "").strip().rstrip("/")
 COMPANY_MAWB_KEY = os.getenv("COMPANY_MAWB_KEY", "")   # 主单组（mawb//mawb2/）
 COMPANY_HAWB_KEY = os.getenv("COMPANY_HAWB_KEY", "")   # 分单组（hawb/hawb2），两把互不通用
+# 一次超时就换不掉的东西别拖成年人：读接口 10s、写接口 20s（写要落库），对端抖动(429/5xx/连不上)
+# 退避后最多再试 J9_RETRIES-1 次；400 这类业务错不重试（是我们报文的问题）。
+# 限流按文档 10 次/秒留两成余量——超了先在自己这边等，比让公司回 429 再人肉重点一次好。
+J9_TIMEOUT_READ = float(os.getenv("J9_TIMEOUT_READ", "10"))
+J9_TIMEOUT_WRITE = float(os.getenv("J9_TIMEOUT_WRITE", "20"))
+J9_RETRIES = int(os.getenv("J9_RETRIES", "3"))
+J9_RATE_PER_SEC = float(os.getenv("J9_RATE_PER_SEC", "8"))
 
 
 # 支持的输入类型

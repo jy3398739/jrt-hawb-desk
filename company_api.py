@@ -17,12 +17,14 @@ import hashlib
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
 
 import config
 import master_fields as mf
+import retry
 import store
 
 # 读接口的 SHIPPER_INFO/CONSIGNEE_INFO 是 Python repr 的列表串，展示/合并前归一。
@@ -53,24 +55,58 @@ class CompanyLocked(RuntimeError):
     """SEND_STATUS 闸门拦下：那行已发送/锁定（仅 0/2 可更新），绝不能发 hawb2。"""
 
 
-def _j9_post(path: str, body: dict, key: str) -> dict:
-    """调 j9 接口。path 形如 `/api/v1/j9/hawb`。HTTP 非 200 或 code!=0 都抛 CompanyApiError。"""
+_RATE = {"hits": [], "lock": threading.Lock()}
+
+
+def _throttle():
+    """j9 文档：每把 key 10 次/秒。这里按 8/s 自查——先在自己这边等，比让公司回 429 再让人重点一次好。"""
+    with _RATE["lock"]:
+        now = time.monotonic()
+        hits = [t for t in _RATE["hits"] if now - t < 1.0]
+        if len(hits) >= config.J9_RATE_PER_SEC:
+            time.sleep(max(0.0, 1.0 - (now - hits[0])))
+            now = time.monotonic()
+            hits = [t for t in hits if now - t < 1.0]
+        hits.append(now)
+        _RATE["hits"] = hits
+
+
+def _j9_post(path: str, body: dict, key: str, timeout: float | None = None) -> dict:
+    """调 j9 接口。path 形如 `/api/v1/j9/hawb`；HTTP 非 200 或 code!=0 都抛 CompanyApiError。
+
+    超时读 10s / 写 20s（路径以 2 结尾的是写接口，写要落库）。只有对端抖动
+    （429/5xx/连不上）才退避重试；400 这类业务错是我们报文自己的问题（限长、单号格式），
+    重试只会再撞一次并把人等更久，直接把公司原话抛出去。"""
+    is_write = path.rstrip("/").endswith("2")
+    if timeout is None:
+        timeout = config.J9_TIMEOUT_WRITE if is_write else config.J9_TIMEOUT_READ
     url = config.COMPANY_API_URL + path
-    req = urllib.request.Request(
-        url, data=json.dumps(body).encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json", "X-Api-Key": key})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            out = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        detail = ""
+    payload = json.dumps(body).encode("utf-8")
+    out = None
+    for attempt in range(config.J9_RETRIES):
+        _throttle()
+        req = urllib.request.Request(
+            url, data=payload, method="POST",
+            headers={"Content-Type": "application/json", "X-Api-Key": key})
         try:
-            detail = json.loads(e.read().decode("utf-8")).get("detail", "")
-        except Exception:
-            pass
-        raise CompanyApiError(f"j9 {path} HTTP {e.code}: {detail or e.reason}") from None
-    except urllib.error.URLError as e:
-        raise CompanyApiError(f"j9 {path} 连不上：{e.reason}") from None
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                out = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = json.loads(e.read().decode("utf-8")).get("detail", "")
+            except Exception:
+                pass
+            if e.code in (429, 500, 502, 503, 504) and attempt < config.J9_RETRIES - 1:
+                retry.wait(attempt)
+                continue
+            raise CompanyApiError(f"j9 {path} HTTP {e.code}: {detail or e.reason}") from None
+        except urllib.error.URLError as e:
+            if attempt < config.J9_RETRIES - 1:
+                retry.wait(attempt)
+                continue
+            raise CompanyApiError(f"j9 {path} 连不上：{e.reason}") from None
     if out.get("code") != 0:
         raise CompanyApiError(f"j9 {path} 返回 code={out.get('code')}: {out.get('message', '')}")
     return out

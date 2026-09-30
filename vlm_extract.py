@@ -4,12 +4,13 @@
 （不还原国家码、不统一大小写、不去数字空格、不补全公司名空格、不纠正疑似印刷错误）。
 图片/PDF base64 内联，OpenAI 兼容协议；失败自动重试。
 """
-import time, base64, json, io, re
+import base64, json, io, re
 from pathlib import Path
 from PIL import Image
 from openai import OpenAI
 
 import config
+import retry
 
 PROMPT_HEAD = r"""你是航空运单(HAWB)信息提取员。下面给你两样东西：①分单图片 ②该图片的逐字转录文本（OCR原始结果）。
 请提取39个字段，输出纯JSON（不要markdown代码块，不要解释文字）。
@@ -135,6 +136,7 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
     content = [{"type": "image_url", "image_url": {"url": u}} for u in urls]
     content.append({"type": "text", "text": prompt})
     last_err = None
+    timeout_tries = 0
     for attempt in range(config.VLM_RETRIES):
         try:
             resp = client.chat.completions.create(
@@ -155,8 +157,13 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
             return data
         except Exception as e:
             last_err = e
+            if "timeout" in type(e).__name__.lower():
+                timeout_tries += 1
+                # 慢模型重跑一遍还是五分钟，再等一轮只是把人钉在等待上；超时最多试 VLM_TIMEOUT_TRIES 次
+                if timeout_tries >= config.VLM_TIMEOUT_TRIES:
+                    break
             if attempt < config.VLM_RETRIES - 1:
-                time.sleep(3)
+                retry.wait(attempt)
     raise RuntimeError(f"L2 提取失败 {label}: {last_err}")
 
 FIELDS = [
