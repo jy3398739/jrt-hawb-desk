@@ -1,3 +1,7 @@
+# 开发机装这份（范围宽松）。服务器请装 requirements-server.lock.txt —— 那是从跑着的
+# venv 逐行导出的精确版本。两份并存的理由：这台开发机的全局 Python 被多个服务共用，
+# 装精确版本会连带改动别的服务的包（2026-09-24 的 pydantic-core 事故）。
+
 # === 核心（必装，纯 CPU，无需显卡）===
 # 票面按页渲染与文字层直读都用 pymupdf；numpy / OCR 栈（rapidocr+onnxruntime+opencv）
 # 随退役规则层一起删掉了——本地 OCR 兜底通道 2026-09 已退役，扫描件一律走 PDF + 视觉模型。

@@ -4,7 +4,7 @@ Description=HAWB 分单审核台（PDF/Excel → 结构化字段）
 After=network.target
 
 [Service]
-# 仅绑定本机回环，配合 SSH 隧道访问，不暴露到网络
+# 只绑回环：对外入口是 nginx 反代（见 deploy/nginx-hawb-location.conf），别改成 0.0.0.0
 WorkingDirectory=/home/ubuntu/jrt-hawb/release/hawb_extractor
 ExecStart=/home/ubuntu/jrt-hawb/release/hawb_extractor/.venv/bin/python server.py --host 127.0.0.1 --port 8020
 Restart=always
