@@ -53,6 +53,24 @@ CHUNK = 1 << 20
 # 进程启动时刻：用来发现「源码改了但服务没重启」。审核台曾因此一直拿不到票面原件
 _BOOT = time.time()
 _PKG_DIR = Path(__file__).resolve().parent
+
+
+def _source_mtime() -> float:
+    """源码（含审核台页面）里最新那份的修改时刻。和 `_BOOT` 一比就知道推上去的代码有没有真的重新加载
+    ——部署是手工 tar 推文件，漏重启就会新旧混跑（stale_files 说得出哪些文件新，说不出这是哪一版）。"""
+    files = list(_PKG_DIR.glob("*.py"))
+    page = WEB_DIR / "index.html"
+    if page.exists():
+        files.append(page)
+    stamps = [f.stat().st_mtime for f in files]
+    return max(stamps) if stamps else 0.0
+
+
+_BUILT_AT = _source_mtime()
+
+
+def _stamp(ts: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts)) if ts else ""
 _BAD_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 # 浏览器能内联渲染的票面格式。TIFF 有意不在列（Chrome/Firefox 都不认），走「下载原件」
 _PREVIEW_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -76,6 +94,15 @@ def require_admin(request: Request) -> None:
         raise HTTPException(403, "此操作需要管理员权限")
     raise HTTPException(401, "请先以管理员登录")
 
+def current_user(request: Request) -> dict:
+    """需要"是谁"的接口用这个。提交留痕里的复核人只认登录会话——前端传什么都不认，
+    否则台账可以随便署名（2026-09-29 审计）。"""
+    u = auth.session_user(request)
+    if not u:
+        raise HTTPException(401, "请先登录")
+    return u
+
+
 
 class LoginBody(BaseModel):
     name: str = ""
@@ -89,14 +116,19 @@ class UserBody(BaseModel):
 
 
 @app.post("/login")
-def login(body: LoginBody, response: Response):
-    """登录审核台：校验口令 → 写签名会话 Cookie。口令只在本机 users.json 里存哈希。"""
+def login(body: LoginBody, request: Request, response: Response):
+    """登录审核台：校验口令 → 写签名会话 Cookie。口令只在本机 users.json 里存哈希。
+
+    公网可达的门口要留得下"谁在试"（含扫描器）；口令本身绝不进日志。"""
     name = str(body.name or "").strip()
+    ip = request.client.host if request.client else "?"
     if not name or not body.password:
         raise HTTPException(400, "请输入账号和密码")
     result = auth.authenticate(name, body.password)
     if not result:
+        LOG.warning("登录失败 name=%s ip=%s", name, ip)
         raise HTTPException(401, "账号或密码不正确（子账号需先由管理员设置密码）")
+    LOG.info("登录成功 name=%s role=%s ip=%s", result["name"], result["role"], ip)
     response.set_cookie(auth.COOKIE, result["token"], max_age=int(auth.SESSION_HOURS * 3600),
                         httponly=True, samesite="lax", path=auth.COOKIE_PATH)
     return {"ok": True, "user": {"name": result["name"], "role": result["role"]}}
@@ -204,6 +236,9 @@ def health():
             # 主单链默认走自己的渠道（MASTER_VLM_MODEL）：两条链各报各的，免得看着像配错了
             "master_model": mb["model"], "master_model_choice": mb["choice"],
             "master_key_configured": config.master_api_key_configured(),
+            # 跑的是哪一版：commit 在服务器上是空串（只收 tar 推的文件、没有仓库），
+            # 那就看 built_at（源码最新 mtime）与 started_at（进程启动）——前者晚于后者就是忘了重启。
+            "commit": config.git_commit(), "built_at": _stamp(_BUILT_AT), "started_at": _stamp(_BOOT),
             "stale_files": _stale_files()}
 
 
@@ -267,13 +302,19 @@ class MasterSubmitBody(BaseModel):
 
 
 @app.post("/master/submit")
-def master_submit(body: MasterSubmitBody, _: None = Depends(require_web)):
+def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
     """把人工核对过的主单回传公司（j9 mawb2）。这是主单侧唯一对外写出口，只有人工点才发。
 
     门与错误码与分单同构：红旗未清/未署名 → 400（红旗在服务端按当前值重算，前端藏旗无效）；
-    公司侧 SEND_STATUS 非 0/2（已发送锁定）→ 409 且不发写请求；接口不通/没配 → 502，绝不写台账。"""
+    公司侧 SEND_STATUS 非 0/2（已发送锁定）→ 409 且不发写请求；接口不通/没配 → 502，绝不写台账。
+    署名同样取登录会话，不认前端传的名字。"""
+    body.reviewer = str(user.get("name") or "")
     try:
-        return master_pipeline.submit_master(body.model_dump())
+        out = master_pipeline.submit_master(body.model_dump())
+        LOG.info("主单提交 who=%s %s 模式=%s 公司=%s 确认旗=%d 条",
+                 user.get("name"), body.mawb, out.get("mode"), out.get("action") or "-",
+                 len(body.acked_flags or []))
+        return out
     except master_pipeline.MasterFlagged as e:
         # detail 带结构化红旗：前端逐条出「确认无误」按钮，不用解析提示文案
         raise HTTPException(400, {"message": str(e), "flags": e.flags})
@@ -289,15 +330,6 @@ class SubmitBody(BaseModel):
     tickets: list = []
     submitted_at: str = ""
     client: str = ""
-
-
-def current_user(request: Request) -> dict:
-    """需要"是谁"的接口用这个。提交留痕里的复核人只认登录会话——前端传什么都不认，
-    否则台账可以随便署名（2026-09-29 审计）。"""
-    u = auth.session_user(request)
-    if not u:
-        raise HTTPException(401, "请先登录")
-    return u
 
 
 def _read_json(path: Path):
@@ -376,6 +408,9 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                                      sent_fingerprint=_sent_fingerprint(mawb, hawb, rec),
                                      company_action=str(receipt.get("action") or ""))
         results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
+        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条",
+                 user.get("name"), mawb, hawb, receipt.get("mode"), receipt.get("action") or "-",
+                 bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked))
     return {"ok": True, "results": results}
 
 
@@ -422,7 +457,8 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
 
 @app.post("/extract")
 async def extract(file: UploadFile = File(...), save: bool = Query(False, description="是否按原文件名落盘"),
-                  _: None = Depends(require_web)):
+                  user: dict = Depends(current_user)):
+    user_name = str(user.get("name") or "?")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in config.ALL_EXTS:
         raise HTTPException(400, f"不支持的文件类型 {suffix}，支持 {sorted(config.ALL_EXTS)}")
@@ -440,9 +476,14 @@ async def extract(file: UploadFile = File(...), save: bool = Query(False, descri
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if r["error"]:
+        LOG.warning("解析失败 who=%s file=%s stem=%s 耗时=%ss → %s",
+                    user_name, file.filename, r["stem"], r["elapsed"], r["error"])
         return JSONResponse(status_code=500,
                             content={"ok": False, "error": r["error"], "elapsed": r["elapsed"],
                                      "filename": file.filename, "stem": r["stem"], "qc": r["qc"]})
+    LOG.info("解析完成 who=%s file=%s stem=%s 通道=%s 耗时=%ss 红旗=%d",
+             user_name, file.filename, r["stem"], r["channel"], r["elapsed"],
+             len((r["qc"] or {}).get("flags") or []))
     return {
         "ok": True,
         "filename": file.filename,
@@ -664,7 +705,10 @@ def main():
           f"/health 与 /models 免登录）")
     print(f"提取模型 {config.VLM_MODEL}（{config.VLM_MODEL_CHOICE}）"
           + ("" if config.MODEL_VISION else " · 纯文本：扫描件会失败，电子单/文字层 PDF 可用"))
-    uvicorn.run(app, host=args.host, port=args.port)
+    # nginx 在本机反代，不开 proxy_headers 的话会话日志里全是 127.0.0.1，出了事找不到是谁在试。
+    # 只信本机转发来的 X-Forwarded-*（allow_ips 就写回环），别让外面的人能伪造身份 IP。
+    uvicorn.run(app, host=args.host, port=args.port,
+              proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
 if __name__ == "__main__":

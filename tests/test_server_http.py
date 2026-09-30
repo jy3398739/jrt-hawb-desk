@@ -71,6 +71,18 @@ def _post(client, filename="CLA26090022\xa0HAWB.pdf", content=b"%PDF-1.4 fake-ha
                        params=kw.pop("params", {}), headers=kw.pop("headers", {}))
 
 
+def test_health_says_which_build_is_running():
+    """部署是手工 tar 推文件，中断/漏推就会新旧混跑；stale_files 只说"有些文件比进程新"，
+    说不出"这台跑的是哪一版、什么时候的代码"。/health 要能一句话回答。"""
+    with _stubbed():
+        j = TestClient(server.app).get("/health").json()
+        assert "commit" in j and isinstance(j["commit"], str), "commit：本机有 git 就报短哈希，服务器上没仓库就空串"
+        assert j.get("built_at"), "built_at：源码里最新那份文件的时刻"
+        assert j.get("started_at"), "started_at：进程启动时刻（和 built_at 一比就知道是不是没重启）"
+        for k in ("built_at", "started_at"):
+            assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", j[k]), f"{k} 要给人能读的本地时间：{j[k]}"
+
+
 def test_health_is_open_and_no_longer_reports_auth_flag():
     """/health 免登录；auth_required 字段随 HTTP_API_KEY 一并下线，别再回。"""
     with _stubbed():

@@ -256,6 +256,39 @@ def test_ledger_records_what_was_actually_sent():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_submit_is_logged_with_who_and_result():
+    """一次成功提交要在服务日志里留下一行（谁、哪张、公司怎么回的）。
+    只有 HTTP 访问码的日志回答不了"这列 NULL 是谁写进去的"（2026-09-29 现场只能靠猜）。"""
+    import logging
+
+    old = (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_log_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
+    old_users = auth.USERS_FILE
+    got = []
+
+    class _Cap(logging.Handler):
+        def emit(self, record):
+            got.append(record.getMessage())
+
+    handler = _Cap()
+    server.LOG.addHandler(handler)
+    lvl = server.LOG.level
+    server.LOG.setLevel(logging.INFO)
+    try:
+        client = _logged_client(tmp)
+        assert client.post("/submit", json={"tickets": [_clean_ticket()]}).status_code == 200
+    finally:
+        server.LOG.removeHandler(handler)
+        server.LOG.setLevel(lvl)
+        auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
+                          config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
+        shutil.rmtree(tmp, ignore_errors=True)
+    assert any("admin" in m and "CLA26090022" in m for m in got), f"提交要留下谁与哪张：{got}"
+
+
 def test_desk_has_submit_gate_on_flags_and_numbers():
     """/submit 之外，前端也得有提交门：缺号或未清红旗时拦住，别让人点了才吃 400。"""
     html = WEB.read_text(encoding="utf-8")

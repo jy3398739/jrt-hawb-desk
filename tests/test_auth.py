@@ -106,6 +106,33 @@ def test_admin_login_unlocks_web_and_admin():
             "管理员不必再带密钥也能切模型"
 
 
+def test_failed_login_is_logged_without_the_password():
+    """公网可达的登录口被人（或扫描器）连着试错时，日志里要留得下"谁在试"。
+    口令本身绝不能进日志——那等于把猜出来的密码写给所有能看 journal 的人。"""
+    import logging
+
+    got = []
+
+    class _Cap(logging.Handler):
+        def emit(self, record):
+            got.append(record.getMessage())
+
+    handler = _Cap()
+    server.LOG.addHandler(handler)
+    lvl = server.LOG.level
+    server.LOG.setLevel(logging.INFO)
+    try:
+        with _accounts() as client:
+            assert _login(client, "ghost", "x").status_code == 401
+            assert _login(client, "admin", "wrong").status_code == 401
+    finally:
+        server.LOG.removeHandler(handler)
+        server.LOG.setLevel(lvl)
+    assert any("ghost" in m for m in got), f"未知账号的尝试要留一行：{got}"
+    assert any("admin" in m for m in got), f"口令错的尝试要留一行：{got}"
+    assert not any("wrong" in m for m in got), "日志里不许出现口令"
+
+
 def test_login_rejects_bad_password_and_unknown_user():
     with _accounts() as client:
         assert _login(client, "admin", "wrong").status_code == 401

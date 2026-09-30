@@ -4,6 +4,7 @@
 在公司机器上：复制 .env.example 为 .env，填入官方书生API 令牌（INTERNLM_API_KEY）即可。
 """
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -18,6 +19,17 @@ try:
     load_dotenv(ENV_FILE)
 except Exception:
     pass  # 没装 python-dotenv 时直接读系统环境变量
+
+
+def git_commit() -> str:
+    """当前代码的 git 短哈希。服务器只收 tar 推过去的文件、没有仓库，此时安静返回空串——
+    /health 拿它和 built_at（源码最新 mtime）搭配着看，就能说出"这台跑的是哪一版"。"""
+    try:
+        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(BASE_DIR),
+                             capture_output=True, text=True, timeout=2)
+        return (out.stdout or "").strip() if out.returncode == 0 else ""
+    except Exception:
+        return ""
 
 
 def fix_console() -> None:
