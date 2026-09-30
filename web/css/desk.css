@@ -179,8 +179,10 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--edit)}
 /* ── 登录与角色 ─────────────────────────────────────────────────────
    制单员只需账号密码即可使用；管理员额外能切模型、管账号。
    门禁靠后端会话，这里只是把不该给制单员看的控件收起来。 */
-.gate{position:fixed;inset:0;z-index:80;background:rgba(20,28,40,.5);display:flex;
-  align-items:center;justify-content:center;padding:20px}
+/* 遮罩要"盖得住"：以前只有 .5 透明度，背后顶栏按钮看着完全能用，点了却毫无反应
+   （2026-10-01 用户据此以为「今日台账」坏了）。压深再加一层模糊，未登录时一眼就是停着的状态。 */
+.gate{position:fixed;inset:0;z-index:80;background:rgba(20,28,40,.86);backdrop-filter:blur(3px);
+  display:flex;align-items:center;justify-content:center;padding:20px}
 .gate[hidden]{display:none}
 .login{width:340px;max-width:100%;padding:0}
 .login .t{font-size:15px;justify-content:center}

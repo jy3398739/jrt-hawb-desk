@@ -1071,6 +1071,11 @@ function acctErr(msg, clear){ const el = $("#acctErr"); if (clear){ el.hidden = 
 function applyRole(){
   const admin = !!ME && ME.role === "admin";
   $("#gate").hidden = !!ME;                 // 已登录：收起登录遮罩
+  // 遮罩只挡视觉，不挡键盘焦点与点击穿透前的探索：未登录时把背后整片标成 inert，
+  // 这样 Tab 进不去、点也点不动，不会让人以为"按钮坏了"。
+  [document.querySelector(".hdr"), $("#wrap"), $("#mstHawbCard"), $("#dayCard")].forEach(el => {
+    if (el) el.inert = !ME;
+  });
   $("#whoWrap").hidden = !ME;
   $("#btnLogout").hidden = !ME;
   if (!ME) return;

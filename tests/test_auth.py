@@ -6,6 +6,7 @@
 import contextlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -225,7 +226,21 @@ def test_users_json_posix_permissions_600():
         assert auth.USERS_FILE.stat().st_mode & 0o777 == 0o600, "账号表含哈希与签名 secret，必须 600"
 
 
+def test_login_gate_makes_the_page_behind_clearly_inert():
+    """遮罩只有五成透明度时，背后的按钮看着完全可用：用户点了"今日台账"却毫无反应，
+    以为功能坏了（2026-10-01 实测）。未登录时要么看不见背后的控件，要么明确点不动。"""
+    css = web_src.part("css/desk.css")
+    i = css.index(".gate{")
+    gate = css[i:css.index("}", i) + 1]
+    m = re.search(r"background:\s*rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\s*\)", gate)
+    assert m and float(m.group(1)) >= 0.8, f"登录遮罩太薄（alpha {m and m.group(1)}）：背后控件看着仍可点"
+    assert "backdrop-filter" in gate, "再加一层模糊：未登录时页面要明显是停着的"
+    js = web_src.part("js/desk.js")
+    assert re.search(r"\.inert\s*=\s*", js), "未登录时顶栏与两个视图要标 inert：点不动、Tab 也进不去"
+
+
 def test_role_name_says_who_logged_in():
+
     """角色中文名是给人看的身份提示，说错了比没说更糟：录入员顶栏被写成"制单员"
     （§3.4 第 6 条），他会以为自己没登录成功；未知角色宁可原样显示，也别替他猜。"""
     for role, cn in (("admin", "管理员"), ("reviewer", "制单员"), ("inputter", "录入员")):
