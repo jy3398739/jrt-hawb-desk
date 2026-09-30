@@ -748,7 +748,53 @@ function render(){
       <span class="nm">${esc(t.filename)}<br><span class="m">${esc(t.stem || "等待解析")}</span></span>
       <span class="st">${label}${n ? `<br><span style="color:var(--edit)">改 ${n} 项</span>` : ""}</span></button>`;
   }).join("") : `<div class="empty">尚无票据。</div>`;
+  renderRail();
   renderMain(); renderDrafts(); renderPreview();
+}
+/* ── 状态窄轨（§3.3）：一票一个点 + 本机"已提交/经手"进度 ─────────────────────
+   换票动作从"回侧栏滚动找那一行"变成点一下；≡ 展开成覆盖式列表（只有单号与状态，
+   不是侧栏那张卡的复制品——那张有"改 N 项/未提交"这些窄轨不需要的东西）。 */
+const RAIL = {open: false};
+function railLabel(t){
+  return (t.hawb || t.stem || t.filename) + "：" + statusOf(t)[1];
+}
+function renderRail(){
+  const box = $("#railDots"); if (!box) return;
+  const done = S.tickets.filter(t => t.submitted).length;
+  const prg = $("#railPrg");
+  prg.textContent = S.tickets.length ? (done + "/" + S.tickets.length) : "—";
+  prg.title = "本机今天：已提交 " + done + " / 经手 " + S.tickets.length + " 张";
+  box.innerHTML = S.tickets.map((t, i) => {
+    const cur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
+    return `<button type="button" class="rd" data-i="${i}"${cur ? ' aria-current="true"' : ""}
+      aria-label="${esc(railLabel(t))}"><span class="dot ${statusOf(t)[0]}" aria-hidden="true"></span></button>`;
+  }).join("");
+  const old = document.querySelector(".railList"); if (old) old.remove();
+  $("#railExpand").setAttribute("aria-expanded", String(RAIL.open));
+  if (!RAIL.open) return;
+  const panel = document.createElement("div");
+  panel.className = "railList";
+  panel.innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
+    const cur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
+    return `<button type="button" class="rr" data-i="${i}"${cur ? ' aria-current="true"' : ""}>
+      <span class="dot ${statusOf(t)[0]}" aria-hidden="true"></span>
+      <span class="nm">${esc(t.hawb || t.stem || t.filename)}</span>
+      <span class="st">${esc(statusOf(t)[1])}</span></button>`;
+  }).join("") : '<div class="empty">尚无票据。</div>';
+  $("#rail").appendChild(panel);
+}
+/* 上一票 / 下一票：核完一张顺着走。换票要先退出主单视图，否则核对区还停在主单那张 36 列表上，
+   人以为"点了没反应"。到头了要说一声——静默不动最容易被当成坏了。 */
+function stepTicket(d){
+  if (!S.tickets.length){ toast("列表里还没有票", ""); return; }
+  const i = S.tickets.indexOf(current());
+  if (i < 0){ mvOff(); S.sel = S.tickets[0].stem || S.tickets[0].filename; render(); return; }
+  const j = i + d;
+  if (j < 0 || j >= S.tickets.length){ toast(d < 0 ? "已经是第一张" : "已经是最后一张", ""); return; }
+  mvOff();
+  S.sel = S.tickets[j].stem || S.tickets[j].filename;
+  render();
+  $("#main").scrollIntoView({block: "nearest"});
 }
 function renderDrafts(){
   const d = drafts();
@@ -787,6 +833,7 @@ function statusCell(t, k, fl){
 }
 function renderMain(){
   const el = $("#main"), t = current();
+  el.classList.remove("has-todo");     // 只有分单核对区有置顶待办条
   /* 主单视图：36 列可编辑 + 红旗逐条确认 → 提交回公司（mawb2）。列名/中文名/分组由后端
      fields 表给（单一真源），红旗在提交时由服务端按当前值重算——前端只负责让人看清并确认。 */
   if (MV){
@@ -914,38 +961,46 @@ function renderMain(){
       <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
   }
   const fid = t.qc && t.qc.fidelity;
+  el.classList.add("has-todo");
   el.innerHTML = `
     <div class="hd">
-      <span class="dot ${c}" style="margin-top:6px"></span>
+      <span class="dot ${c}" style="margin-top:6px" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
-          ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}</div></div>
-      <span class="sp"></span>
-      <span class="hint" id="editedHint">已改 ${editedList(t).length} 项 · 红旗 ${ef.length} 条</span>
+          ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}
+          · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
-    ${chips ? `<div class="chips">${chips}</div>` : ""}
-    <div class="ft top">
-      <button class="btn pri" id="submit">提交本票</button>
-      <button class="btn" id="expOne">导出本票 JSON</button>
-      <button class="btn" id="expAll">导出全部已解析</button>
-      <span class="sp"></span>
-      <span class="hint">保真回查：${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</span>
-    </div>
-    <div class="tools">
-      <button class="btn sm" id="jumpFirst">跳到首个红旗字段</button>
+    <div class="todo">
+      <span class="lbl">待办</span>
+      <span class="hint" id="editedHint">${esc(todoText(t, ef))}</span>
+      <button class="btn sm" id="jumpFirst" type="button">跳到首个红旗字段</button>
       <label><input type="checkbox" id="onlyFlag"> 只看有红旗 / 空值的字段</label>
+      <span class="sp"></span>
       <span class="hint">点左边字段名 → 票面定位并放大对应原文</span>
     </div>
+    ${chips ? `<div class="chips">${chips}</div>` : ""}
     <table><thead><tr>
       <th>字段</th><th class="g">航空口径 L3 · 已归一（可改）</th>
       <th style="text-align:right">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
-    <div class="ft">
+    <div class="ft bottom">
+      <button class="btn pri" id="submit">提交本票</button>
+      <button class="btn" id="expOne">导出本票 JSON</button>
+      <button class="btn" id="expAll">导出全部已解析</button>
       <span class="sp"></span>
+      <button class="btn sm" id="prevOne" type="button" title="上一张票">‹ 上一票</button>
+      <button class="btn sm" id="nextOne" type="button" title="下一张票">下一票 ›</button>
       <button class="btn gh" id="dropOne">从列表移除</button>
     </div>`;
   wireMain(t);
+  // 待办条的真实高度量一次给表头吸顶用：写死数字会在文字换行那天把第一行字段压住
+  const tb = el.querySelector(".todo");
+  if (tb) document.documentElement.style.setProperty("--todoH", tb.offsetHeight + "px");
   $("#main").querySelectorAll("textarea").forEach(autoGrow);
+}
+function todoText(t, ef){
+  const empt = FIELDS.filter(x => !String(airVal(t, x[0]) || "").trim()).length;
+  return `红旗 ${ef.length} · 空值 ${empt} · 已改 ${editedList(t).length}`;
 }
 function refreshRow(t, k){
   const tr = $("#f-" + CSS.escape(k)); if (!tr) return;
@@ -954,7 +1009,7 @@ function refreshRow(t, k){
   tr.querySelector("[data-st]").innerHTML = statusCell(t, k, fl);
   tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
   const hint = $("#editedHint");
-  if (hint) hint.textContent = `已改 ${editedList(t).length} 项 · 红旗 ${ef.length} 条`;
+  if (hint) hint.textContent = todoText(t, ef);
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
   if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span style="color:var(--edit)">改 ${editedList(t).length} 项</span>` : "");
 }
@@ -1014,6 +1069,8 @@ function wireMain(t){
   $("#expOne").addEventListener("click", () => exportTickets([t], (t.stem || t.filename) + ".审核结果.json"));
   $("#expAll").addEventListener("click", () => exportTickets(
     S.tickets.filter(x => x.state === "done"), "分单审核_" + new Date().toISOString().slice(0, 10) + ".json"));
+  $("#prevOne").addEventListener("click", () => stepTicket(-1));
+  $("#nextOne").addEventListener("click", () => stepTicket(1));
   $("#dropOne").addEventListener("click", () => {
     const i = S.tickets.indexOf(t);
     S.tickets.splice(i, 1);
@@ -1510,6 +1567,15 @@ function renderDay(){
       要看哪张已发给航司，点顶栏「主单检索」按主单号查那张主单下的全部票。</p>`;
 }
 $("#viewDesk").addEventListener("click", () => setView("desk"));
+$("#rail").addEventListener("click", e => {
+  if (e.target.closest("#railExpand")){ RAIL.open = !RAIL.open; renderRail(); return; }
+  const b = e.target.closest("[data-i]"); if (!b) return;
+  const t = S.tickets[+b.dataset.i]; if (!t) return;
+  mvOff();                          // 从窄轨换票就是回到分单核对，主单视图必须先关掉
+  S.sel = t.stem || t.filename;
+  RAIL.open = false;
+  render();
+});
 $("#viewDay").addEventListener("click", () => setView("day"));
 $("#dayGo").addEventListener("click", loadDay);
 $("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(); });

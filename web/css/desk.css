@@ -24,9 +24,35 @@ input,textarea{font:inherit;color:inherit}
 .f input:focus,.f select:focus{outline:2px solid #cfe0f7;border-color:#9cc3ee}
 /* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排 */
 .wrap{display:grid;gap:14px;padding:14px 16px;align-items:start;
-  grid-template-columns:264px minmax(420px,1.18fr) minmax(360px,1fr);
-  grid-template-areas:"side view form"}
-#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}
+  grid-template-columns:48px 264px minmax(420px,1.18fr) minmax(360px,1fr);
+  grid-template-areas:"rail side view form"}
+#rail{grid-area:rail}#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}
+/* 48px 状态窄轨：一天约 30 单，换票不该是"回侧栏滚动找那一行"。
+   点状态点直接换票；≡ 展开覆盖式列表。窄轨 sticky 着，跟着 #main 一起留在视野里。 */
+.rail{position:sticky;top:64px;align-self:stretch;display:flex;flex-direction:column;align-items:center;
+  gap:8px;padding:6px 0}
+.rail .railBtn{padding:2px 6px;min-height:28px;font-size:14px;line-height:1}
+.railPrg{font-size:11px;color:var(--ink2);text-align:center;font-variant-numeric:tabular-nums}
+.railDots{display:flex;flex-direction:column;align-items:center;gap:4px;overflow:auto;max-height:60vh;width:100%}
+.railDots .rd{display:flex;align-items:center;justify-content:center;width:32px;min-height:28px;
+  border:0;background:transparent;cursor:pointer;border-radius:7px}
+.railDots .rd:hover{background:#eef5ff}
+.railDots .rd[aria-current="true"]{background:#eef5ff;box-shadow:inset 0 0 0 1px var(--edit)}
+/* 展开的覆盖式列表：浮在窄轨右边，不换页、不推挤版面 */
+.railList{position:absolute;left:40px;top:34px;z-index:70;width:246px;max-height:70vh;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;
+  box-shadow:0 6px 24px rgba(20,32,48,.16)}
+.railList .rr{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:6px 8px;min-height:32px;
+  border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;border-radius:7px}
+.railList .rr:hover{background:#f7faff}
+.railList .rr[aria-current="true"]{background:#eef5ff;box-shadow:inset 3px 0 0 var(--edit)}
+.railList .rr .nm{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.railList .rr .st{font-size:11px;color:var(--ink2);white-space:nowrap}
+/* 待办条置顶、操作条常驻底部：#main 自己滚，核到最后一个字段时也看得见"还剩什么"和提交 */
+.todo{position:sticky;top:0;z-index:12;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  padding:7px 12px;background:var(--panel);border-bottom:1px solid var(--line);font-size:12.5px}
+.todo .lbl{font-weight:700}
+.ft.bottom{position:sticky;bottom:0;z-index:12;background:var(--panel);border-top:1px solid var(--line)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px}
 .card .t{padding:10px 12px;border-bottom:1px solid var(--line);font-weight:700;font-size:13px;
   display:flex;align-items:center;gap:8px}
@@ -130,6 +156,7 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 @media (min-width:1461px){
   #main{position:sticky;top:64px;align-self:start;height:calc(100vh - 78px);overflow:auto}
   #main th{top:0}
+  #main.has-todo th{top:var(--todoH)}   /* 待办条压在上面时表头要跟着让出它的高度 */
 }
 #view .t .pvname{margin-left:auto;font-weight:400;color:var(--ink3);font-size:11.5px;max-width:58%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -167,10 +194,12 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--edit)}
   opacity:0;transition:.18s;pointer-events:auto;max-width:100%;cursor:pointer}
 .toast.on{opacity:1}.toast.bad{background:#8f2b21}.toast.ok{background:#186b3d}
 @media (max-width:1460px){
-  .wrap{grid-template-columns:248px 1fr;grid-template-areas:"side view" "side form"}
+  .wrap{grid-template-columns:48px 248px 1fr;grid-template-areas:"rail side view" "rail side form"}
 }
 @media (max-width:1020px){
-  .wrap{grid-template-columns:1fr;grid-template-areas:"side" "view" "form"}
+  .wrap{grid-template-columns:1fr;grid-template-areas:"rail" "side" "view" "form"}
+  .rail{position:static;flex-direction:row;align-items:center;gap:10px}
+  .railDots{flex-direction:row;max-height:none;overflow-x:auto}
   .list{max-height:240px}
   #view{position:static;height:auto;max-height:none}
   .pv{min-height:0}

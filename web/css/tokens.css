@@ -3,5 +3,5 @@
    --ink3 从前是 #8d99a9（≈2.9:1），浅底小字在强光屏幕上糊成一片；表达状态仍必须同时带文字，不能只靠色点。*/
 :root{
   --bg:#f4f6f9; --panel:#fff; --line:#e2e7ee; --ink:#1c2430; --ink2:#5b6879; --ink3:#616e80;
-  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7; --hdh:54px;
+  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7; --hdh:54px; --todoH:37px;   /* 待办条高度：表头吸顶时要让开它 */
 }
