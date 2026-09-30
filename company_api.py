@@ -253,7 +253,9 @@ def submit_master(payload: dict) -> dict:
     if existing and existing.get("SEND_STATUS") not in (0, 2, None):
         raise CompanyLocked(
             f"{mawb} 不允许更新（j9 侧 SEND_STATUS={existing.get('SEND_STATUS')}，仅 0/2 可改，已发送锁定）")
-    record = {col: existing.get(col) for col in mf.MASTER_COLS}
+    # 先按公司当前值铺满那 36 列（j9 是整表写回：没带上的列会被写成 NULL），再盖掉本次改过的。
+    # 列面走 mf.submit_body——"恰好 36 列"这条规则只许有一处。
+    record = mf.submit_body(existing)
     for col in mf.MASTER_COLS:
         if col in ams:
             record[col] = ams[col]

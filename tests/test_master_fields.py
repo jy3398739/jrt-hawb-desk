@@ -136,3 +136,11 @@ def test_limit50_list_is_the_company_400_lines():
         "CONSIGNEE_INFO_CITY", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE",
         "NOTIFY_INFO_CITY", "NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_STATE"}, \
         "这九列超 50 字符公司直接 400，红旗要提前报出来"
+
+def test_submit_body_is_the_only_master_column_surface():
+    """36 列这条规则从前有两份：master_fields.submit_body（只有测试在调）和 company_api 里的
+    同一句字典推导。改列面时漏改一份，就是往公司整表写回时少写/多写一列。"""
+    from pathlib import Path
+    src = (Path(__file__).resolve().parent.parent / "company_api.py").read_text(encoding="utf-8")
+    assert "mf.submit_body(" in src, "主单提交体要经 submit_body 组列面"
+    assert "for col in mf.MASTER_COLS}" not in src, "company_api 里又长出一份列面抄本"

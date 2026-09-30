@@ -123,7 +123,7 @@
 4. **两条链合并**：`store._write` / `auth._write` / `master_pipeline._write` / `config.persist_model_choice` 合成一个 `atomic_write(path, data, mode=0o600)`；短/长字段拆分与 `_missed_flags` 那类重复实现各留一份；`MASTER_COLS = mf.MASTER_COLS` 这类别名删掉。
 5. **并发安全**：`store.rebuild_summary` 的非原子写、`archive_original` 的 `manifest.json` 非原子写改走 `atomic_write`；台账跨进程写加文件锁（Windows 降级说明）。
 6. **配置面**：`config.py` 的环境变量收成一张表（名字/用途/必填条件/默认），`.env.example` 补齐现在缺的 10 项，删掉没人读的 `BLSC_API_KEY`；`set_model`/`set_master_model` 不再改模块级全局（改为读函数），消掉"快照与 os.getenv 两套真值"。
-7. **清死码**：`store.master_ledger`（无人读）、`master_fields.submit_body`（仅测试用）等，逐个确认后删；`.gitignore` 里指向不存在目录的条目与"39 字段"这类过期注释一并修。
+7. **清死码**：~~`store.master_ledger`（无人读）~~ **核实为误判，已保留**——`company_api.py:247` 的主单预读即拒就靠它判断"本机录过但公司没读到"；`master_fields.submit_body` 反过来并入生产路径（`company_api` 组 `AMS_RECORD` 时调它），"恰好 36 列"这条规则从此只有一处。`.gitignore` 里指向不存在目录的条目与"39 字段"这类过期注释一并修。
 
 ## 5. 运维
 
