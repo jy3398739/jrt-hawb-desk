@@ -53,7 +53,7 @@ function toast(msg, kind){
   const el = $("#toast"); el.textContent = msg; el.className = "toast on " + (kind || "");
   clearTimeout(toast._t); toast._t = setTimeout(() => el.className = "toast", 3000);
 }
-function txt(o, k){ const v = o ? o[k] : null; return v === null || v === undefined ? "" : String(v); }
+function txt(o, k){ return L.str(o, k); }
 function toNum(k, v){
   const s = String(v).replace(/,/g, "").trim();
   const m = s.match(NUM[k] === "int" ? /-?\d+(\.\d+)?/ : /-?\d+(\.\d+)?/);
@@ -1265,40 +1265,26 @@ function mvFlags(){
   const base = (MV.rec && MV.rec.qc && MV.rec.qc.flags) || [];
   return [...new Set(base.concat(MV.extraFlags || []))];
 }
-/* 主单 36 列的改动和红旗确认同样是人的工作，不能刷新就丢。草稿按 mawb 单独一把键存本地，
-   不和分单草稿共用对象（分单存 airE/ackF，主单存 edit/acked，混着读会读出半截字段）。
-   base 记下"这些改动是对着哪一版解析改的"：重新解析后靠它说出哪几列人改的还是旧值。 */
+/* 主单 36 列的改动和红旗确认同样是人的工作，不能刷新就丢：按 mawb 存本地。
+   算式在 logic.js（L.draft*），这里只做 localStorage 与 MV 的接线；
+   不和分单草稿共用一把键——分单存 airE/ackF，主单存 edit/acked，混着读会读出半截字段。 */
 function mstDrafts(){ try { return JSON.parse(localStorage.getItem(LS.masterDrafts) || "{}"); } catch (e) { return {}; } }
 function mvSave(){
   if (!MV || !MV.mawb) return;
-  const all = mstDrafts();
-  if (!Object.keys(MV.edit).length && !MV.acked.length && !(MV.extraFlags || []).length) delete all[MV.mawb];
-  else all[MV.mawb] = {savedAt: nowTxt(), base: MV.editBase || {}, edit: MV.edit,
-                       acked: MV.acked, extraFlags: MV.extraFlags || []};
-  localStorage.setItem(LS.masterDrafts, JSON.stringify(all));
+  const entry = L.draftEntry(MV.editBase, MV.edit, MV.acked, MV.extraFlags, nowTxt());
+  localStorage.setItem(LS.masterDrafts, JSON.stringify(L.draftPut(mstDrafts(), MV.mawb, entry)));
 }
 function mstDraftClear(mawb){
-  const all = mstDrafts();
-  if (mawb in all){ delete all[mawb]; localStorage.setItem(LS.masterDrafts, JSON.stringify(all)); }
+  localStorage.setItem(LS.masterDrafts, JSON.stringify(L.draftPut(mstDrafts(), mawb, null)));
 }
 function mvLabel(k){
   const f = ((MV && MV.rec && MV.rec.fields) || []).find(x => x[0] === k);
   return f ? f[1] : k;
 }
-/* 草稿照单恢复（那是人改的）。但"草稿当时的原值 ≠ 现在解析出的原值"的那几列是打架列：
-   底层解析变了，人对着旧值改的可能已经不对，必须点名让人复核，不能默默把旧草稿盖在新解析上。 */
 function mvRestore(rec){
-  const ams = (rec || {}).ams || {}, d = mstDrafts()[MV.mawb];
-  MV.conflicts = [];
-  if (!d){
-    MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.editBase = Object.assign({}, ams);
-    return;
-  }
-  MV.edit = Object.assign({}, d.edit || {});
-  MV.acked = (d.acked || []).slice();
-  MV.extraFlags = (d.extraFlags || []).slice();
-  MV.editBase = Object.assign({}, d.base || {});
-  MV.conflicts = Object.keys(MV.edit).filter(k => txt(d.base || {}, k) !== txt(ams, k));
+  const m = L.draftMerge(mstDrafts()[MV.mawb], (rec || {}).ams || {});
+  MV.edit = m.edit; MV.acked = m.acked; MV.extraFlags = m.extraFlags;
+  MV.editBase = m.editBase; MV.conflicts = m.conflicts;
 }
 /* 换解析记录的唯一入口：重解析、轮询、提交后都走这里，绕开它就等于把刚恢复的草稿弄丢。 */
 function mvSetRec(rec){
@@ -1308,12 +1294,10 @@ function mvSetRec(rec){
   mvSave();
 }
 function mvTouch(inp){
-  const k = inp.dataset.mk, v = inp.value;
-  const orig = (MV.rec.ams || {})[k];
-  if ((v || "") === (orig == null ? "" : String(orig))) delete MV.edit[k]; else MV.edit[k] = v;
-  MV.editBase[k] = orig == null ? "" : String(orig);   // 这一列刚对着当前解析改过 → 打架消解
+  const k = inp.dataset.mk;
+  const m = L.draftTouch(MV.edit, MV.editBase, MV.conflicts, k, inp.value, (MV.rec.ams || {})[k]);
+  MV.edit = m.edit; MV.editBase = m.editBase; MV.conflicts = m.conflicts;
   inp.closest("td").classList.toggle("edited", k in MV.edit);
-  MV.conflicts = MV.conflicts.filter(x => x !== k);
   autoGrow(inp);
   mvSave();
   const msg = $("#mvMsg");

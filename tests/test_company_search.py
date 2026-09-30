@@ -133,14 +133,15 @@ def test_master_drafts_survive_refresh():
 
     save = _fn(html, "mvSave")
     assert "localStorage.setItem(LS.masterDrafts" in save, "改动要即时落盘"
-    for frag in ("MV.edit", "MV.acked", "MV.extraFlags", "base"):
-        assert frag in save, f"草稿要存 {frag}——base 是判断'最新解析动了哪一列'的基准"
+    for frag in ("MV.edit", "MV.acked", "MV.extraFlags", "MV.editBase"):
+        assert frag in save, f"落盘要带上 {frag}：缺一样，恢复出来的就是半份工作"
+    assert "L.draftEntry" in save and "L.draftPut" in save, "算式在 logic.js，desk.js 只做 localStorage 接线"
     assert "mvSave()" in _fn(html, "mvTouch"), "改一列就落一次盘，不能等提交才存"
     assert "mvSave()" in _fn(html, "renderMain"), "点「确认无误/撤回」同样要落盘：确认状态也是工作"
 
     restore = _fn(html, "mvRestore")
-    assert "mstDrafts()" in restore and "MV.conflicts" in restore, \
-        "恢复草稿时要和新解析逐列对基准，对不上的是打架列"
+    assert "mstDrafts()" in restore and "L.draftMerge" in restore and "MV.conflicts" in restore, \
+        "恢复草稿要走 logic 的合并算式，并把打架列记到 MV.conflicts 上"
     setrec = _fn(html, "mvSetRec")
     assert "mvRestore(" in setrec and "mvSave()" in setrec, \
         "换解析记录必须走唯一入口，否则轮询回来的新解析会绕过草稿"

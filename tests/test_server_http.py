@@ -105,7 +105,8 @@ def test_desk_page_links_assets_by_relative_path_and_keeps_no_inline_bodies():
     """页面只留骨架：样式与脚本各自成文件，且用相对路径引用——挂在 /hawb/ 下也能取到。"""
     page = web_src.part("index.html")
     assert "<style>" not in page, "页面里不该再嵌样式正文"
-    assert page.count("<script") == 1 and 'src="web/js/desk.js"' in page, "脚本只能有一个外链，不该再有内联正文"
+    assert page.count("<script") == 2 and 'src="web/js/logic.js"' in page and 'src="web/js/desk.js"' in page, \
+        "脚本只留外链（logic 纯逻辑 + desk 接线），不该再有内联正文"
     assert 'href="web/css/tokens.css"' in page and 'src="web/js/desk.js"' in page, \
         "引用要相对路径（绝对 /css/... 在子路径挂载下会打到域名根）"
 

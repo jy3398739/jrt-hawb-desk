@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""前端契约断言读的是"这一套前端"：页面骨架 + 两份样式 + 一份脚本。
+"""前端契约断言读的是"这一套前端"：页面骨架 + 两份样式 + 两份脚本（logic 纯逻辑、desk 接线）。
 拆文件不该让契约测试变瞎——挂载前缀、转义、队列轮询这些约束照样要能扫到。"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent / "web"     # 真实前端目录：有些用例会临时把
                                                           # server.WEB_DIR 指到空目录去测缺失场景
-PARTS = ("index.html", "css/tokens.css", "css/desk.css", "js/desk.js")
+PARTS = ("index.html", "css/tokens.css", "css/desk.css", "js/logic.js", "js/desk.js")
 
 
 def desk() -> str:
