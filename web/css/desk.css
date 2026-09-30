@@ -80,8 +80,9 @@ th{position:sticky;top:var(--hdh);z-index:5;background:#fbfcfe;text-align:left;f
 th.g{background:#f3f6fa;color:var(--ink2)}
 td{border-bottom:1px solid #f0f3f7;vertical-align:top;padding:0}
 td.k{padding:8px 10px;width:206px;background:#fdfefe}
-td.k .kk{font-weight:600;font-size:13px}
-td.k .ky{color:var(--ink3);font-size:11px;font-family:Consolas,monospace}
+/* .kk/.ky 在定位按钮里是 span（<button> 只能装短语内容），靠 display:block 保持一行一个 */
+td.k .kk{font-weight:600;font-size:13px;display:block}
+td.k .ky{color:var(--ink3);font-size:11px;font-family:Consolas,monospace;display:block}
 td.c{padding:6px 8px}
 td.c.edited{background:#f4f9ff}
 tr.flag td.k{box-shadow:inset 3px 0 0 var(--warn)}

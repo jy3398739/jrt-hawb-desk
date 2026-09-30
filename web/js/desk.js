@@ -909,7 +909,7 @@ function renderMain(){
     if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
     const fl = fm.map[k] || [];
     rows += `<tr id="f-${k}" class="${fl.length ? "flag" : ""}">
-      <td class="k loc"><button type="button" class="kbtn" data-jump-field="${k}" title="点击：在左边票面上定位并放大这个值"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></button></td>
+      <td class="k loc"><button type="button" class="kbtn" data-jump-field="${k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(lab)}</span><span class="ky">${esc(k)}</span></button></td>
       <td class="c v" data-cell="air">${control(t, k)}</td>
       <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
   }
