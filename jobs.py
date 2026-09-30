@@ -26,6 +26,20 @@ def build_qc(path: Path, r: dict) -> dict:
             "error": r["error"]}
 
 
+def recompute_flags(raw: dict | None, air: dict, transcript: dict | None = None) -> list:
+    """**提交时刻**按当前值重算红旗，与 handle_file 用同一批判据、同一套文案
+    （字符串要对得上人工确认的那一条）。
+
+    拿不到 L2 原文或 L1 转录时只算拿得到的那层，绝不因为"没文件"就凭空报"MAWB_NO 缺失"——
+    在别的机器解析过的票也要提得出去。"""
+    warns = list(validate_raw(raw)) if raw else []
+    warns += ["L3 " + w for w in validate_air(air or {})]
+    if raw and transcript:
+        fid = verify_fidelity(raw, transcript)
+        warns += [f"保真 {x['field']}: {x['reason']}（值={x['value']!r}）" for x in fid["failed"]]
+    return warns
+
+
 def handle_file(path, save: bool = True) -> dict:
     """返回 {stem, channel, elapsed, raw, air, transcript, warns, fidelity, archive, qc, error}。"""
     path = Path(path)

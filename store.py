@@ -185,16 +185,24 @@ def _write_ledger(data: dict, path=None) -> None:
 
 
 def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
-                   acked_flags: list = None) -> dict:
+                   acked_flags: list = None, edited_fields: list = None,
+                   sent_fingerprint: str = "", company_action: str = "") -> dict:
     """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。
-    acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。"""
+    acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。
+    sent_fingerprint / company_action / before：这次到底发了什么、公司怎么回的、发之前库里是什么——
+    出事时要能回答"这列的 NULL 是谁写进去的"（j9 整表写回，没带的列就是 NULL）。"""
     with _LEDGER_LOCK:
         data = _load_ledger()
         entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
                  "key": number_key(mawb, hawb), "reviewer": reviewer,
                  "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "acked_flags": [str(a) for a in (acked_flags or [])],
+                 "edited_fields": [str(x) for x in (edited_fields or [])],
+                 "sent_fingerprint": sent_fingerprint or "",
+                 "company_action": company_action or "",
                  "receipt": receipt or {}}
+        if isinstance((receipt or {}).get("before"), dict):
+            entry["before"] = receipt["before"]
         data[stem] = entry
         _write_ledger(data)
     return entry

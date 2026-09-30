@@ -951,7 +951,12 @@ async function submitTicket(t){
     if (r.status === 404 || r.status === 405) pending = true;
     else {
       const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
-      if (!r.ok || j.ok === false) throw new Error(j.error || ("HTTP " + r.status));
+      if (!r.ok || j.ok === false){
+        // 服务端 400 的 detail 可能是字符串（缺号），也可能是 {message, flags}（红旗未清）：
+        // 不把 message 挖出来，制单员只会看到光秃秃一句 "HTTP 400"，不知道该改哪。
+        const d = j.detail;
+        throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
+      }
     }
   }catch(e){ if (!pending) { t.state = "done"; render(); toast("提交失败：" + e.message, "bad"); return; } else pending = false; }
   if (pending){

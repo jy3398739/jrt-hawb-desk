@@ -26,7 +26,7 @@
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
   GET  /render/{stem}      把归档票面按页转成 PNG（?page=&scale=），定位模式的底图（需登录会话）
 """
-import argparse, json, logging, re, shutil, tempfile, time
+import argparse, hashlib, json, logging, re, shutil, tempfile, time
 from pathlib import Path
 
 import uvicorn
@@ -38,6 +38,7 @@ from starlette.concurrency import run_in_threadpool
 import auth
 import company_api
 import config
+import jobs
 import master_pipeline
 import store
 import xlsx2pdf
@@ -290,18 +291,58 @@ class SubmitBody(BaseModel):
     client: str = ""
 
 
+def current_user(request: Request) -> dict:
+    """需要"是谁"的接口用这个。提交留痕里的复核人只认登录会话——前端传什么都不认，
+    否则台账可以随便署名（2026-09-29 审计）。"""
+    u = auth.session_user(request)
+    if not u:
+        raise HTTPException(401, "请先登录")
+    return u
+
+
+def _read_json(path: Path):
+    """读一份本机 JSON，坏文件/没文件都当"没有"，不让提交门自己被 IO 异常绊倒。"""
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    except Exception:
+        return None
+
+
+def _l2_l1(stem: str, tk: dict):
+    """提交门要看的两份本机依据：L2 原文口径与 L1 转录。
+    优先读服务器上落盘的那份（前端带来的值改了也不算数），落盘没有才退回包里 `raw_original`；
+    两样都没有就只算 L3 那一层——别的机器解析的票也得能提交，不能凭空报旗。"""
+    name = _safe_stem(stem)
+    raw = transcript = None
+    if name:
+        raw = _read_json(config.OUTPUT_RAW_DIR / f"{name}.json")
+        transcript = _read_json(config.TRANSCRIPT_DIR / f"{name}.json")
+    if raw is None and isinstance(tk.get("raw_original"), dict):
+        raw = tk["raw_original"]
+    return raw, transcript
+
+
+def _sent_fingerprint(mawb: str, hawb: str, rec: dict) -> str:
+    """这次到底把什么发给了公司。整表写回出事时（哪列被抹成 NULL）靠它对账重算。"""
+    return hashlib.sha256(json.dumps({"mawb": mawb, "hawb": hawb, "air": rec}, sort_keys=True,
+                                     ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
 @app.post("/submit")
-def submit(body: SubmitBody, _: None = Depends(require_web)):
+def submit(body: SubmitBody, user: dict = Depends(current_user)):
     """制单员提交：这是"回传公司 + 进索引"的唯一出口。
 
-    门禁以服务端为准、不信前端（前端那道门只是体验）：一张分单必须有可归一化的主单号与分单号，
-    否则拒绝——因为 (主单号|分单号) 复合键是"录入员日后能否按号打开本机原件"的唯一连接键，
-    缺号的票进了台账就等于往索引里塞坏数据。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，
-    制单员补号后重新提交即可。机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。"""
+    两道门都以服务端为准，不信前端（前端那道只是体验）：
+    ① 主/分单号必须可归一化——复合键是"日后能否按号打开原件"的唯一连接键，缺号进索引等于塞坏数据；
+    ② 红旗按**提交时刻的当前值**重算（`jobs.recompute_flags`，与解析时同一批判据同一套文案），
+       未清的必须逐条 `acked_flags` 确认；改了值旧旗文案会变，自动要重新确认。
+    任一不过 → 400 且**一个公司请求都不发**（先整批门检，再逐张发，别提交一半）。
+    复核人取登录会话身份。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，补号后重新提交即可。
+    机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。"""
     tickets = body.tickets if isinstance(body.tickets, list) else []
     if not tickets:
         raise HTTPException(400, "没有待提交的票据")
-    results = []
+    passed = []
     for tk in tickets:
         if not isinstance(tk, dict):
             raise HTTPException(400, "票据格式不正确：tickets 里每一项都应是对象")
@@ -311,6 +352,15 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
         stem = str(tk.get("stem") or tk.get("filename") or "").strip()
         if not store.norm_no(mawb) or not store.norm_no(hawb):
             raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
+        raw, transcript = _l2_l1(stem, tk)
+        acked = [str(a) for a in (tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else [])]
+        left = [f for f in jobs.recompute_flags(raw, rec, transcript) if f not in acked]
+        if left:
+            raise HTTPException(400, {"message": f"{hawb} 还有未清的红旗：逐条确认后才能回传公司",
+                                      "flags": left})
+        passed.append((tk, stem, mawb, hawb, rec, acked))
+    results = []
+    for tk, stem, mawb, hawb, rec, acked in passed:
         try:
             receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem, "air": rec})
         except company_api.CompanyLocked as e:
@@ -319,9 +369,12 @@ def submit(body: SubmitBody, _: None = Depends(require_web)):
         except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
             LOG.warning("分单回传失败：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
             raise HTTPException(502, f"回传公司失败：{e}")
-        acked = tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else []
-        entry = store.mark_submitted(stem, mawb, hawb,
-                                     str(tk.get("reviewer", "") or ""), receipt, acked_flags=acked)
+        entry = store.mark_submitted(stem, mawb, hawb, str(user.get("name") or ""), receipt,
+                                     acked_flags=acked,
+                                     edited_fields=(tk.get("edited_fields")
+                                                    if isinstance(tk.get("edited_fields"), list) else []),
+                                     sent_fingerprint=_sent_fingerprint(mawb, hawb, rec),
+                                     company_action=str(receipt.get("action") or ""))
         results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
     return {"ok": True, "results": results}
 

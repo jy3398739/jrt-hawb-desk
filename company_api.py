@@ -265,4 +265,5 @@ def submit_order(payload: dict) -> dict:
     receipt = _post_guarded(store.number_key(mawb, hawb), record, "/api/v1/j9/hawb2", "HAWB_RECORD",
                             config.COMPANY_HAWB_KEY)
     return {"mode": "live", "accepted": receipt["accepted"], "action": receipt["action"],
-            "mawb": mawb, "hawb": hawb, "idempotent": receipt.get("idempotent") is True}
+            "mawb": mawb, "hawb": hawb, "before": existing or {},
+            "idempotent": receipt.get("idempotent") is True}

@@ -150,11 +150,118 @@ def test_submit_records_acked_flags_in_ledger():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_server_recomputes_house_flags_and_blocks_unacked():
+    """P0-2：分单提交的红旗以**服务端重算**为准。前端报 needs_review=false、flags=[] 不算数——
+    绕开或直接复用前端就能把未清的旗写进公司库，台账上的署名也是自填的（2026-09-29 审计）。"""
+    old = (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
+    old_users = auth.USERS_FILE
+    try:
+        client = _logged_client(tmp)
+        tk = _clean_ticket()
+        tk["air_reviewed"].update({"DEST_NAME": "WARSAW",       # L3：城市名没转成三字码
+                                   "ORIGIN_NAME": "TAO"})
+        tk["raw_original"] = {"MAWB_NO": "235-96146363", "HAWB_NO": "CLA26090022",
+                              "CONSIGNEE_INFO_TEL": "+86 10 69479536",
+                              "CONSIGNEE_INFO_COUNTRY": "US"}    # L2：区号与国家对不上
+        tk.update({"needs_review": False, "flags": []})       # 前端声称干净
+        r = client.post("/submit", json={"tickets": [tk]})
+        assert r.status_code == 400, f"L3/L2 都有问题，服务端该拦下：{r.text}"
+        flags = r.json()["detail"]["flags"]
+        assert any("IATA 三字码" in f for f in flags), flags
+        assert any("电话区号" in f for f in flags), flags
+        assert store.ledger() == {}, "被拦下的提交不许进台账/索引"
+        tk["acked_flags"] = flags
+        r2 = client.post("/submit", json={"tickets": [tk]})
+        assert r2.status_code == 200, r2.text
+        assert store.ledger()["CLA26090022"]["acked_flags"] == flags, "人工确认要留痕"
+    finally:
+        auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
+                          config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_submit_without_l2_on_disk_invents_no_flags():
+    """服务端没有落盘的 L2/转录（比如票是在别的机器解析的）时，只能校 L3 那一层——
+    不能因为拿不到 raw 就凭空报"MAWB_NO 缺失"，否则正常提交全被堵死。"""
+    old = (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
+    old_users = auth.USERS_FILE
+    try:
+        client = _logged_client(tmp)
+        r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+        assert r.status_code == 200, r.text
+    finally:
+        auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
+                          config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_reviewer_is_the_session_identity_not_the_payload():
+    """提交留痕里"谁提的"必须取登录会话。前端传什么名字都认，等于台账可以随便署名。"""
+    old = (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
+    old_users = auth.USERS_FILE
+    try:
+        auth.USERS_FILE = tmp / "users.json"
+        auth.ensure_seed()
+        auth.set_password("宛平", "sf-123456", "reviewer")
+        c = TestClient(server.app)
+        assert c.post("/login", json={"name": "宛平", "password": "sf-123456"}).status_code == 200
+        tk = _clean_ticket()
+        tk["reviewer"] = "马殿齐"                      # 冒名：会话里明明是宛平
+        assert c.post("/submit", json={"tickets": [tk]}).status_code == 200
+        assert store.ledger()["CLA26090022"]["reviewer"] == "宛平", "留痕要取会话身份"
+    finally:
+        auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
+                          config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_ledger_records_what_was_actually_sent():
+    """台账要能回答"到底把什么发给了公司"：改了哪几列、提交体指纹、公司回的 action、提交前的原行。"""
+    old = (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
+    config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
+    old_users = auth.USERS_FILE
+    real_submit = server._company_submit
+    try:
+        # 公司回执形状照 live 那样（回归默认 mock，mock 没有 action/before，不能拿它验留痕字段）
+        server._company_submit = lambda payload: {"mode": "live", "accepted": True,
+                                                  "action": "insert", "before": {"PIECES": 5}}
+        client = _logged_client(tmp)
+        tk = _clean_ticket()
+        tk["edited_fields"] = ["air.DEST_NAME"]
+        assert client.post("/submit", json={"tickets": [tk]}).status_code == 200
+        e = store.ledger()["CLA26090022"]
+        assert e["edited_fields"] == ["air.DEST_NAME"]
+        assert len(e["sent_fingerprint"]) == 64, "指纹要能对着上，事后能重算校验"
+        assert e["company_action"] == "insert", e
+        assert e["before"] == {"PIECES": 5}, "提交前读到的公司原行要留一份（整表写回出事时靠它看抹掉了什么）"
+    finally:
+        server._company_submit = real_submit
+        auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
+                          config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_desk_has_submit_gate_on_flags_and_numbers():
     """/submit 之外，前端也得有提交门：缺号或未清红旗时拦住，别让人点了才吃 400。"""
     html = WEB.read_text(encoding="utf-8")
     assert "主单号、分单号都得填上才能提交回传公司" in html
     assert "还有未清的红旗" in html
+    assert "d.message" in html, "服务端 400 的 detail.message 要挖出来给人看，别只剩光秃秃 HTTP 400"
 
 
 def test_desk_has_flag_ack_button_and_payload():
