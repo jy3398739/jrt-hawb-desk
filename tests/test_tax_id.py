@@ -10,6 +10,7 @@ from pathlib import Path
 
 import hawb2json as h
 import to_air
+import web_src
 import validator
 from fidelity import find_missing_tax, verify_fidelity
 
@@ -47,7 +48,7 @@ def vlm_fields():
 
 
 def desk_keys():
-    html = (Path(to_air.__file__).parent / "web" / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     body = re.search(r"const FIELDS = \[(.*?)\n\];", html, re.S).group(1)
     return re.findall(r'\["([A-Z][A-Z0-9_]+)"', body)
 

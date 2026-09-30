@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import auth
 import config
 import server
+import web_src
 import store
 
 
@@ -110,7 +111,7 @@ def _html_fn(html, name):
 def test_desk_strip_hawb_number_opens_that_ticket():
     """名下分单行的分单号要能点：点了就拉 /ticket/{stem} 进核对页（与「送入主单核对」同一套落位），
     已经在列表里的票直接选中，不重复拉。没归档的行不给链接。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "function openHouse(" in html, "要有 openHouse(stem) 这条装载路径"
     tab = _html_fn(html, "mstTable")
     assert "data-open" in tab, "分单号要挂 data-open=stem"

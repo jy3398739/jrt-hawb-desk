@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 import auth
 import config
 import server
+import web_src
 
 
 @contextlib.contextmanager
@@ -226,7 +227,7 @@ def test_users_json_posix_permissions_600():
 
 # === 前端接线（静态检查，同其它 desk 用例口径） ===
 def test_desk_has_login_gate_and_role_scoped_controls():
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'id="gate"' in html and 'id="loginForm"' in html, "没有登录遮罩/表单"
     assert '"/login"' in html and '"/logout"' in html and '"/api/me"' in html, "登录/登出/自检接口没接上"
     assert '"/admin/users"' in html and "账号管理" in html, "管理员账号管理面板没了"

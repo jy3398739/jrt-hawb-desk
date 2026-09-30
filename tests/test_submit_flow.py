@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 import auth
 import config
 import server
+import web_src
 import store
 
 WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
@@ -291,7 +292,7 @@ def test_submit_is_logged_with_who_and_result():
 
 def test_desk_has_submit_gate_on_flags_and_numbers():
     """/submit 之外，前端也得有提交门：缺号或未清红旗时拦住，别让人点了才吃 400。"""
-    html = WEB.read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "主单号、分单号都得填上才能提交回传公司" in html
     assert "还有未清的红旗" in html
     assert "d.message" in html, "服务端 400 的 detail.message 要挖出来给人看，别只剩光秃秃 HTTP 400"
@@ -299,14 +300,14 @@ def test_desk_has_submit_gate_on_flags_and_numbers():
 
 def test_desk_has_flag_ack_button_and_payload():
     """存疑类红旗的出口是人工确认：chip 上有『确认无误』按钮，payload 带 acked_flags。"""
-    html = WEB.read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "确认无误" in html
     assert "acked_flags" in html
 
 
 def test_desk_has_retry_for_failed_parse():
     """解析失败不能逼用户重新上传：失败面板要有『重试解析』按钮和对应逻辑。"""
-    html = WEB.read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "重试解析" in html
     assert "async function retryParse" in html
 
@@ -352,7 +353,7 @@ def test_company_submit_failure_is_logged_with_the_numbers():
 def test_desk_master_search_explains_unsubmitted_house_orders():
     """用户 09:13 上传解析、09:15 检索主单看到"没有分单"，其实那张票 09:35 提交后公司才有行
     ——解析≠提交。名下分单为空时要说清这条，并把本台还没提交的同主单票数报出来。"""
-    html = WEB.read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "提交回公司" in html and "这里才会有记录" in html, "空表要说明白：先提交，公司才有这条分单"
     assert "function pendingUnder(" in html, "要能按主单号找出本台已解析未提交的分单"
     body = html[html.index("function pendingUnder("):]

@@ -212,6 +212,29 @@ def desk():
     return FileResponse(page, media_type="text/html; charset=utf-8",
                         headers={"Cache-Control": "no-store"})   # 别拿旧壳：页面改了刷新即生效
 
+
+_WEB_DIRS = ("css", "js")
+_WEB_TYPES = {".css": "text/css; charset=utf-8", ".js": "application/javascript; charset=utf-8"}
+
+
+@app.get("/web/{asset:path}")
+def web_asset(asset: str):
+    """审核台的样式与脚本：免登录（登录遮罩本身要样式才好看），但只发 css/ js/ 两个目录里的
+    白名单类型，路径必须是一段目录 + 一个文件名，不给 `..` 留缝。
+
+    和页面一样 no-store：这台改完重启就该立刻是新样子，缓存里留半份旧脚本就会出现
+    "按钮点了没反应"那种查半天的事（2026-09-28 真撞到过一次）。"""
+    parts = [p for p in asset.split("/") if p]
+    if len(parts) != 2 or parts[0] not in _WEB_DIRS or parts[1] != Path(parts[1]).name:
+        raise HTTPException(400, "前端资源路径不合法")
+    media = _WEB_TYPES.get(Path(parts[1]).suffix.lower())
+    if media is None:
+        raise HTTPException(400, "前端资源只发 .css / .js")
+    file = WEB_DIR / parts[0] / parts[1]
+    if not file.is_file():
+        raise HTTPException(404, "没有这个前端资源")
+    return FileResponse(file, media_type=media, headers={"Cache-Control": "no-store"})
+
 @app.get("/inputter")
 def inputter_desk():
     """录入员检索台已并入制单台（2026-09-26 用户定案：主单检索与主单原件都在 / 一页）。

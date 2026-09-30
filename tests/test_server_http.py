@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 import auth
 import config
 import server
+import web_src
 
 FIX = Path(__file__).resolve().parent / "fixtures" / "fidelity" / "gl26090330_hawb.json"
 
@@ -74,7 +75,7 @@ def _post(client, filename="CLA26090022\xa0HAWB.pdf", content=b"%PDF-1.4 fake-ha
 def test_desk_waits_for_the_parse_job_instead_of_blocking_on_upload():
     """上传接口改成"入队 + 轮询"后，前端必须跟着改：位次要说得出口、排队已满要说人话、
     服务重启把作业弄丢了要自己重传一次（不能让人以为票丢了）。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert '"/job/"' in html, "没有轮询 /job：上传又会在 HTTP 上干等十几分钟"
     assert "排队中 · 前面" in html, "排队要给出位次，不然和卡死看不出区别"
     assert "r.status === 429" in html, "排队已满要单独说，别混成一句 HTTP 错误"
@@ -83,6 +84,40 @@ def test_desk_waits_for_the_parse_job_instead_of_blocking_on_upload():
     busy = html[html.index("function statusOf("):]
     busy = busy[:busy.index("\nfunction ")]
     assert "t.hint" in busy, "busy 状态要能显示队列给的位置，只显示「解析中…」等于没说"
+
+
+def test_web_assets_are_served_no_store_and_traversal_free():
+    """拆成 css/ js/ 之后，页面靠 /web/{路径} 取资源：免登录（登录页也得有样式），
+    但只能拿这两个目录下的一段文件名，且一律 no-store——缓存里留半份旧脚本就是"点了没反应"。"""
+    client = TestClient(server.app)
+    for path, kind in (("/web/css/tokens.css", "text/css"), ("/web/js/desk.js", "javascript")):
+        r = client.get(path)
+        assert r.status_code == 200, f"{path} → {r.status_code}"
+        assert kind in r.headers["content-type"], r.headers["content-type"]
+        assert r.headers.get("cache-control") == "no-store", f"{path} 不能进缓存"
+    # 注意用 %2e%2e：写成 ".." 会被 httpx 在客户端就把路径归一掉，测不到服务端那道判断
+    for bad in ("/web/../.env", "/web/css/%2e%2e/js/desk.js", "/web/css/notes.html",
+                "/web/css/", "/web/data/x.css", "/web/css/%2e%2e%2f%2e%2e%2f.env"):
+        assert client.get(bad).status_code in (400, 404), f"这个路径不该放行：{bad}"
+
+
+def test_desk_page_links_assets_by_relative_path_and_keeps_no_inline_bodies():
+    """页面只留骨架：样式与脚本各自成文件，且用相对路径引用——挂在 /hawb/ 下也能取到。"""
+    page = web_src.part("index.html")
+    assert "<style>" not in page, "页面里不该再嵌样式正文"
+    assert page.count("<script") == 1 and 'src="web/js/desk.js"' in page, "脚本只能有一个外链，不该再有内联正文"
+    assert 'href="web/css/tokens.css"' in page and 'src="web/js/desk.js"' in page, \
+        "引用要相对路径（绝对 /css/... 在子路径挂载下会打到域名根）"
+
+
+def test_every_css_token_is_defined():
+    """令牌层立起来之后，最怕的是"用了没定义的颜色"——浏览器静默回退，肉眼在浅底上看不出来。"""
+    tokens = web_src.part("web/css/tokens.css")
+    defined = set(re.findall(r"(--[\w-]+)\s*:", tokens))
+    used = set()
+    for rel in ("web/css/desk.css", "web/js/desk.js"):
+        used |= set(re.findall(r"var\((--[\w-]+)[),]", web_src.part(rel)))
+    assert not (used - defined), f"这些令牌用了却没人定义：{sorted(used - defined)}"
 
 
 def test_health_says_which_build_is_running():
@@ -189,9 +224,8 @@ def test_version_label_shows_on_both_ends():
         assert TestClient(server.app).get("/health").json().get("version") == config.APP_VERSION
     assert '"version": config.APP_VERSION' in (Path(server.__file__).read_text(encoding="utf-8")), \
         "健康检查里的版本号要跟 config 同源，别再各处写死一遍"
-    for page in ("index.html",):   # 录入员页已并入制单台
-        html = (server.WEB_DIR / page).read_text(encoding="utf-8")
-        assert 'id="verTag"' in html and ".version" in html, f"{page} 要把版本号显示出来"
+    assert 'id="verTag"' in web_src.part("index.html"), "页面要有版本号的位置"
+    assert ".version" in web_src.part("web/js/desk.js"), "脚本要把 /health 的 version 显示出来"
 
 
 def test_endpoints_refuse_without_login():
@@ -305,7 +339,7 @@ def test_desk_page_calls_every_endpoint_under_its_mount_prefix():
     """服务器把审核台挂在 /hawb/ 子路径下（nginx 443 反代），页面里所有请求都必须带 BASE 前缀。
     分单提交吃过这个亏：`SUBMIT_URL = "/submit"` 写死根路径，POST 打到域名根 → 404 →
     前端按"接口尚未开通"本地暂存，用户在服务器上以为没开通（2026-09-29 实测）。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'const SUBMIT_URL = BASE + "/submit"' in html, "分单提交口要跟着挂载前缀走"
     bare = [m.group(1).strip()[:46] for m in re.finditer(r"fetch\(\s*([^,)\n]+)", html)
             if not m.group(1).strip().startswith(("BASE", "LOC.base", "SUBMIT_URL"))]
@@ -339,7 +373,7 @@ def test_desk_page_missing_is_reported_not_500():
 def test_desk_pdf_viewer_hides_its_sidebar_and_can_show_the_whole_page():
     """浏览器实测反馈：Chrome 阅读器默认带缩略图侧栏，票面栏本来就窄，它还要占掉近一半，
     票面只剩半个看不全。用开放参数关掉侧栏、默认适应宽度，并留「整页看全 / 适应宽度」开关。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     frame = re.search(r"function pdfFrame\(\)\{(.*?)\n\}", html, re.S)
     assert frame, "pdfFrame 没了：换成别的方式加载 PDF 时，这条断言要跟着改"
     body = frame.group(1)
@@ -352,7 +386,7 @@ def test_desk_hidden_toggles_beat_class_display_rules():
     """浏览器实测踩过：.pvtools{display:flex} 的优先级压过 UA 的 [hidden]{display:none}，
     没有票面时票面工具栏照样亮着（static 检查看不出来，只有真开页面才发现）。
     JS 用 .hidden 开合的元素，样式表里必须有 [hidden] 兜底。"""
-    css = (server.WEB_DIR / "index.html").read_text(encoding="utf-8").split("<style>", 1)[1].split("</style>", 1)[0]
+    css = web_src.css()
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)     # 注释里的规则不生效，别被自己的注释骗过
     guarded = " ".join(m.group(1) for m in re.finditer(r"([^{}]*\[hidden\][^{}]*)\{([^}]*)\}", css)
                        if "none" in m.group(2))
@@ -392,7 +426,7 @@ def test_desk_warns_when_the_service_is_running_stale_code():
     with _stubbed():
         assert "stale_files" in TestClient(server.app).get("/health").json(), \
             "服务端不再报 stale_files，页面的提示会永远沉默"
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     probe = re.search(r"async function probe\(\)\{(.*?)\n\}", html, re.S)
     assert probe, "probe 没了：健康检查的提示逻辑挪了地方，这条断言要跟着改"
     body = probe.group(1)
@@ -403,7 +437,7 @@ def test_desk_warns_when_the_service_is_running_stale_code():
 def test_desk_clear_drafts_is_bound_to_the_button_itself():
     """真事：制单员点「本地暂存 → 清空」没反应。按钮在卡片标题栏里，而监听挂在 #drafts 列表上，
     点击根本不经过列表——委托要挂在会收到事件的那个元素上。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'id="clearDrafts"' in html, "清空按钮没了：这条断言该退休"
     assert '$("#clearDrafts").addEventListener' in html, "清空按钮没有自己的监听，点了还是没反应"
     drafts_handler = re.search(r'\$\("#drafts"\)\.addEventListener\("click",.*?\n\}\);', html, re.S)
@@ -415,8 +449,8 @@ def test_desk_clear_drafts_is_bound_to_the_button_itself():
 def test_desk_preview_pane_fills_the_viewport_height():
     """浏览器实测：.wrap 是 align-items:start，网格不会把票面那一格拉高，靠内容撑只有半屏
     （票面看一半、下面空着）。给死高度让它铺满可视高度；窄屏一屏放不下，必须改回 auto。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
-    css = re.sub(r"/\*.*?\*/", "", html.split("<style>", 1)[1].split("</style>", 1)[0], flags=re.S)
+    html = web_src.desk()
+    css = re.sub(r"/\*.*?\*/", "", web_src.css(), flags=re.S)
     base = re.search(r"#view\{([^}]*position:sticky[^}]*)\}", css)
     assert base, "#view 的粘住规则没了：这条断言要跟着改"
     assert re.search(r"(?<!max-)height:calc\(100vh", base.group(1)), \
@@ -629,7 +663,7 @@ def test_master_chain_model_is_visible_and_switchable_separately():
 def test_desk_shows_both_chain_models():
     """顶栏要同时看得见两条链的模型（所有人可见状态，仅管理员能切）——
     只报一个的话，主单用了别的模型这件事在界面上完全隐形。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'id="modelSelM"' in html, "主单链的模型下拉没了"
     assert 'switchModel(e.target, "master")' in html and 'switchModel(e.target, "hawb")' in html, \
         "两个下拉要各自带 chain 参数，否则切主单会把分单模型一起换掉"
@@ -652,7 +686,7 @@ def test_desk_model_selector_is_wired_to_models_and_model_endpoints():
     """模型切换要在制单员手边（限管理员）：顶栏下拉从 /models 取数、切换 POST /model；
     纯文本模型还得在顶栏当场说明扫描件会失败，不然他只会看到一堆失败任务。
     会话 Cookie 由浏览器同源自动带上，前端不再发 X-API-Key。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'id="modelSel"' in html, "模型下拉没了"
     load = re.search(r"async function loadModels\(\)\{(.*?)\n\}", html, re.S)
     assert load and re.search(r'fetch\((?:BASE \+ )?"/models"\)', load.group(1)), "下拉没有从 /models 取数"
@@ -783,7 +817,7 @@ def test_render_serves_image_tickets_and_degrades_honestly():
 def test_desk_field_click_locates_value_on_the_ticket():
     """制单员定的用法：点右边字段名 → 左边票面切按页渲染的页图，按 L1 bbox 叠高亮并自动放大。
     Chrome 内嵌 PDF 阅读器做不了按区域高亮，这条链一断，功能整块失联。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'class="k loc"' in html, "字段名格子不再是定位入口"
     wire = re.search(r'if \(!\$\("#main"\)\._locWired\)\{(.*?)\n  \}', html, re.S)
     assert wire and "enterLocate(" in wire.group(1), "点字段名的委托没了或又能重复挂"
@@ -815,14 +849,14 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
     """2026-09-21 用户三条 UI 意见：①提交/导出三键挪到字段表顶部（原来在 39 行下面，
     每次提交都要滚到最底）；②字段列自己滚，别带着左边上传/排队列表一起动；
     ③收发货人长文本框按内容自适应高度（原来按 "\n" 数行数，一整段没有换行就只有一行高）。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     top = html.find('class="ft top"')
     assert top > -1, "顶部操作条没了：提交/导出又滚回表尾去了"
     seg = html[top:html.find("wireMain(t)", top)]
     for bid in ('id="submit"', 'id="expOne"', 'id="expAll"'):
         assert bid in seg, f"顶部操作条少了 {bid}"
     assert seg.find("id=") < seg.find("<table"), "提交键没在字段表上面"
-    css = re.sub(r"/\*.*?\*/", "", html.split("<style>", 1)[1].split("</style>", 1)[0], flags=re.S)
+    css = re.sub(r"/\*.*?\*/", "", web_src.css(), flags=re.S)
     wide = re.search(r"@media \(min-width:1461px\)\{(.*?)\n\}", css, re.S)
     assert wide, "三栏独立滚动的媒体查询没了：滚字段又会带着整页一起动"
     assert re.search(r"#main\{[^}]*position:sticky[^}]*overflow:auto", wide.group(1)), \

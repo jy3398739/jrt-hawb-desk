@@ -12,6 +12,7 @@ import auth
 import company_api
 import config
 import server
+import web_src
 import store
 
 
@@ -102,7 +103,7 @@ def _fn(html: str, name: str) -> str:
 def test_desk_master_view_parses_edits_and_submits():
     """主单视图（2026-09-28 改口径）：检索即解析 → 左栏 L1 原文、右栏 36 列可编辑 + 红旗，
     人工确认后按 mawb2 回传公司。旧版"只读、不接提交"的口径已废。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     pv, mn = _fn(html, "renderPreview"), _fn(html, "renderMain")
     assert "MV" in pv, "票面预览要有主单分支"
     assert "MV" in mn, "核对区要有主单分支"
@@ -302,7 +303,7 @@ def test_mawb_source_route_guards_roles_and_serves_pdf():
 def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
     """录入员功能并进制单台：主单检索、主单/分单原件都在 index.html 一个页面里；
     入口对所有登录角色可见（录入员/制单员同一工作台）。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "/company/mawb" in html, "制单台要有主单检索"
     assert "查看主单原件" in html and "/mawb/source/" in html, "制单台要能开主单原件"
     assert "mawb_order" in html and "Object.keys" in html, "有没有资料要按接口返回判断"
@@ -316,7 +317,7 @@ def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
 def test_desk_master_hint_matches_the_usci_into_eori_ruling():
     """界面提示原来写"别把 USCI 塞进 EORI"，与 2026-09-29 用户定案（USCI 就放同主体 EORI）相反，
     会把复核的人往错方向带。措辞要跟口径一致。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert "别把 USCI/CNPJ 那类税号塞进 EORI" not in html, "旧口径那句要撤掉"
     assert "同主体的 EORI" in html and "USCI" in html, "要写清 USCI 落 EORI、别的税号仍不塞"
 
@@ -324,7 +325,7 @@ def test_desk_master_hint_matches_the_usci_into_eori_ruling():
 def test_house_list_under_master_moves_to_a_full_width_strip():
     """名下分单表不能留在 264px 的左栏里：一多就挤成竖排（用户实测截图）。
     左栏只留入口，分单表落到 .wrap 网格之外的一条整宽卡上。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert 'id="mstHawbCard"' in html and 'id="mstHawbBox"' in html, "要有整宽的名下分单卡"
     wrap, card, toast = html.index('class="wrap"'), html.index('id="mstHawbCard"'), html.index('<div class="toast"')
     assert wrap < card < toast, "整宽卡必须在 .wrap 之外，否则跟着网格只有三分之一宽"
@@ -340,7 +341,7 @@ def test_house_list_under_master_moves_to_a_full_width_strip():
 def test_send_status_wording_keeps_our_submit_and_company_send_apart():
     """"待发送"被读成"我这下没提交成功"（用户被 999-95764373 问住的那里）：j9 的 SEND_STATUS
     说的是公司有没有把分单发给航司，与本台有没有提交回公司是两件事，措辞不能共用一个"发送"。"""
-    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    html = web_src.desk()
     assert '"待发送"' not in html, "0 不能叫「待发送」——提交回公司那一刻它已经是成功状态了"
     tab = _fn(html, "mstTable")
     assert "公司发送状态" in tab, "表头点名主语是公司，不是本台"

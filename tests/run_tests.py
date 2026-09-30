@@ -24,6 +24,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows 控制台�
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(TESTS))    # 用例可共享 tests/ 里的小辅助（web_src 等）
 
 # 回归必须与运维机上的 .env 无关：那台机器可能把 COMPANY_API_MODE 设成 live（真连公司系统），
 # 而用例的默认期望是 mock（不外发）。live 用例自己会在用例内显式切模式并假装 HTTP 层。
