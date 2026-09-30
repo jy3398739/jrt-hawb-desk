@@ -124,6 +124,38 @@ def test_desk_master_view_parses_edits_and_submits():
         "窄屏（<1461px）时票面栏在核对区上方：滚动要停在票面栏，否则用户看着它空着以为没反应"
 
 
+def test_master_drafts_survive_refresh():
+    """主单 36 列的改动与红旗确认此前只活在内存里：刷新、误点返回、切回分单视图都会白改
+    （2026-09-29 技术栈梳理 §3.4 第 1 条）。一人一天约 30 单，必须和分单一样落本地。"""
+    html = web_src.desk()
+    assert 'masterDrafts:"hawb.review.masterDrafts"' in html, \
+        "主单草稿要自己的键：分单按 stem、主单按 mawb，塞同一个对象会撞键"
+
+    save = _fn(html, "mvSave")
+    assert "localStorage.setItem(LS.masterDrafts" in save, "改动要即时落盘"
+    for frag in ("MV.edit", "MV.acked", "MV.extraFlags", "base"):
+        assert frag in save, f"草稿要存 {frag}——base 是判断'最新解析动了哪一列'的基准"
+    assert "mvSave()" in _fn(html, "mvTouch"), "改一列就落一次盘，不能等提交才存"
+    assert "mvSave()" in _fn(html, "renderMain"), "点「确认无误/撤回」同样要落盘：确认状态也是工作"
+
+    restore = _fn(html, "mvRestore")
+    assert "mstDrafts()" in restore and "MV.conflicts" in restore, \
+        "恢复草稿时要和新解析逐列对基准，对不上的是打架列"
+    setrec = _fn(html, "mvSetRec")
+    assert "mvRestore(" in setrec and "mvSave()" in setrec, \
+        "换解析记录必须走唯一入口，否则轮询回来的新解析会绕过草稿"
+    for rng, tag in ((html[html.index("function mstPoll("):html.index("/* ── 主单核对与提交")], "mstPoll"),
+                     (html[html.index("function mvTouch("):], "mvReparse/mvPoll/mvSubmit")):
+        assert "MV.rec =" not in rng, tag + "：解析记录只能经 mvSetRec 换，直接赋值会绕过草稿恢复"
+    assert "mvSetRec(" in html[html.index("function mvTouch("):], "换解析的地方要用统一入口"
+
+    mn = _fn(html, "renderMain")
+    assert "MV.conflicts" in mn, "打架列必须在界面上点出来：默默拿旧草稿盖掉新解析，等于提交一个没人看过的值"
+    sub = html[html.index("async function mvSubmit("):html.index('$("#mstGo")')]
+    assert "mstDraftClear(MV.mawb)" in sub, \
+        "提交成功要清草稿，否则下次打开同一主单会把已回传过的旧改动又恢复出来"
+
+
 def test_company_api_live_without_endpoint_never_fakes_or_hits_network():
     """live 已有真实现（2026-09-26 j9 契约），但缺端点/密钥时必须立刻抛 CompanyNotConfigured——
     既不静默返回假数据，也不会拿着空 URL 往外发请求。（回归入口还把 URL/key 钉空做双保险。）"""

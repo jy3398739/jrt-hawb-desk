@@ -34,7 +34,7 @@ const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm"
 const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
 const SUBMIT_URL = BASE + "/submit";
 
-const LS = {draft:"hawb.review.drafts"};
+const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts"};
 const $ = s => document.querySelector(s);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
@@ -799,6 +799,7 @@ function renderMain(){
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
       ${chips ? `<div class="chips">${chips}</div>` : ""}
+      ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机草稿与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
       ${rec.state === "failed" ? `<div class="empty" style="color:var(--bad)">解析失败：${esc(rec.error || "未知错误")}<br>
         <span style="font-size:12px;color:var(--ink3)">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="ft top">
@@ -817,10 +818,10 @@ function renderMain(){
       autoGrow(inp);
     });
     el.querySelectorAll("[data-mack]").forEach(b => b.addEventListener("click", () => {
-      MV.acked.push(b.dataset.mack); MV.msg = ""; render();
+      MV.acked.push(b.dataset.mack); MV.msg = ""; mvSave(); render();
     }));
     el.querySelectorAll("[data-munack]").forEach(b => b.addEventListener("click", () => {
-      MV.acked = MV.acked.filter(x => x !== b.dataset.munack); render();
+      MV.acked = MV.acked.filter(x => x !== b.dataset.munack); mvSave(); render();
     }));
     $("#mvBack").addEventListener("click", () => { clearTimeout(MV_TIMER); MV = null; render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
@@ -1250,7 +1251,7 @@ function mstPoll(mawb){
       if (!MST_LAST || MST_LAST.mawb !== mawb) return;
       MST_LAST.master = rec;
       $("#mstResult").innerHTML = mstCard(MST_LAST, mawb);
-      if (MV && MV.mawb === mawb){ MV.rec = rec; render(); }
+      if (MV && MV.mawb === mawb){ mvSetRec(rec); render(); }
       if (rec.state === "parsing") mstPoll(mawb);
     }catch(e){ mstPoll(mawb); }
   }, 2000);
@@ -1264,12 +1265,57 @@ function mvFlags(){
   const base = (MV.rec && MV.rec.qc && MV.rec.qc.flags) || [];
   return [...new Set(base.concat(MV.extraFlags || []))];
 }
+/* 主单 36 列的改动和红旗确认同样是人的工作，不能刷新就丢。草稿按 mawb 单独一把键存本地，
+   不和分单草稿共用对象（分单存 airE/ackF，主单存 edit/acked，混着读会读出半截字段）。
+   base 记下"这些改动是对着哪一版解析改的"：重新解析后靠它说出哪几列人改的还是旧值。 */
+function mstDrafts(){ try { return JSON.parse(localStorage.getItem(LS.masterDrafts) || "{}"); } catch (e) { return {}; } }
+function mvSave(){
+  if (!MV || !MV.mawb) return;
+  const all = mstDrafts();
+  if (!Object.keys(MV.edit).length && !MV.acked.length && !(MV.extraFlags || []).length) delete all[MV.mawb];
+  else all[MV.mawb] = {savedAt: nowTxt(), base: MV.editBase || {}, edit: MV.edit,
+                       acked: MV.acked, extraFlags: MV.extraFlags || []};
+  localStorage.setItem(LS.masterDrafts, JSON.stringify(all));
+}
+function mstDraftClear(mawb){
+  const all = mstDrafts();
+  if (mawb in all){ delete all[mawb]; localStorage.setItem(LS.masterDrafts, JSON.stringify(all)); }
+}
+function mvLabel(k){
+  const f = ((MV && MV.rec && MV.rec.fields) || []).find(x => x[0] === k);
+  return f ? f[1] : k;
+}
+/* 草稿照单恢复（那是人改的）。但"草稿当时的原值 ≠ 现在解析出的原值"的那几列是打架列：
+   底层解析变了，人对着旧值改的可能已经不对，必须点名让人复核，不能默默把旧草稿盖在新解析上。 */
+function mvRestore(rec){
+  const ams = (rec || {}).ams || {}, d = mstDrafts()[MV.mawb];
+  MV.conflicts = [];
+  if (!d){
+    MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.editBase = Object.assign({}, ams);
+    return;
+  }
+  MV.edit = Object.assign({}, d.edit || {});
+  MV.acked = (d.acked || []).slice();
+  MV.extraFlags = (d.extraFlags || []).slice();
+  MV.editBase = Object.assign({}, d.base || {});
+  MV.conflicts = Object.keys(MV.edit).filter(k => txt(d.base || {}, k) !== txt(ams, k));
+}
+/* 换解析记录的唯一入口：重解析、轮询、提交后都走这里，绕开它就等于把刚恢复的草稿弄丢。 */
+function mvSetRec(rec){
+  if (!MV) return;
+  MV.rec = rec;
+  mvRestore(rec);
+  mvSave();
+}
 function mvTouch(inp){
   const k = inp.dataset.mk, v = inp.value;
   const orig = (MV.rec.ams || {})[k];
   if ((v || "") === (orig == null ? "" : String(orig))) delete MV.edit[k]; else MV.edit[k] = v;
+  MV.editBase[k] = orig == null ? "" : String(orig);   // 这一列刚对着当前解析改过 → 打架消解
   inp.closest("td").classList.toggle("edited", k in MV.edit);
+  MV.conflicts = MV.conflicts.filter(x => x !== k);
   autoGrow(inp);
+  mvSave();
   const msg = $("#mvMsg");
   if (msg) msg.textContent = Object.keys(MV.edit).length
     ? "已改 " + Object.keys(MV.edit).length + " 列（提交时服务端按当前值重算红旗）" : "";
@@ -1278,7 +1324,7 @@ async function mvReparse(){
   if (!MV) return;
   MV.msg = "重新解析中…"; render();
   await mstSearch(true);                       // force=1：越过缓存，换模型后也能重跑
-  if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ MV.rec = MST_LAST.master || MV.rec; render(); mvPoll(); }
+  if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ mvSetRec(MST_LAST.master || MV.rec); render(); mvPoll(); }
 }
 function mvPoll(){
   clearTimeout(MV_TIMER);
@@ -1286,7 +1332,7 @@ function mvPoll(){
   MV_TIMER = setTimeout(async () => {
     try{
       const r = await fetch(BASE + "/master/" + encodeURIComponent(MV.mawb));
-      if (r.ok){ MV.rec = await r.json(); render(); if (MV && MV.rec.state === "parsing") mvPoll(); }
+      if (r.ok){ mvSetRec(await r.json()); render(); if (MV && MV.rec.state === "parsing") mvPoll(); }
       else if (MV) mvPoll();
     }catch(e){ if (MV) mvPoll(); }
   }, 2000);
@@ -1310,11 +1356,14 @@ async function mvSubmit(){
       if (r.status === 400 && d.flags){        // 服务端重算出新红旗：接过来让人逐条确认
         MV.extraFlags = d.flags;
         MV.msg = "服务端重算后仍有 " + d.flags.length + " 条红旗，确认后再提交";
+        mvSave();                              // 退回的红旗也是工作，刷新不能又丢一遍
         toast(MV.msg, "bad");
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};
-      MV.edit = {}; MV.rec = Object.assign({}, MV.rec, {ams: mvValues()});
+      MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.conflicts = [];
+      mstDraftClear(MV.mawb);                  // 已回传公司：草稿再留着，下次打开同一主单会把交过的改动重新盖上来
+      mvSetRec(Object.assign({}, MV.rec, {ams: mvValues()}));
       MV.msg = ""; toast("主单 " + MV.mawb + " 已回传公司（" + (j.action || "ok") + "）", "ok");
     }
   }catch(e){ toast("提交失败：" + (e.message || e), "bad"); MV.msg = "提交失败：" + (e.message || e); }
@@ -1331,11 +1380,16 @@ $("#mstResult").addEventListener("click", async e => {
   if (use){
     if (!MST_LAST) return;
     if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
-    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, rec: MST_LAST.master || {},
-          edit: {}, acked: [], extraFlags: [], msg: "", submitted: null};
+    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, rec: {},
+          edit: {}, editBase: {}, acked: [], extraFlags: [], conflicts: [], msg: "", submitted: null};
+    mvSetRec(MST_LAST.master || {});
     render(); mvPoll();
     $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静
-    toast("已载入主单 " + MV.mawb + " 的解析结果（36 列可改，提交前由服务端重算红旗）", "ok");
+    toast((Object.keys(MV.edit).length
+            ? "已载入主单 " + MV.mawb + "：本机未提交的 " + Object.keys(MV.edit).length + " 列改动已恢复"
+              + (MV.conflicts.length ? "（其中 " + MV.conflicts.length + " 列与最新解析对不上，见下方红条）" : "")
+            : "已载入主单 " + MV.mawb + " 的解析结果")
+          + "（36 列可改，提交前由服务端重算红旗）", "ok");
     return;
   }
 });
