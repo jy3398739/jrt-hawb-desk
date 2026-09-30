@@ -71,6 +71,20 @@ def _post(client, filename="CLA26090022\xa0HAWB.pdf", content=b"%PDF-1.4 fake-ha
                        params=kw.pop("params", {}), headers=kw.pop("headers", {}))
 
 
+def test_desk_waits_for_the_parse_job_instead_of_blocking_on_upload():
+    """上传接口改成"入队 + 轮询"后，前端必须跟着改：位次要说得出口、排队已满要说人话、
+    服务重启把作业弄丢了要自己重传一次（不能让人以为票丢了）。"""
+    html = (server.WEB_DIR / "index.html").read_text(encoding="utf-8")
+    assert '"/job/"' in html, "没有轮询 /job：上传又会在 HTTP 上干等十几分钟"
+    assert "排队中 · 前面" in html, "排队要给出位次，不然和卡死看不出区别"
+    assert "r.status === 429" in html, "排队已满要单独说，别混成一句 HTTP 错误"
+    assert "t._requeued" in html, "作业 404（服务重启）要自动重传一次"
+    assert 'if (!j.queued) return j' in html, "老后端同步返回时前端要能照旧用（不把结果当作业丢进轮询）"
+    busy = html[html.index("function statusOf("):]
+    busy = busy[:busy.index("\nfunction ")]
+    assert "t.hint" in busy, "busy 状态要能显示队列给的位置，只显示「解析中…」等于没说"
+
+
 def test_health_says_which_build_is_running():
     """部署是手工 tar 推文件，中断/漏推就会新旧混跑；stale_files 只说"有些文件比进程新"，
     说不出"这台跑的是哪一版、什么时候的代码"。/health 要能一句话回答。"""
@@ -79,8 +93,81 @@ def test_health_says_which_build_is_running():
         assert "commit" in j and isinstance(j["commit"], str), "commit：本机有 git 就报短哈希，服务器上没仓库就空串"
         assert j.get("built_at"), "built_at：源码里最新那份文件的时刻"
         assert j.get("started_at"), "started_at：进程启动时刻（和 built_at 一比就知道是不是没重启）"
+        assert j["queue"]["slots"] >= 1 and "waiting" in j["queue"], "队列实况要在 /health 里看得见"
         for k in ("built_at", "started_at"):
             assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", j[k]), f"{k} 要给人能读的本地时间：{j[k]}"
+
+
+def _post(client, filename="CLA26090022\xa0HAWB.pdf", content=b"%PDF-1.4 fake-hawb", **kw):
+    """上传一张票并取回最终结果。/extract 现在是"入队即 202 + 轮询 /job"，
+    用例不该各写一遍轮询；要断言 202/位次本身的地方直接 client.post。"""
+    r = client.post("/extract", files={"file": (filename, content, "application/pdf")},
+                    params=kw.pop("params", {}), headers=kw.pop("headers", {}))
+    if r.status_code != 202:
+        return r
+
+    class _R:
+        def __init__(self, code, body):
+            self.status_code, self._body = code, body
+
+        def json(self):
+            return self._body
+
+    jid = r.json()["job"]
+    for _ in range(300):
+        d = client.get("/job/" + jid).json()
+        if d["state"] == "done":
+            r = d["result"]
+            return _R(200 if r.get("ok") else 500, r)
+        if d["state"] == "failed":
+            return _R(500, {"ok": False, "error": d.get("error", "")})
+        time.sleep(0.02)
+    raise AssertionError("排队/解析没在预期时间内结束")
+
+
+def test_extract_queues_the_ticket_and_the_job_carries_the_result():
+    """/extract 不再让人在 HTTP 上等整段解析（最坏十几分钟，nginx 900s 先断、后端还在烧钱）。
+    入队即 202，位次给前端说"排队中·前面 N 张"。"""
+    client = TestClient(server.app)
+    with _stubbed():
+        _login_admin(client)
+        r = client.post("/extract", files={"file": ("a.pdf", b"%PDF-1.4", "application/pdf")})
+        assert r.status_code == 202, r.text
+        body = r.json()
+        assert body["job"] and isinstance(body["position"], int)
+        jid = body["job"]
+        for _ in range(300):
+            d = client.get("/job/" + jid).json()
+            if d["state"] in ("done", "failed"):
+                break
+            time.sleep(0.02)
+        assert d["state"] == "done", d
+        assert d["result"]["stem"] == "a" and d["result"]["transcript"]["lines"], \
+            "结果体要和从前 /extract 直接返回的一模一样（前端只多了轮询一步）"
+
+
+def test_job_endpoint_needs_login_and_unknown_jobs_are_404():
+    client = TestClient(server.app)
+    assert client.get("/job/nope12345678").status_code == 401, "作业结果含票面内容，要登录"
+    with _stubbed():
+        _login_admin(client)
+        assert client.get("/job/nope12345678").status_code == 404, "没这个作业就说没有"
+
+
+def test_post_is_not_blocked_by_a_stuffed_queue():
+    """队列塞满要立刻回 429（前端提示稍后再传），不能继续接进来让每个人都超时。"""
+    real = server.DESK_QUEUE.submit
+    server.DESK_QUEUE.submit = lambda *a, **k: (_ for _ in ()).throw(
+        server.desk_queue.QueueFull("排队中已有 200 张，请等一会儿再传"))
+    try:
+        client = TestClient(server.app)
+        with _stubbed():
+            _login_admin(client)
+            r = _post(client)
+            assert r.status_code == 429, f"{r.status_code} {getattr(r, '_body', None)}"
+            assert "等一会儿" in str(r.json()), f"要告诉人是稍后再传：{r.json()}"
+    finally:
+        server.DESK_QUEUE.submit = real
 
 
 def test_health_is_open_and_no_longer_reports_auth_flag():
@@ -184,9 +271,10 @@ def test_unsupported_suffix_rejected():
 
 
 def test_extraction_runs_off_the_event_loop():
-    """同步的 7-20s 提取必须丢线程池，否则并发请求会排队把 /health 一起卡死。"""
-    src = (server.__file__ and Path(server.__file__).read_text(encoding="utf-8"))
-    assert "run_in_threadpool(handle_file" in src, "handle_file 又回到事件循环里同步执行了"
+    """同步的 7-20s 提取必须离开事件循环，否则并发请求会排队把 /health 一起卡死。
+    现在由解析队列承担这一层（自己的线程池 + 并发上限），不再直接丢 anyio 线程池。"""
+    src = Path(server.__file__).read_text(encoding="utf-8")
+    assert "DESK_QUEUE.submit(" in src, "handle_file 又回到事件循环里同步执行了"
     assert "await file.read()" not in src, "整体 read() 会把超大上传一次性吃进内存，要分块写盘"
 
 

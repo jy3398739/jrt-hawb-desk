@@ -315,6 +315,11 @@ SOFFICE_PATH = os.getenv("SOFFICE_PATH", "").strip()  # 留空则自动探测常
 XLSX_PDF_TIMEOUT = int(os.getenv("XLSX_PDF_TIMEOUT", "120"))
 # 同时最多开几个 LibreOffice 子进程（每个约 300MB）。机器上还跑着别的服务，默认 1 个。
 XLSX_PDF_SLOTS = int(os.getenv("XLSX_PDF_SLOTS", "1"))
+# 解析并发上限：一张票 = LibreOffice 子进程 + 全页渲染 + 最多两次模型调用。
+# 8 人 × 30 单/人/天 ≈ 每分钟 1 张，2 个槽位足够；一旦看到排队，多半是模型或公司在抖。
+DESK_CONCURRENCY = int(os.getenv("DESK_CONCURRENCY", "2"))
+# 排到这个数就拒收（429），不再让每个人都等到超时
+DESK_QUEUE_MAX = int(os.getenv("DESK_QUEUE_MAX", "200"))
 
 # PDF 文字层少于此字符数即视为照片型扫描件，L1 退回 VLM 转录
 L1_TEXT_MIN_CHARS = int(os.getenv("L1_TEXT_MIN_CHARS", "200"))

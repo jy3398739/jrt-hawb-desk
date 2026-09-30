@@ -38,6 +38,7 @@ from starlette.concurrency import run_in_threadpool
 import auth
 import company_api
 import config
+import desk_queue
 import jobs
 import master_pipeline
 import store
@@ -239,6 +240,8 @@ def health():
             # 跑的是哪一版：commit 在服务器上是空串（只收 tar 推的文件、没有仓库），
             # 那就看 built_at（源码最新 mtime）与 started_at（进程启动）——前者晚于后者就是忘了重启。
             "commit": config.git_commit(), "built_at": _stamp(_BUILT_AT), "started_at": _stamp(_BOOT),
+            # 队列实况：排队/在解析几张、几个槽位——"卡住了吗"第一眼就能判断
+            "queue": DESK_QUEUE.stats(),
             "stale_files": _stale_files()}
 
 
@@ -455,9 +458,44 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
     return {"ok": True, "chain": "hawb", **info}
 
 
+DESK_QUEUE = desk_queue.DeskQueue(slots=config.DESK_CONCURRENCY, max_pending=config.DESK_QUEUE_MAX)
+
+
+def _parse_ticket(tmp_dir: Path, path: Path, save: bool, filename: str, who: str) -> dict:
+    """队列 worker 里跑的那一段：解析 → 重算汇总 → 清临时目录。返回的就是从前 /extract 的响应体，
+    前端因此只多了"轮询 /job"这一步。"""
+    try:
+        try:
+            r = handle_file(path, save)
+            if save and not r["error"]:
+                store.rebuild_summary()
+        except (Exception, SystemExit) as e:
+            # handle_file 自己会兜住绝大部分失败；真漏出来的一律变成任务结果，别把 worker 带走
+            r = {"stem": path.stem, "channel": "", "elapsed": 0.0, "raw": None, "air": None,
+                 "transcript": None, "qc": None, "error": f"{type(e).__name__}: {e}"}
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    if r["error"]:
+        LOG.warning("解析失败 who=%s file=%s stem=%s 耗时=%ss → %s",
+                    who, filename, r["stem"], r["elapsed"], r["error"])
+        return {"ok": False, "error": r["error"], "elapsed": r["elapsed"],
+                "filename": filename, "stem": r["stem"], "qc": r["qc"]}
+    LOG.info("解析完成 who=%s file=%s stem=%s 通道=%s 耗时=%ss 红旗=%d",
+             who, filename, r["stem"], r["channel"], r["elapsed"],
+             len((r["qc"] or {}).get("flags") or []))
+    return {"ok": True, "filename": filename, "stem": r["stem"], "channel": r["channel"],
+            "elapsed": r["elapsed"], "qc": r["qc"], "raw": r["raw"], "air": r["air"],
+            "transcript": r["transcript"]}
+
+
 @app.post("/extract")
 async def extract(file: UploadFile = File(...), save: bool = Query(False, description="是否按原文件名落盘"),
                   user: dict = Depends(current_user)):
+    """上传一张分单：入队即 202，结果靠 `GET /job/{job}` 取。
+
+    从前这个接口是同步等的：一次解析最坏十几分钟，nginx 900 秒先给人一个 504，
+    后端却还在继续跑继续花钱。现在解析在队列里跑（同时最多 DESK_CONCURRENCY 张），
+    排队位次回给前端显示"排队中·前面 N 张"。塞满则直接 429 拒收，不再让每个人都超时。"""
     user_name = str(user.get("name") or "?")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in config.ALL_EXTS:
@@ -466,35 +504,39 @@ async def extract(file: UploadFile = File(...), save: bool = Query(False, descri
     # PDF/XLSX 需要文件路径，且落盘名要用票面原名（用 NamedTemporaryFile 的随机名会丢出处）
     tmp_dir = Path(tempfile.mkdtemp(prefix="hawb_upload_"))
     path = tmp_dir / safe_name(file.filename or "", suffix)
+    handed_off = False
     try:
         await _save_upload(file, path)
-        # 提取是同步网络调用（7-20s）：不丢进线程池就会占死事件循环，期间 /health 都无人响应
-        r = await run_in_threadpool(handle_file, path, save)
-        if save and not r["error"]:
-            await run_in_threadpool(store.rebuild_summary)
+        jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, save, file.filename, user_name),
+                                who=user_name, name=file.filename or "")
+        handed_off = True            # 临时目录从这一刻归 worker 清
+    except desk_queue.QueueFull as e:
+        raise HTTPException(429, str(e))
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        if not handed_off:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+    st = DESK_QUEUE.get(jid) or {}
+    return JSONResponse(status_code=202, content={
+        "ok": True, "queued": True, "job": jid, "filename": file.filename,
+        "position": st.get("position", 0), "waiting": st.get("waiting", 0)})
 
-    if r["error"]:
-        LOG.warning("解析失败 who=%s file=%s stem=%s 耗时=%ss → %s",
-                    user_name, file.filename, r["stem"], r["elapsed"], r["error"])
-        return JSONResponse(status_code=500,
-                            content={"ok": False, "error": r["error"], "elapsed": r["elapsed"],
-                                     "filename": file.filename, "stem": r["stem"], "qc": r["qc"]})
-    LOG.info("解析完成 who=%s file=%s stem=%s 通道=%s 耗时=%ss 红旗=%d",
-             user_name, file.filename, r["stem"], r["channel"], r["elapsed"],
-             len((r["qc"] or {}).get("flags") or []))
-    return {
-        "ok": True,
-        "filename": file.filename,
-        "stem": r["stem"],
-        "channel": r["channel"],
-        "elapsed": r["elapsed"],
-        "qc": r["qc"],          # needs_review/flags/fidelity：业务方按 needs_review 决定是否人工核票
-        "raw": r["raw"],
-        "air": r["air"],
-        "transcript": r["transcript"],   # L1 逐行转录+bbox：审核台点字段定位票面靠它
-    }
+
+@app.get("/job/{job_id}")
+def job_result(job_id: str, user: dict = Depends(current_user)):
+    """解析作业的状态与结果（queued 时带 position）。
+
+    作业表只在内存里：服务重启后旧作业 404——票本身和已完成的解析都在 output/，
+    前端拿 404 会自己重传一次，不用人再点。"""
+    j = DESK_QUEUE.get(re.sub(r"[^0-9a-zA-Z]", "", job_id or ""))
+    if not j:
+        raise HTTPException(404, "没有这个解析作业（服务可能重启过），请重新上传这张票")
+    out = {"state": j["state"], "position": j.get("position", 0),
+           "waiting": j.get("waiting", 0), "running": j.get("running", 0)}
+    if j["state"] == desk_queue.DONE:
+        out["result"] = j["result"]
+    elif j["state"] == desk_queue.FAILED:
+        out["error"] = j["error"]
+    return out
 
 
 @app.get("/results")
