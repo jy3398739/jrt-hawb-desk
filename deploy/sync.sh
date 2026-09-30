@@ -82,8 +82,24 @@ if ! diff -q "$LOCAL" "$REMOTE" >/dev/null; then
 fi
 say "== 全部文件与本机逐字节一致"
 
-ssh "$HOST" "cd $REMOTE_DIR && .venv/bin/python -X utf8 tests/run_tests.py 2>&1 | tail -3" \
-  || die "服务器回归没过（代码没重启，仍是旧版在服务里跑）"
+# 上一版推过、本版已不再存在的文件要删掉：tar 只覆盖不删除。
+# 留下的 hawb2json.py 就是教训（2026-10-01）——退役的规则层在服务器上还"活着"，
+# 新加的边界测试当场跑红，而当时那一步的回归闸门还是坏的（见下）。
+PREVL="$(mktemp)"; trap 'rm -f "$LIST" "$LOCAL" "$REMOTE" "$PREVL"' EXIT
+ssh "$HOST" "cd $REMOTE_DIR && cat .deployed-files 2>/dev/null || true" > "$PREVL"
+GONE="$(comm -23 <(LC_ALL=C sort "$PREVL") <(LC_ALL=C sort "$LIST") | sed '/^$/d')"
+if [ -n "$GONE" ]; then
+  printf '%s\n' "$GONE" | ssh "$HOST" "cd $REMOTE_DIR && xargs -r rm -f --" \
+    || die "删除过期文件失败，服务器仍是新旧混跑"
+  say "== 删掉上一版推过而本版没有的文件：$(printf '%s\n' "$GONE" | tr '\n' ' ')"
+fi
+ssh "$HOST" "cd $REMOTE_DIR && cat > .deployed-files" < "$LIST"
+
+# 远端跑回归要把 python 的退出码带回来：管道里 tail 永远退 0，
+# 用 `| tail` 直接判成败等于闸门是空的（那次 2 项失败就是这么放过去的）。
+RC="$(ssh "$HOST" "cd $REMOTE_DIR && .venv/bin/python -X utf8 tests/run_tests.py >/tmp/hawb-reg.log 2>&1; echo \$?")"
+ssh "$HOST" "tail -4 /tmp/hawb-reg.log" || true
+[ "$RC" = "0" ] || die "服务器回归没过（退出码 $RC，全文在服务器 /tmp/hawb-reg.log）；代码已推但未重启"
 
 if [ "$NO_RESTART" = "1" ]; then
   BODY="$(ssh "$HOST" "curl -s --max-time 10 '$SERVICE_URL'")"
