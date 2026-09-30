@@ -13,8 +13,11 @@
 j9 侧要点（见 IT《AMS录入接口调用说明》）：MAWB_NO 硬性 3位-8位带横杠；SEND_STATUS/CREATE_TIME/
 HAWB_ID 服务端忽略；分单表没有 HS 列；限流每把 key 10 次/秒。密钥只进 .env，绝不写死在这里。
 """
+import hashlib
 import json
+import os
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -28,6 +31,9 @@ _LIST_REPR_RE = re.compile(r"^\[.*\]$", re.S)
 # 我方字段名 → 公司 j9 列名。分单表没有 GOODS_HS_CODE（那是主单 AMS_RECORD 的 GOODS_INFO_HSCODE）。
 _COLUMN_REMAP = {"ORIGIN_NAME": "ORGIN_NAME", "CONSIGNEE_INFO_CITTY": "CONSIGNEE_INFO_CITY"}
 
+# 幂等锁的有效期：j9 没有幂等键，重复提交=再来一次整表写回，所以同内容只认这几十秒内的重复点。
+GUARD_TTL = 90
+
 
 class CompanyNotConfigured(RuntimeError):
     """COMPANY_API_MODE=live 但没接线/缺配置时抛出，避免静默返回假数据。"""
@@ -35,6 +41,12 @@ class CompanyNotConfigured(RuntimeError):
 
 class CompanyApiError(RuntimeError):
     """live 调用失败：HTTP 非 200 或 j9 返回 code!=0，带 j9 的 detail 原文。"""
+
+
+class CompanyPreReadFailed(CompanyApiError):
+    """**该有行却读不到**：本机台账证明我们给它录过一次，这次读回空——只能是接口抖动/查询没对上。
+    此时继续写会要命：j9 的 hawb2/mawb2 是整表写回，没带的列一律写成 NULL，等于把那一行其余列清空。
+    宁可拒绝，让制单员等一次好使的读。"""
 
 
 class CompanyLocked(RuntimeError):
@@ -129,6 +141,52 @@ def search_mawb(mawb: str) -> dict:
             "source_available": store.mawb_source_dir(mawb) is not None}
 
 
+def _fingerprint(record: dict) -> str:
+    return hashlib.sha256(json.dumps(record, sort_keys=True, ensure_ascii=False,
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def _guard_file(key: str):
+    """锁文件只放哈希：主/分单号里有横杠与空格，别拿它们拼路径。"""
+    return config.SUBMIT_GUARD_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest()[:16] + ".json")
+
+
+def _post_guarded(key: str, record: dict, path: str, wrapper: str, api_key: str) -> dict:
+    """带去重的写：同一张票、同一份内容在 GUARD_TTL 内重复提交，直接回上一次回执，不再写公司。
+
+    j9 没有幂等键，重复点一次就是第二次整表写回；锁用 O_EXCL 建文件，跨进程也认。
+    内容变了说明是真要再改一次（SEND_STATUS 0/2 允许反复改），不拦。"""
+    fp, gf = _fingerprint(record), _guard_file(key)
+    gf.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(str(gf), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        try:
+            prev = json.loads(gf.read_text(encoding="utf-8"))
+        except Exception:
+            prev = {}
+        if time.time() - float(prev.get("at") or 0) <= GUARD_TTL and prev.get("fp") == fp:
+            if prev.get("receipt"):
+                return dict(prev["receipt"], idempotent=True)
+            raise CompanyApiError("这张票正在提交中，请等上一次的结果出来再点")
+        gf.unlink(missing_ok=True)
+        try:
+            fd = os.open(str(gf), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            raise CompanyApiError("这张票正在提交中，请等上一次的结果出来再点")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump({"key": key, "fp": fp, "at": time.time()}, f, ensure_ascii=False)
+    try:
+        res = _j9_post(path, {wrapper: record}, api_key)
+    except Exception:
+        gf.unlink(missing_ok=True)     # 写失败不能留锁，否则下一次真重试会被自己拦掉
+        raise
+    receipt = {"accepted": bool(res.get("success")), "action": res.get("action")}
+    gf.write_text(json.dumps({"key": key, "fp": fp, "at": time.time(), "receipt": receipt},
+                             ensure_ascii=False), encoding="utf-8")
+    return receipt
+
+
 def submit_master(payload: dict) -> dict:
     """把一条主单资料回传公司（`POST /api/v1/j9/mawb2/`）。mock 只回带 mode 的回执；live 先读后写。
 
@@ -147,7 +205,15 @@ def submit_master(payload: dict) -> dict:
     if not config.COMPANY_API_URL or not config.COMPANY_MAWB_KEY:
         raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_MAWB_KEY")
     master = _j9_post("/api/v1/j9/mawb/", {"master_no": mawb}, config.COMPANY_MAWB_KEY)["data"]
-    existing = (master[0].get("AMS_RECORD") if master else None) or {}
+    if not master:
+        # 读回空列表分两种：我们从没录过这条主单 = 真·首次录入（外层任务存在、AMS 没填过），
+        # 照常发；本机台账说录过 = 这次没读到，继续写会把公司那行其余列抹成 NULL，必须拒。
+        if store.master_ledger().get(store.norm_no(mawb)):
+            raise CompanyPreReadFailed(
+                f"没读到主单 {mawb} 在公司的当前值（本机记录显示已提交过），先不要提交")
+        existing = {}
+    else:
+        existing = master[0].get("AMS_RECORD") or {}
     if existing and existing.get("SEND_STATUS") not in (0, 2, None):
         raise CompanyLocked(
             f"{mawb} 不允许更新（j9 侧 SEND_STATUS={existing.get('SEND_STATUS')}，仅 0/2 可改，已发送锁定）")
@@ -156,9 +222,10 @@ def submit_master(payload: dict) -> dict:
         if col in ams:
             record[col] = ams[col]
     record["MAWB_NO"] = mf.norm_mawb_hyphen(mawb)
-    res = _j9_post("/api/v1/j9/mawb2/", {"AMS_RECORD": record}, config.COMPANY_MAWB_KEY)
-    return {"mode": "live", "accepted": bool(res.get("success")), "action": res.get("action"),
-            "mawb": mawb, "before": existing}
+    receipt = _post_guarded(store.norm_no(mawb), record, "/api/v1/j9/mawb2/", "AMS_RECORD",
+                            config.COMPANY_MAWB_KEY)
+    return {"mode": "live", "accepted": receipt["accepted"], "action": receipt["action"],
+            "mawb": mawb, "before": existing, "idempotent": receipt.get("idempotent") is True}
 
 
 def submit_order(payload: dict) -> dict:
@@ -177,6 +244,10 @@ def submit_order(payload: dict) -> dict:
     rows = _j9_post("/api/v1/j9/hawb", {"master_no": mawb, "house_no": hawb},
                     config.COMPANY_HAWB_KEY)["data"]
     existing = next((r for r in rows if store.norm_no(r.get("HAWB_NO")) == store.norm_no(hawb)), None)
+    if existing is None and store.number_index().get(store.number_key(mawb, hawb)):
+        # 本机台账证明这张已回传过 = 公司一定有这一行，读回空只能当"没读到"（见 CompanyPreReadFailed）
+        raise CompanyPreReadFailed(
+            f"没读到分单 {hawb} 在公司的当前值（本机记录显示已提交过），先不要提交")
     if existing is not None and existing.get("SEND_STATUS") not in (0, 2):
         raise CompanyLocked(
             f"{hawb} 不允许更新（j9 侧 SEND_STATUS={existing.get('SEND_STATUS')}，仅 0/2 可改，已发送锁定）")
@@ -191,6 +262,7 @@ def submit_order(payload: dict) -> dict:
             continue   # 分单表没有的列 / 服务端自己维护的列
         if col in _J9_COLS or col.startswith(("SHIPPER_INFO_", "CONSIGNEE_INFO_")):
             record[col] = v
-    res = _j9_post("/api/v1/j9/hawb2", {"HAWB_RECORD": record}, config.COMPANY_HAWB_KEY)
-    return {"mode": "live", "accepted": bool(res.get("success")),
-            "action": res.get("action"), "mawb": mawb, "hawb": hawb}
+    receipt = _post_guarded(store.number_key(mawb, hawb), record, "/api/v1/j9/hawb2", "HAWB_RECORD",
+                            config.COMPANY_HAWB_KEY)
+    return {"mode": "live", "accepted": receipt["accepted"], "action": receipt["action"],
+            "mawb": mawb, "hawb": hawb, "idempotent": receipt.get("idempotent") is True}

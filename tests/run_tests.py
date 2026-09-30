@@ -15,6 +15,7 @@ import importlib.util
 import json
 import os
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -35,12 +36,18 @@ os.environ["COMPANY_HAWB_KEY"] = ""
 # 主单链默认走另一个渠道（MASTER_VLM_MODEL=qwen38-flash-bailian）。回归里钉成空串=跟分单同渠道，
 # 这样假客户端能拦住真实请求；不钉的话测试会真打百炼、真花钱。
 os.environ["MASTER_VLM_MODEL"] = ""
+# 提交幂等锁同样必须离开真 output/：不钉的话，用例提交一次就把锁落到运维机的 output/submit_guard，
+# 下次回放同一张票会被判"重复提交"直接吞掉——测试假绿，现场却少了提交。
+GUARD_DIR = Path(tempfile.mkdtemp(prefix="hawb_guard_"))
+os.environ["SUBMIT_GUARD_DIR"] = str(GUARD_DIR)
 
 
 def _load_modules(only: str):
     for p in sorted(TESTS.glob("test_*.py")):
         if only and only.lower() not in p.stem.lower():
             continue
+        for stale in Path(os.environ["SUBMIT_GUARD_DIR"]).glob("*.json"):
+            stale.unlink()      # 模块之间不共享锁；模块内"连点两次"的语义照测
         spec = importlib.util.spec_from_file_location(p.stem, p)
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
