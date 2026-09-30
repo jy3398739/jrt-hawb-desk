@@ -24,3 +24,19 @@ def part(rel: str) -> str:
     """rel 可写成 "js/desk.js" 或 "web/js/desk.js"（调用处两种手感都有，别为此各写一份）。"""
     p = ROOT / rel.removeprefix("web/")
     return p.read_text(encoding="utf-8") if p.exists() else ""
+
+
+def logic(expr: str, **consts):
+    """把 web/js/logic.js 交给 node 求值一个表达式（§3.5：纯逻辑靠输入输出断言，不靠肉眼扫字符串）。
+    常量用 json 注入，中文与引号都不用在校验代码里手工转义。"""
+    import json
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        raise AssertionError("机器上没有 node：前端纯逻辑断言跑不了，别当成通过（装 node 或换台机器跑）")
+    src = "const L = require(%s);\n" % json.dumps(str(ROOT / "js" / "logic.js"))
+    src += "".join("const %s = %s;\n" % (k, json.dumps(v, ensure_ascii=True)) for k, v in consts.items())
+    src += "console.log(JSON.stringify(%s));" % expr
+    r = subprocess.run(["node", "-e", src], capture_output=True, text=True, encoding="utf-8", errors="replace")
+    assert r.returncode == 0, "node 跑 logic.js 失败：%s" % (r.stderr.strip() or r.stdout.strip())
+    return json.loads(r.stdout.strip())

@@ -360,7 +360,7 @@ def test_house_list_under_master_moves_to_a_full_width_strip():
     左栏只留入口，分单表落到 .wrap 网格之外的一条整宽卡上。"""
     html = web_src.desk()
     assert 'id="mstHawbCard"' in html and 'id="mstHawbBox"' in html, "要有整宽的名下分单卡"
-    wrap, card, toast = html.index('class="wrap"'), html.index('id="mstHawbCard"'), html.index('<div class="toast"')
+    wrap, card, toast = html.index('class="wrap"'), html.index('id="mstHawbCard"'), html.index('<div id="toasts"')
     assert wrap < card < toast, "整宽卡必须在 .wrap 之外，否则跟着网格只有三分之一宽"
     srch = _fn(html, "mstSearch")
     assert "mstRender(j, m)" in srch, "检索结果要统一走 mstRender（搜索与轮询共用一份落位逻辑）"

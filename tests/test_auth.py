@@ -225,6 +225,40 @@ def test_users_json_posix_permissions_600():
         assert auth.USERS_FILE.stat().st_mode & 0o777 == 0o600, "账号表含哈希与签名 secret，必须 600"
 
 
+def test_role_name_says_who_logged_in():
+    """角色中文名是给人看的身份提示，说错了比没说更糟：录入员顶栏被写成"制单员"
+    （§3.4 第 6 条），他会以为自己没登录成功；未知角色宁可原样显示，也别替他猜。"""
+    for role, cn in (("admin", "管理员"), ("reviewer", "制单员"), ("inputter", "录入员")):
+        assert web_src.logic("L.roleCn(r)", r=role) == cn, f"{role} 的角色名不对"
+    assert web_src.logic("L.roleCn(r)", r="auditor") == "auditor", "后端新加的角色不该被显示成别人的身份"
+    html = web_src.desk()
+    assert "L.roleCn(ME.role)" in html, "顶栏角色名要过映射，别再 admin?管理员:制单员 这样二分"
+    assert 'admin ? "管理员" : "制单员"' not in html, "二分会把录入员说成制单员"
+    assert "esc(L.roleCn(u.role))" in html, "账号表里的角色也要映射 + 转义：那是 users.json 里的字符串"
+
+
+def test_interpolated_text_is_escaped_including_quotes():
+    """账号名/单号/错误 message 都是外部字符串，插进 innerHTML 前必须过 esc。
+    单引号也要转：属性值里有 ' 就能把一段文本变成一段事件处理器。"""
+    js = web_src.part("js/desk.js")
+    assert "const esc = L.esc;" in js, "转义算式挪进 logic.js，好让 node 断言它的输出"
+    assert web_src.logic("L.esc(s)", s="""a<b>&'\"""") == "a&lt;b&gt;&amp;&#39;&quot;", "转义表缺项"
+    assert "|| u.role}" not in js, "未转义的插值兜底会原样吐出 users.json 里的字符串"
+
+
+def test_toast_queue_does_not_swallow_the_earlier_message():
+    """一次失败往往同时冒出两条原因（"这张票没提交" + "登录已过期"），后一条把前一条覆盖掉，
+    制单员就只能对着半句线索猜。提示改队列 + aria-live（§3.4 第 5 条）。"""
+    html = web_src.desk()
+    page = web_src.part("index.html")
+    assert 'id="toasts"' in page and 'aria-live="polite"' in page, "提示容器要成组，并让读屏器知道有新消息"
+    body = html[html.index("function toast("):html.index("function txt(")]
+    assert "createElement" in body and "appendChild" in body, "toast 要各自成一条，不能再往同一个节点覆写"
+    assert '"#toast"' not in body, "还指着单个提示节点：后一条会把前一条吃掉"
+    assert "lastChild" in body or "firstChild" in body, "队列要有上限：堆几十条等于没有"
+
+
+
 # === 前端接线（静态检查，同其它 desk 用例口径） ===
 def test_desk_has_login_gate_and_role_scoped_controls():
     html = web_src.desk()

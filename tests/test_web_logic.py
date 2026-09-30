@@ -5,27 +5,10 @@
 尾部一行 module.exports 只为让 node 能读，浏览器不看它。
 碰 DOM 的部分仍靠静态扫描 + 服务器真实浏览器走查。
 """
-import json
-import shutil
-import subprocess
-from pathlib import Path
-
 import web_src
 
-LOGIC = Path(__file__).resolve().parent.parent / "web" / "js" / "logic.js"
-
-
-def _eval(expr: str, **consts):
-    """把 logic.js 交给 node，注入几个常量后求值一个表达式，结果按 JSON 读回来。
-    表达式里能用 IIFE，需要多看几步状态时用它。"""
-    if not shutil.which("node"):
-        raise AssertionError("机器上没有 node：前端纯逻辑单测跑不了，别当成通过（装 node 或换台机器跑）")
-    src = "const L = require(%s);\n" % json.dumps(str(LOGIC))
-    src += "".join("const %s = %s;\n" % (k, json.dumps(v, ensure_ascii=True)) for k, v in consts.items())
-    src += "console.log(JSON.stringify(%s));" % expr
-    r = subprocess.run(["node", "-e", src], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    assert r.returncode == 0, "node 跑 logic.js 失败：%s" % (r.stderr.strip() or r.stdout.strip())
-    return json.loads(r.stdout.strip())
+# 求值前端纯逻辑的入口在 web_src 里（多处用例都要用，别各写一份 node 调用）
+_eval = web_src.logic
 
 
 def test_logic_file_is_loaded_before_desk_js():

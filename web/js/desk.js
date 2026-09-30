@@ -36,7 +36,6 @@ const SUBMIT_URL = BASE + "/submit";
 
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts"};
 const $ = s => document.querySelector(s);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
 /* MV = 「主单」视图：公司主单检索 → 自动解析（L1 原文 / 36 列可编辑 / 红旗）→ 人工确认后
@@ -49,10 +48,20 @@ const MV_LONG = new Set(["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
                          "NOTIFY_INFO_COMP_NAME", "NOTIFY_INFO_COMP_ADDRESS"]);
 let ME = null;   // 当前登录者 {name, role}：null = 未登录（显示登录遮罩）
 
+/* 提示成队列：一次失败常常同时冒出两条原因（"这张票没提交" + "登录已过期"），
+   后一条把前一条吃掉，制单员就只剩半句线索可猜。读屏器靠容器的 aria-live 知道有新消息，
+   所以这里必须真的新增节点，而不是往同一个节点覆写文字。 */
 function toast(msg, kind){
-  const el = $("#toast"); el.textContent = msg; el.className = "toast on " + (kind || "");
-  clearTimeout(toast._t); toast._t = setTimeout(() => el.className = "toast", 3000);
+  const box = $("#toasts"), el = document.createElement("div");
+  el.className = "toast " + (kind || "");
+  el.textContent = msg;
+  box.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("on"));              // 先上图再加 on，淡入才看得见
+  while (box.children.length > 4) box.removeChild(box.firstChild);   // 上限：堆几十条等于没有
+  el.addEventListener("click", () => el.remove());                   // 看一眼就能手动关掉，不用等它自己消失
+  setTimeout(() => el.remove(), kind === "bad" ? 9000 : 3500);       // 失败留久一点：那是要拿去改的东西
 }
+const esc = L.esc;
 function txt(o, k){ return L.str(o, k); }
 function toNum(k, v){
   const s = String(v).replace(/,/g, "").trim();
@@ -1027,7 +1036,7 @@ function applyRole(){
   $("#btnLogout").hidden = !ME;
   if (!ME) return;
   $("#whoName").textContent = ME.name;
-  $("#whoRole").textContent = admin ? "管理员" : "制单员";
+  $("#whoRole").textContent = L.roleCn(ME.role);
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
   $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
@@ -1082,7 +1091,7 @@ async function loadAcct(){
   const j = await getAdmin("/admin/users"); if (!j) return;
   $("#acctList").innerHTML = (j.users || []).map(u => `<div class="arow">
       <span class="an">${esc(u.name)}</span>
-      <span class="tag ${u.role === "admin" ? "admin" : ""}">${{admin:"管理员", reviewer:"制单员", inputter:"录入员"}[u.role] || u.role}</span>
+      <span class="tag ${u.role === "admin" ? "admin" : ""}">${esc(L.roleCn(u.role))}</span>
       <span class="${u.has_password ? "" : "nopw"}">${u.has_password ? "已设口令" : "未设口令"}</span>
       <button class="btn sm" data-pw="${esc(u.name)}">重置口令</button>
       <button class="btn sm gh" data-del="${esc(u.name)}">删除</button>
