@@ -166,7 +166,7 @@ def _pull_tax(addr: str, tax: str, taken: set) -> tuple:
 
 
 def to_air(d: dict) -> dict:
-    """第一遍 dict -> 第二遍 dict（39 字段，航空口径）。"""
+    """第一遍 dict -> 第二遍 dict（全字段，航空口径）。"""
     out = dict(d)
     out.pop("_error", None)
     out.pop("_file", None)

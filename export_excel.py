@@ -49,7 +49,7 @@ def export(kind: str, out_path: Path):
         print(f"{d} 下没有可导出的 JSON")
         return
     df = pd.DataFrame(rows)
-    # 列顺序：来源 + 39 字段 + 质检两列（复核的人按 _需复核 筛选）
+    # 列顺序：来源 + 全字段 + 质检两列（复核的人按 _需复核 筛选）
     cols = ["_来源文件"] + [c for c in COLS if c in df.columns] + QC_COLS
     df = df.reindex(columns=[c for c in cols if c in df.columns])
     df.to_excel(out_path, index=False)

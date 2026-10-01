@@ -2,7 +2,7 @@
 """主单（MAWB）字段面：公司 `AMS_RECORD` 的 36 列，也就是 `POST /api/v1/j9/mawb2/` 的提交体。
 
 2026-09-28 用户定案「主单是主单，分单是分单」：这里一律用**公司列名原样**，不套我方分单
-40 字段契约——通知人国家列叫 `NOTIFY_INFO_COUNTRY`（IT 2026-09-29 把库里多一个 E 的旧拼写
+分单那套列面不是这里的契约——通知人国家列叫 `NOTIFY_INFO_COUNTRY`（IT 2026-09-29 把库里多一个 E 的旧拼写
 `NOTIFYE_INFO_COUNTRY` 改掉了，接口以新名为准；旧名从此算未识别字段），收货人城市
 是单 T 的 `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只在分单表）。主单表没有货名列、没有税号列、
 没有件重/航路/签发日期，所以外层 7 字段（含 GOODS_NAME/GOODS_DESC）只能当只读参考。

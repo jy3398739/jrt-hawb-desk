@@ -72,7 +72,7 @@ def save_result(stem: str, raw: dict, air: dict):
 
 
 def save_qc(stem: str, qc: dict):
-    """质检记录单独落一份：39 字段结果要保持干净（业务系统直读），红旗另存。"""
+    """质检记录单独落一份：全字段结果要保持干净（业务系统直读），红旗另存。"""
     _write(config.OUTPUT_QC_DIR / f"{stem}.json", qc)
 
 

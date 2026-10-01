@@ -12,7 +12,7 @@ TARGET_KEYS = ("MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_N
                "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "GOODS_HS_CODE",
                "PIECES", "WEIGHT", "SLAC", "CREATE_TIME", "SEND_STATUS")
 
-# 40 字段 = 基础 16 + 发货人 12 项 + 收货人 12 项 (CITTY 为库表原拼写, 勿"修正")
+# 列面 = 基础若干 + 发货人 12 项 + 收货人 12 项 (CITTY 为库表原拼写, 勿"修正")
 # TAX_ID 是票面税号（中国 USCI/统一社会信用代码、巴西 CNPJ、RFC、VAT NO、TAX ID）的唯一落点：
 # 它按规则既不能进 TEL 也不能进 EORI，37 字段时代没有归处，模型直接丢弃且质检看不出来。
 # GOODS_HS_CODE 是货物描述里 HS CODE(S) 的唯一落点；GOODS_INFO 保持照抄不动（保真口径）。

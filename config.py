@@ -267,8 +267,8 @@ BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = Path(os.getenv("INPUT_DIR", str(BASE_DIR / "input")))
 ARCHIVE_DIR = Path(os.getenv("ARCHIVE_DIR", str(BASE_DIR / "output" / "archive")))   # L0 原件归档
 TRANSCRIPT_DIR = Path(os.getenv("TRANSCRIPT_DIR", str(BASE_DIR / "output" / "transcript")))  # L1 逐字转录
-OUTPUT_RAW_DIR = Path(os.getenv("OUTPUT_RAW_DIR", str(BASE_DIR / "output" / "raw")))  # L2 原文口径 39 字段
-OUTPUT_AIR_DIR = Path(os.getenv("OUTPUT_AIR_DIR", str(BASE_DIR / "output" / "air")))  # L3 航空口径 39 字段
+OUTPUT_RAW_DIR = Path(os.getenv("OUTPUT_RAW_DIR", str(BASE_DIR / "output" / "raw")))  # L2 原文口径 全字段
+OUTPUT_AIR_DIR = Path(os.getenv("OUTPUT_AIR_DIR", str(BASE_DIR / "output" / "air")))  # L3 航空口径 全字段
 OUTPUT_QC_DIR = Path(os.getenv("OUTPUT_QC_DIR", str(BASE_DIR / "output" / "qc")))     # 质检红旗，Excel/DB 按名联结
 PREVIEW_DIR = Path(os.getenv("PREVIEW_DIR", str(BASE_DIR / "output" / "preview")))    # 电子单转出的 PDF，审核台回看票面用
 # 提交台账：制单员点提交、回传公司成功后逐张记一笔（stem→{主单号,分单号,复合键,复核人,时间,回执}）。

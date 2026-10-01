@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""L2 结构化原文层：魔搭 Intern-S2-Preview 直出第一遍 39 字段 JSON。
+"""L2 结构化原文层：魔搭 Intern-S2-Preview 直出第一遍 全字段 JSON。
 保真口径：所有字段值必须逐字取自票面/转录文本，禁止任何改写
 （不还原国家码、不统一大小写、不去数字空格、不补全公司名空格、不纠正疑似印刷错误）。
 图片/PDF base64 内联，OpenAI 兼容协议；失败自动重试。
@@ -9,11 +9,12 @@ from pathlib import Path
 from PIL import Image
 from openai import OpenAI
 
+import codes
 import config
 import retry
 
 PROMPT_HEAD = r"""你是航空运单(HAWB)信息提取员。下面给你两样东西：①分单图片 ②该图片的逐字转录文本（OCR原始结果）。
-请提取39个字段，输出纯JSON（不要markdown代码块，不要解释文字）。
+请把下面列出的每一个字段都填进 JSON（票面没有就给空字符串），输出纯JSON（不要markdown代码块，不要解释文字）。
 
 【保真铁律 —— 第一遍原文口径，违反即为错误】
 A. 每个字段值必须是票面文字的逐字摘录，必须能在"逐字转录文本"中找到完全相同的字符串（忽略换行差异）。
@@ -166,19 +167,7 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
                 retry.wait(attempt)
     raise RuntimeError(f"L2 提取失败 {label}: {last_err}")
 
-FIELDS = [
-    "MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_NAME",
-    "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "GOODS_HS_CODE",
-    "PIECES", "WEIGHT", "SLAC", "CREATE_TIME", "SEND_STATUS",
-    "SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS", "SHIPPER_INFO_CITY",
-    "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE", "SHIPPER_INFO_POSTAL",
-    "SHIPPER_INFO_TEL", "SHIPPER_INFO_FAX", "SHIPPER_INFO_EORI",
-    "SHIPPER_INFO_AEO", "SHIPPER_INFO_EMAIL", "SHIPPER_INFO_TAX_ID",
-    "CONSIGNEE_INFO_COMP_NAME", "CONSIGNEE_INFO_COMP_ADDRESS", "CONSIGNEE_INFO_CITTY",
-    "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE", "CONSIGNEE_INFO_POSTAL",
-    "CONSIGNEE_INFO_TEL", "CONSIGNEE_INFO_FAX", "CONSIGNEE_INFO_EORI",
-    "CONSIGNEE_INFO_AEO", "CONSIGNEE_INFO_EMAIL", "CONSIGNEE_INFO_TAX_ID",
-]
+FIELDS = list(codes.TARGET_KEYS_OUT)     # 要模型填的列面 = 导出列面，别再抄第二份（§4.3）
 
 _client = None
 _client_channel = None
@@ -240,7 +229,7 @@ def img_to_data_urls(path) -> list[str]:
 
 
 def extract_one(path, transcript: dict | None = None) -> dict:
-    """L2 提取单张图片/PDF，返回 39 字段 dict（保真原文口径）。
+    """L2 提取单张图片/PDF，返回 全字段 dict（保真原文口径）。
     传入 L1 转录结果时，转录文本随 prompt 下发，强制字段值逐字来自转录。
     当前模型无视觉（config.MODEL_VISION=False）时不下发票面图片、只吃转录文本——
     没有转录就直接报错：纯文本模型收图不会拒答而是顺着编（实测 DeepSeek-V4-Pro），

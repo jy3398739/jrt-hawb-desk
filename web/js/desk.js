@@ -1,32 +1,54 @@
 "use strict";
-/* 字段清单：与后端 hawb2json.TARGET_KEYS_OUT 同序，改动要两边对齐 */
+/* ==FIELDS== */
+/* 由 fieldspec.py 生成，改字段只改那一处，然后跑：python deploy/gen_fields.py
+   ——tests/test_fieldspec.py 会盯着有没有忘记重生成，别让这里长出一份手写副本。 */
 const FIELDS = [
-  ["MAWB_NO","主单号","id"],["HAWB_NO","分单号","id"],
-  ["ORIGIN_NAME","起运港","route"],["TO1","航路 1","route"],["TO2","航路 2","route"],
-  ["TO3","航路 3","route"],["DEST_NAME","目的港","route"],
-  ["CREATE_TIME","签发日期","cargo"],["PIECES","件数","cargo"],["WEIGHT","毛重","cargo"],
-  ["SLAC","小件数 SLAC","cargo"],["GOODS_INFO","货物描述","cargo"],
-  ["GOODS_HS_CODE","HS 编码","cargo"],["SEND_STATUS","状态","cargo"],
-  ["SHIPPER_INFO","发货人整串","ship"],["SHIPPER_INFO_COMP_NAME","公司名称","ship"],
-  ["SHIPPER_INFO_COMP_ADDRESS","详细地址","ship"],["SHIPPER_INFO_CITY","城市","ship"],
-  ["SHIPPER_INFO_STATE","州 / 省","ship"],["SHIPPER_INFO_POSTAL","邮编","ship"],
-  ["SHIPPER_INFO_COUNTRY","国家","ship"],["SHIPPER_INFO_TEL","电话","ship"],
-  ["SHIPPER_INFO_FAX","传真","ship"],["SHIPPER_INFO_EORI","EORI","ship"],
-  ["SHIPPER_INFO_AEO","AEO","ship"],["SHIPPER_INFO_EMAIL","邮箱","ship"],
+  ["MAWB_NO","主单号","id"],
+  ["HAWB_NO","分单号","id"],
+  ["ORIGIN_NAME","起运港","route"],
+  ["TO1","航路 1","route"],
+  ["TO2","航路 2","route"],
+  ["TO3","航路 3","route"],
+  ["DEST_NAME","目的港","route"],
+  ["CREATE_TIME","签发日期","cargo"],
+  ["PIECES","件数","cargo"],
+  ["WEIGHT","毛重","cargo"],
+  ["SLAC","小件数 SLAC","cargo"],
+  ["GOODS_INFO","货物描述","cargo"],
+  ["GOODS_HS_CODE","HS 编码","cargo"],
+  ["SEND_STATUS","状态","cargo"],
+  ["SHIPPER_INFO","发货人整串","ship"],
+  ["SHIPPER_INFO_COMP_NAME","公司名称","ship"],
+  ["SHIPPER_INFO_COMP_ADDRESS","详细地址","ship"],
+  ["SHIPPER_INFO_CITY","城市","ship"],
+  ["SHIPPER_INFO_STATE","州 / 省","ship"],
+  ["SHIPPER_INFO_POSTAL","邮编","ship"],
+  ["SHIPPER_INFO_COUNTRY","国家","ship"],
+  ["SHIPPER_INFO_TEL","电话","ship"],
+  ["SHIPPER_INFO_FAX","传真","ship"],
+  ["SHIPPER_INFO_EORI","EORI","ship"],
+  ["SHIPPER_INFO_AEO","AEO","ship"],
+  ["SHIPPER_INFO_EMAIL","邮箱","ship"],
   ["SHIPPER_INFO_TAX_ID","税号 USCI/CNPJ","ship"],
-  ["CONSIGNEE_INFO","收货人整串","cons"],["CONSIGNEE_INFO_COMP_NAME","公司名称","cons"],
-  ["CONSIGNEE_INFO_COMP_ADDRESS","详细地址","cons"],["CONSIGNEE_INFO_CITTY","城市","cons"],
-  ["CONSIGNEE_INFO_STATE","州 / 省","cons"],["CONSIGNEE_INFO_POSTAL","邮编","cons"],
-  ["CONSIGNEE_INFO_COUNTRY","国家","cons"],["CONSIGNEE_INFO_TEL","电话","cons"],
-  ["CONSIGNEE_INFO_FAX","传真","cons"],["CONSIGNEE_INFO_EORI","EORI","cons"],
-  ["CONSIGNEE_INFO_AEO","AEO","cons"],["CONSIGNEE_INFO_EMAIL","邮箱","cons"],
-  ["CONSIGNEE_INFO_TAX_ID","税号 USCI/CNPJ","cons"],
+  ["CONSIGNEE_INFO","收货人整串","cons"],
+  ["CONSIGNEE_INFO_COMP_NAME","公司名称","cons"],
+  ["CONSIGNEE_INFO_COMP_ADDRESS","详细地址","cons"],
+  ["CONSIGNEE_INFO_CITTY","城市","cons"],
+  ["CONSIGNEE_INFO_STATE","州 / 省","cons"],
+  ["CONSIGNEE_INFO_POSTAL","邮编","cons"],
+  ["CONSIGNEE_INFO_COUNTRY","国家","cons"],
+  ["CONSIGNEE_INFO_TEL","电话","cons"],
+  ["CONSIGNEE_INFO_FAX","传真","cons"],
+  ["CONSIGNEE_INFO_EORI","EORI","cons"],
+  ["CONSIGNEE_INFO_AEO","AEO","cons"],
+  ["CONSIGNEE_INFO_EMAIL","邮箱","cons"],
+  ["CONSIGNEE_INFO_TAX_ID","税号 USCI/CNPJ","cons"]
 ];
 const KEYS = FIELDS.map(f => f[0]);
 const GROUPS = {id:"单号",route:"航路",cargo:"货物与日期",ship:"发货人 SHIPPER",cons:"收货人 CONSIGNEE"};
 const NUM = {PIECES:"int", SLAC:"int", WEIGHT:"num"};
-const LONG = new Set(["SHIPPER_INFO","CONSIGNEE_INFO","GOODS_INFO",
-  "SHIPPER_INFO_COMP_ADDRESS","CONSIGNEE_INFO_COMP_ADDRESS"]);
+const LONG = new Set(["SHIPPER_INFO","CONSIGNEE_INFO","GOODS_INFO","SHIPPER_INFO_COMP_ADDRESS","CONSIGNEE_INFO_COMP_ADDRESS"]);
+/* ==/FIELDS== */
 const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm",".xls"];
 
 /* 页面可能被反代挂在子路径下（服务器上是 /hawb/）：接口前缀跟着当前目录走。
