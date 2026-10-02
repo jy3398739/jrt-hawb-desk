@@ -429,7 +429,8 @@ def test_desk_page_calls_every_endpoint_under_its_mount_prefix():
     html = web_src.desk()
     assert 'const SUBMIT_URL = BASE + "/submit"' in html, "分单提交口要跟着挂载前缀走"
     bare = [m.group(1).strip()[:46] for m in re.finditer(r"fetch\(\s*([^,)\n]+)", html)
-            if not m.group(1).strip().startswith(("BASE", "LOC.base", "SUBMIT_URL"))]
+            if not m.group(1).strip().startswith(("BASE", "LOC.base", "SUBMIT_URL", "blobUrl"))]
+    # blobUrl 那条：票面字节是本页 createObjectURL 出来的 blob，读它只为扫 MediaBox，不出网
     assert not bare, f"这些 fetch 没有 BASE 前缀，挂到 /hawb/ 下会打到域名根：{bare}"
 
 
@@ -459,14 +460,17 @@ def test_desk_page_missing_is_reported_not_500():
 
 def test_desk_pdf_viewer_hides_its_sidebar_and_can_show_the_whole_page():
     """浏览器实测反馈：Chrome 阅读器默认带缩略图侧栏，票面栏本来就窄，它还要占掉近一半，
-    票面只剩半个看不全。用开放参数关掉侧栏、默认适应宽度，并留「整页看全 / 适应宽度」开关。"""
+    票面只剩半个看不全。用开放参数关掉侧栏、默认适应宽度，并留一个切档按钮。
+    2026-10-02 又实测一条：窄而高的栏里 view=Fit 与 FitH 是同一个缩放，那颗按钮点了不动——
+    所以档位改由 L.viewCycle 按页面尺寸与栏位算（重合的丢掉、补一档真放大的），这里就核到"参数从算出来的档位来"。"""
     html = web_src.desk()
     frame = re.search(r"function pdfFrame\(\)\{(.*?)\n\}", html, re.S)
     assert frame, "pdfFrame 没了：换成别的方式加载 PDF 时，这条断言要跟着改"
     body = frame.group(1)
     assert "navpanes=0" in body, "没关阅读器侧栏，票面又被挤掉一半"
-    assert "view=${PREVIEW.pdfFit}" in body, "整页/适应宽度开关没接到 iframe 上"
-    assert 'id="pvPage"' in html and '$("#pvPage").addEventListener' in html, "开关按钮或它的接线没了"
+    assert "L.viewCycle(" in body and "cur.frag" in body, "档位没走 logic 或没接到 iframe 地址上"
+    assert "cycle.length < 2" in body, "只剩一档时要把按钮藏掉，别留一颗点了不动的死按钮"
+    assert 'id="pvPage"' in html and '$("#pvPage").addEventListener' in html, "切档按钮或它的接线没了"
 
 
 def test_desk_hidden_toggles_beat_class_display_rules():

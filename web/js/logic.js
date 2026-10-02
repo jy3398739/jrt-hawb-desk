@@ -72,5 +72,71 @@ const L = {
     if (entry) out[mawb] = entry; else delete out[mawb];
     return out;
   },
+
+  /* ── 票面浏览的缩放档位 ────────────────────────────────────────────────
+     内嵌阅读器只吃地址参数（view=FitH / view=Fit / zoom=数字），所以"下一档是什么"得我们自己算。
+     坑在于：整页 = min(按宽, 按高)，票面栏比票更高时按宽就是那个最小值，FitH 与 Fit 算出同一个
+     缩放——按钮只剩标签在换，画面不动（用户报"点了没变化"就是这个）。所以重合的档位要丢掉，
+     并补一档真的更大的。页面尺寸从已在手的 PDF 字节里扫 MediaBox，不为此再发一次请求。 */
+  pdfBox(buf){
+    if (!buf || !buf.length) return null;
+    let s = "";
+    const n = Math.min(buf.length, 200000);        // MediaBox 在文件前部，扫 200KB 足够
+    for (let i = 0; i < n; i++) s += String.fromCharCode(buf[i]);
+    const at = s.indexOf("/MediaBox");
+    if (at < 0) return null;
+    const m = /\[\s*[\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(s.slice(at, at + 80));
+    if (!m) return null;
+    const w = parseFloat(m[1]), h = parseFloat(m[2]);
+    return w > 0 && h > 0 ? {w: w, h: h} : null;
+  },
+
+  /* 返回按缩放由小到大的档位；每档 {k, name, frag, zoom}，frag 直接拼进 iframe 地址。
+     算不出尺寸时退回浏览器自己的两态（不比今天差）；只剩一档说明这票在这栏里没法再分档。
+     栏位要按"阅读器留给页面的净尺寸"算：Chrome 的 FitH 实测比 栏宽/页宽 保守（它自己还要留
+     滚动条与页面边距），照栏宽算会把两档误判成不同、又留下一颗点了不动的死按钮。
+     2026-10-02 在 655×707 的 iframe 上实测：FitH 给 80%、Fit 给 58%。 */
+  viewCycle(page, pane, pad){
+    const PRI = [
+      {k:"fith", name:"适应宽度", frag:"view=FitH", rank:0},
+      {k:"fit", name:"整页看全", frag:"view=Fit", rank:1},
+      {k:"detail", name:"放大看细节", frag:null, rank:2},
+    ];
+    if (!page || !pane || !pane.w || !pane.h) return PRI.slice(0, 2).map(s => Object.assign({}, s));
+    const p = pad || {w: 60, h: 56};                // 阅读器自己吃掉的宽/高
+    const cw = Math.max(1, pane.w - p.w), ch = Math.max(1, pane.h - p.h);
+    const fitW = 100 * cw / page.w, fitP = Math.min(fitW, 100 * ch / page.h);
+    const out = [{s: PRI[0], zoom: Math.round(fitW)}, {s: PRI[1], zoom: Math.round(fitP)}];
+    const detail = Math.min(200, Math.max(100, Math.round(fitW * 1.6)));
+    if (detail > Math.round(fitW) * 1.1) out.push({s: PRI[2], zoom: detail});   // 不比适应宽度大就不算一档
+    out.sort((a, b) => a.zoom - b.zoom);
+    const kept = [];
+    for (const o of out) {
+      const last = kept[kept.length - 1];
+      // 差不到 10% 就是同一档（阅读器还会把缩放吸附到它自己那串档位上）：留下更该出现的那个
+      if (last && Math.abs(o.zoom - last.zoom) / last.zoom < 0.1) {
+        if (o.s.rank < last.s.rank) kept[kept.length - 1] = o;
+        continue;
+      }
+      kept.push(o);
+    }
+    return kept.map(o => Object.assign({}, o.s, {zoom: o.zoom,
+      frag: o.s.k === "detail" ? "zoom=" + o.zoom : o.s.frag}));
+  },
+
+  nextView(cycle, k){
+    if (!cycle || !cycle.length) return null;
+    let i = -1;
+    for (let n = 0; n < cycle.length; n++) if (cycle[n].k === k) i = n;
+    return cycle[(i + 1) % cycle.length];            // 没找到（i=-1）就从第一档重新开始
+  },
+
+  /* 打开票面停在哪一档：适应宽度——窄栏里它是能看清字的那档，整页会把票缩成一小块。
+     这一档被丢掉时（与整页撞车）就退回最小的那档，别返回空。 */
+  firstView(cycle){
+    if (!cycle || !cycle.length) return null;
+    for (const s of cycle) if (s.k === "fith") return s;
+    return cycle[0];
+  },
 };
 if (typeof module !== "undefined") module.exports = L;

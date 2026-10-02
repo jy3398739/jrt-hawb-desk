@@ -277,8 +277,8 @@ function payloadFor(t, who){
 }
 
 /* ── 票面浏览：核对时把原件和字段并排看 ───────────────────────────────── */
-const PREVIEW = {key:"", url:"", zoom:100, pdfFit:"FitH"};
-let _pvSeq = 0;
+const PREVIEW = {key:"", url:"", zoom:100, box:null, cycle:[], view:null};
+let _pvSeq = 0, _pdfSeq = 0;
 
 function fileKind(name){
   const e = "." + (String(name || "").split(".").pop() || "").toLowerCase();
@@ -301,7 +301,8 @@ function showPreview(url, kind){
   if (kind === "pdf"){
     $("#pvZoom").hidden = true;
     $("#pvPdf").hidden = false;
-    pdfFrame();                       // 翻页/缩放交给浏览器自带阅读器
+    PREVIEW.box = null;
+    readPdfBox();                       // 先量到页面尺寸，再画第一帧（省一次重画）
   } else {
     PREVIEW.zoom = 100;
     $("#pvZoom").hidden = false;
@@ -310,11 +311,31 @@ function showPreview(url, kind){
     applyZoom();
   }
 }
-/* 阅读器默认带缩略图侧栏，窄栏里它要占掉一半宽度、票面只剩半个——用开放参数关掉并直接适应宽度。
-   FitH=适应宽度看细节，Fit=整页看全，按票的版式在这两者间切。 */
+/* 阅读器默认带缩略图侧栏，窄栏里它要占掉一半宽度、票面只剩半个——用开放参数关掉。
+   档位（整页 / 适应宽度 / 放大看细节）由 L.viewCycle 算：窄而高的栏里"整页"和"适应宽度"
+   是同一个缩放，那种档留着就是颗点了没反应的死按钮，所以会被丢掉（2026-10-02 用户报的就是这个）。 */
 function pdfFrame(){
-  pvBody(`<iframe src="${PREVIEW.url}#navpanes=0&view=${PREVIEW.pdfFit}" title="票面 PDF"></iframe>`);
-  $("#pvPage").textContent = PREVIEW.pdfFit === "FitH" ? "整页看全" : "适应宽度";
+  const box = $("#pvBody");
+  PREVIEW.cycle = L.viewCycle(PREVIEW.box, {w: box.clientWidth, h: box.clientHeight});
+  if (!PREVIEW.cycle.some(s => s.k === PREVIEW.view)) PREVIEW.view = (L.firstView(PREVIEW.cycle) || {}).k;
+  const cur = PREVIEW.cycle.filter(s => s.k === PREVIEW.view)[0];
+  const nxt = L.nextView(PREVIEW.cycle, PREVIEW.view);
+  $("#pvPdf").hidden = PREVIEW.cycle.length < 2;        // 只剩一档就没得切，别留颗死按钮
+  if (cur && nxt) $("#pvPage").textContent = nxt.name;
+  pvBody(`<iframe src="${PREVIEW.url}#navpanes=0&${cur ? cur.frag : "view=FitH"}" title="票面 PDF"></iframe>`);
+}
+/* 页面尺寸就在我们手里那份 PDF 字节的前部（MediaBox），扫一下即可，不为此发请求。
+   blob 读很快，第一帧就等它，避免"先画一版再重画"把用户的滚动位置冲掉。 */
+function readPdfBox(){
+  const blobUrl = PREVIEW.url, seq = ++_pdfSeq;   // blob: 地址只在浏览器内，不发往服务器
+  fetch(blobUrl).then(r => r.arrayBuffer()).then(b => {
+    if (seq !== _pdfSeq || blobUrl !== PREVIEW.url) return;
+    PREVIEW.box = L.pdfBox(new Uint8Array(b));
+    pdfFrame();
+  }).catch(() => {
+    if (seq !== _pdfSeq || blobUrl !== PREVIEW.url) return;
+    PREVIEW.box = null; pdfFrame();     // 读不到就退回浏览器那两态，行为不比今天差
+  });
 }
 /* 同一张票不重建预览：render() 会因为解析进度等反复跑，重建会把 iframe 的滚动位置也一起清掉 */
 function previewKey(t){
@@ -1118,7 +1139,9 @@ $("#pvIn").addEventListener("click", () => { PREVIEW.zoom = Math.min(400, PREVIE
 $("#pvOut").addEventListener("click", () => { PREVIEW.zoom = Math.max(25, PREVIEW.zoom - 25); applyZoom(); });
 $("#pvFit").addEventListener("click", () => { PREVIEW.zoom = 100; applyZoom(); });
 $("#pvPage").addEventListener("click", () => {
-  PREVIEW.pdfFit = PREVIEW.pdfFit === "FitH" ? "Fit" : "FitH";
+  const nxt = L.nextView(PREVIEW.cycle, PREVIEW.view);
+  if (!nxt) return;
+  PREVIEW.view = nxt.k;
   pdfFrame();
 });
 $("#pvDl").addEventListener("click", downloadSource);

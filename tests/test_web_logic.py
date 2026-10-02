@@ -95,3 +95,84 @@ def test_draft_put_never_mutates_the_snapshot_it_read():
     assert list(got[0]) == ["999-1"], "原快照不能被动过"
     assert got[1] == {}, "传 null 就是删条目"
     assert list(got[2]) == ["999-2"] and got[2]["999-2"]["edit"] == {"B": "y"}
+
+
+def _pdf_head(box="[ 0 0 595.276 841.89 ]"):
+    """造一段最小 PDF 头给 pdfBox 喂（bytes 只能 ASCII：整段就是 ASCII）。"""
+    return [b for b in ("%PDF-1.4\n1 0 obj\n<< /Type /Page /MediaBox " + box + " >>\nendobj\n").encode("ascii")]
+
+
+A4 = {"w": 595.276, "h": 841.89}          # 本机票面实测都是纵向 A4
+
+
+def test_pdfbox_reads_page_size_from_the_bytes_we_already_hold():
+    """票面字节前端本来就有（上传的 File / 取回来的 blob），扫一下就不用为尺寸再发一次请求。"""
+    assert _eval("L.pdfBox(b)", b=_pdf_head()) == {"w": 595.276, "h": 841.89}
+    assert _eval("L.pdfBox(b)", b=_pdf_head("[ 0 0 842 595 ]")) == {"w": 842, "h": 595}, "横向票要按横向算"
+    assert _eval("L.pdfBox(b)", b=[x for x in b"%PDF-1.7 no page dict here"]) is None, "读不到就返回 null，别编一个"
+
+
+def test_view_cycle_drops_the_state_that_looks_identical():
+    """窄而高的票面栏里，纵向 A4 的『整页』和『适应宽度』算出来是同一个缩放——
+    留着它就是那颗点了没反应的死按钮。这种重合的一档必须被丢掉。"""
+    c = _eval("L.viewCycle(p, q)", p=A4, q={"w": 500, "h": 800})
+    keys = [x["k"] for x in c]
+    assert "fit" not in keys, "整页与适应宽度重合时还留着它，就是给用户一颗死按钮"
+    zs = [x["zoom"] for x in c]
+    assert zs == sorted(zs) and all(b > a * 1.09 for a, b in zip(zs, zs[1:])), \
+        "留下的每一档都要真的看得出差别：%s" % zs
+    assert keys[-1] == "detail", "最后一档是放大看细节，这才是制单员点它想要的东西"
+
+
+def test_view_cycle_keeps_all_three_when_the_pane_is_wide():
+    """栏位够宽时三态各有不同缩放，就该都给（数字含阅读器自己占的那 60×56）。"""
+    c = _eval("L.viewCycle(p, q)", p=A4, q={"w": 900, "h": 600})
+    assert [x["k"] for x in c] == ["fit", "fith", "detail"], "整页→适应宽度→看细节，由小到大"
+    assert [x["zoom"] for x in c] == [65, 141, 200], f"按净宽 840/净高 544 算：{[x['zoom'] for x in c]}"
+
+
+def test_detail_step_only_exists_when_it_is_actually_bigger():
+    """栏位极大时『适应宽度』本身已经 300%+，那『放大看细节』就没意义（200% 反而是缩小）：
+    这一档要不出现在循环里，而不是给用户一档越点越小的按钮。"""
+    c = _eval("L.viewCycle(p, q)", p=A4, q={"w": 2000, "h": 1400})
+    assert [x["k"] for x in c] == ["fit", "fith"], f"放大档被吸掉了才对：{[x['k'] for x in c]}"
+    mid = _eval("L.viewCycle(p, q)", p=A4, q={"w": 900, "h": 600})
+    assert mid[-1]["k"] == "detail" and mid[-1]["frag"] == "zoom=200", "正常栏位下这一档要在，且拼成 zoom="
+
+
+def test_view_cycle_wraps_back_to_the_start():
+    """循环：最后一档点回去第一档，用户不用找『退出放大』在哪。"""
+    c = _eval("L.viewCycle(p, q)", p=A4, q={"w": 900, "h": 600})
+    assert _eval("L.nextView(c, c[0].k).k", c=c) == "fith"
+    assert _eval("L.nextView(c, c[2].k).k", c=c) == "fit", "到底了要回绕"
+    assert _eval("L.nextView(c, '没见过的档').k", c=c) == "fit", "状态丢了就从第一档开始，别返回 undefined"
+
+
+def test_view_cycle_without_page_size_still_offers_something():
+    """扫不到 MediaBox（PDF 变体）时不能白屏：退回原来那两档，行为不比今天差。"""
+    c = _eval("L.viewCycle(null, q)", q={"w": 500, "h": 800})
+    assert [x["k"] for x in c] == ["fith", "fit"], "没尺寸就用浏览器的 view= 两态"
+    assert all("frag" in x for x in c), "每档都要带上能拼进 iframe 地址的参数"
+
+
+def test_first_view_stays_on_fit_width():
+    """打开票面默认停在『适应宽度』：那是窄栏里看得清字的一档。
+    档位排序后它是第二个，所以必须由 logic 明确指定，不能拿排序后的第一个当默认。"""
+    c = _eval("L.viewCycle(p, q)", p=A4, q={"w": 900, "h": 600})
+    assert _eval("L.firstView(c).k", c=c) == "fith", "默认档丢了，票一打开就缩成一小块"
+    only = [x for x in c if x["k"] != "fith"]
+    assert _eval("L.firstView(only).k", only=only) == only[0]["k"], \
+        "适应宽度被丢掉时要退回最小的一档，别返回空"
+    assert _eval("L.firstView([])") is None
+
+
+def test_desk_wires_the_preview_toggle_to_logic_not_its_own_math():
+    """算式只在 logic.js 一处：desk.js 负责取字节、量栏位、拼地址，别再自己写一遍 min/max。"""
+    js = web_src.part("js/desk.js")
+    assert "L.viewCycle(" in js and "L.nextView(" in js, "票面缩放档位要走 logic"
+    assert "L.firstView(" in js, "默认档位的选法也要走 logic，别再按排序结果猜"
+    assert "L.pdfBox(" in js, "页面尺寸要从已在手的 PDF 字节里读"
+    assert "arrayBuffer" in js, "blob 字节要读出来才能扫 MediaBox"
+    assert "PREVIEW.pdfFit === " not in js, "别再留原来那颗二态硬编码"
+    assert "cycle.length < 2" in js, "只剩一档时这颗按钮就是死的，要藏起来而不是留着让人点"
+
