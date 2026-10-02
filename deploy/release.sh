@@ -9,6 +9,7 @@
 #   加界面、加字段口径调整    → 第二位 +1     （1.1.0）
 #   换形态（V2 那种）         → 第一位 +1，另在 config.FORM 标形态
 set -euo pipefail
+die() { echo "停：$*" >&2; exit 1; }
 
 VER="${1:-}"; DRY=0; [ "${2:-}" = "--dry-run" ] && DRY=1
 if ! printf '%s' "$VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -30,10 +31,11 @@ trap 'if [ "$ROLLBACK" = "1" ]; then sed -i "s/^APP_VERSION = \"[^\"]*\"/APP_VER
 ROLLBACK=1
 
 echo "== 跑全量回归"
-if ! python -X utf8 tests/run_tests.py 2>&1 | tail -3; then
-  echo "停：回归没过，版本号已退回（不发版）" >&2; exit 1
-fi
-python -X utf8 tests/run_tests.py >/dev/null 2>&1 || { echo "停：回归没过，版本号已退回" >&2; exit 1; }
+# 跑一遍拿退出码，别为了取退出码再跑一遍（这套件要几分钟，跑两遍等于发版慢一倍）
+LOG="/tmp/hawb-release-reg.log"
+RC=0; python -X utf8 tests/run_tests.py >"$LOG" 2>&1 || RC=$?
+tail -3 "$LOG"
+[ "$RC" = "0" ] || { echo "停：回归没过（退出码 $RC，全文在 $LOG），版本号已退回（不发版）" >&2; exit 1; }
 ROLLBACK=0
 
 [ "$DRY" = "1" ] && { echo "== --dry-run：改号与检查完成，没提交也没推"; exit 0; }
@@ -45,6 +47,17 @@ git tag -a "v$VER" -m "版本 $VER（$(date +%F)）"
 
 echo "== 推服务器"
 ./deploy/sync.sh
+
+echo "== 自证：服务器上跑的确实是 $VER"
+# sync.sh 结尾也会核一次，这里是发版口的独立凭据：tag、config、线上 /health 三处必须同一个号，
+# 少一处就没法回答"客户现在用的到底是哪版"。
+HOST="${HAWB_SSH:-efreight-vm}"
+HEALTH="${HAWB_HEALTH_URL:-http://127.0.0.1:8020/health}"
+BODY="$(ssh "$HOST" "curl -s --max-time 10 '$HEALTH'")" || die "/health 取不到：发版未完，先 ssh $HOST 'systemctl status hawb-desk'"
+case "$BODY" in
+  *"\"version\":\"$VER\""*) echo "   线上 $BODY" ;;
+  *) die "/health 报的不是 $VER（实际：$BODY）——tag 已打但服务器可能是旧进程，别当作发版成功" ;;
+esac
 
 echo "== 推 GitHub（含 tag）"
 if git remote get-url origin >/dev/null 2>&1; then
