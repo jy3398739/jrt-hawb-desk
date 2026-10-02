@@ -300,12 +300,37 @@ function applyZoom(){
   PREVIEW.zoom = Math.min(PREVIEW.zoom, im.naturalWidth ? L.maxZoomPct(im.naturalWidth, box.clientWidth) : 400);
   for (const x of imgs) x.style.width = PREVIEW.zoom + "%";
   $("#pvZoomTxt").textContent = PREVIEW.zoom + "%";
+  box.classList.toggle("pannable",
+    L.canPan(box.scrollWidth, box.clientWidth) || L.canPan(box.scrollHeight, box.clientHeight));
   if (PREVIEW.mode !== "pages") return;
   const pct = L.wholePagePct(im.naturalWidth, im.naturalHeight, box.clientWidth, box.clientHeight);
   const btn = $("#pvPage");
   btn.dataset.pct = String(pct);
   btn.textContent = Math.abs(PREVIEW.zoom - pct) < 3 ? "适应宽度" : "整页看全";
   btn.hidden = pct >= 90;               // 和适应宽度差不到 10% = 点了没反应，别放这颗按钮
+}
+/* 放大后按住票面拖就能看别处，不用去够那根滚动条。只在 .pannable（内容真超出栏位）时接手，
+   光标与行为同一判据，不会出现"看着能拖其实拖不动"。
+   用 pointer 事件：鼠标 / 触屏 / 手写笔一套代码；按下即抓住指针，拖出栏外也不断，松手或被系统
+   取消（pointercancel，例如手势接管）都要收手，否则下次一进来就是抓取状态。 */
+function installPan(){
+  const pane = $("#pvBody");
+  let drag = null;
+  pane.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || !pane.classList.contains("pannable")) return;
+    drag = {x: e.clientX, y: e.clientY, l: pane.scrollLeft, t: pane.scrollTop};
+    pane.setPointerCapture(e.pointerId);
+    pane.classList.add("grabbing");
+    e.preventDefault();                 // 顺手把"拖图片"和选中也压掉
+  });
+  pane.addEventListener("pointermove", e => {
+    if (!drag) return;
+    pane.scrollLeft = drag.l - (e.clientX - drag.x);
+    pane.scrollTop = drag.t - (e.clientY - drag.y);
+  });
+  const stop = () => { if (!drag) return; drag = null; pane.classList.remove("grabbing"); };
+  pane.addEventListener("pointerup", stop);
+  pane.addEventListener("pointercancel", stop);
 }
 function showPreview(url, kind){
   releasePreview();
@@ -314,6 +339,7 @@ function showPreview(url, kind){
   if (kind === "pdf"){
     $("#pvZoom").hidden = true;
     $("#pvPdf").hidden = false;
+    $("#pvBody").classList.remove("pannable");   // 阅读器自己管滚动，留着上一张票的抓手就是骗人
     PREVIEW.box = null;
     readPdfBox();                       // 先量到页面尺寸，再画第一帧（省一次重画）
   } else {
@@ -1190,6 +1216,7 @@ dz.addEventListener("drop", e => addFiles([...e.dataTransfer.files]));
 $("#pvIn").addEventListener("click", () => { PREVIEW.zoom = Math.min(400, PREVIEW.zoom + 25); applyZoom(); });
 $("#pvOut").addEventListener("click", () => { PREVIEW.zoom = Math.max(25, PREVIEW.zoom - 25); applyZoom(); });
 $("#pvFit").addEventListener("click", () => { PREVIEW.zoom = 100; applyZoom(); });
+installPan();
 $("#pvPage").addEventListener("click", () => {
   if (PREVIEW.mode === "pages"){
     const pct = +($("#pvPage").dataset.pct || 100);

@@ -182,6 +182,32 @@ def test_image_zoom_cannot_exceed_the_rendered_pixels():
     assert _eval("L.maxZoomPct(0, 675)") == 100
 
 
+def test_pan_only_offered_when_content_overflows():
+    """放大后要能按住拖动看别处（不用去够滚动条）。但内容没超出栏位时不给抓手——
+    给了就是骗人：按住拖半天一动不动，比没有还糟。"""
+    assert _eval("L.canPan(1200, 675)") is True, "内容比栏位宽就该能横着拖"
+    assert _eval("L.canPan(676, 675)") is True, "只溢出 1px 也算，别用等号漏掉"
+    assert _eval("L.canPan(675, 675)") is False, "正好放得下时不给抓手"
+    assert _eval("L.canPan(400, 675)") is False, "缩得下更不给"
+    assert _eval("L.canPan(0, 675)") is False, "还没量到尺寸时不许亮抓手"
+
+
+def test_desk_installs_drag_to_pan_on_the_preview_pane():
+    """抓手要有：按下抓指针（拖出栏位也不丢）、拖动改 scrollLeft/Top、抬起收手；
+    并且要压掉浏览器原生的"拖图片"，否则拖出去的是图片本身。"""
+    js = web_src.part("js/desk.js")
+    css = web_src.css()
+    assert "L.canPan(" in js, "能不能拖要由 logic 判，别在 DOM 里现写比较"
+    for ev in ("pointerdown", "pointermove", "pointerup", "pointercancel"):
+        assert ev in js, "缺 " + ev + "：中途松手或拖出栏位会卡在抓取状态"
+    assert "setPointerCapture" in js, "不抓住指针，拖出图片外就断了"
+    assert "scrollLeft" in js and "scrollTop" in js, "拖动要落在滚动位置上"
+    assert 'classList.remove("pannable")' in js, \
+        "退回浏览器阅读器时要收掉抓手：那扇 iframe 自己管滚动，留着就是亮着却拖不动的假抓手"
+    assert "draggable" in js or "user-drag" in css, "别把图片本身拖出去（浏览器默认能拖）"
+    assert "grab" in css and "grabbing" in css, "光标要真的变成抓手"
+
+
 def test_desk_renders_pages_itself_and_keeps_the_viewer_only_as_fallback():
     """票面不再嵌浏览器阅读器：Edge/Chrome 各自的侧栏与工具栏会吃掉近 1/4 宽度，
     而且参数两家不通用（实测 Edge 不理 navpanes=0）。走我们自己的 /render 页图，

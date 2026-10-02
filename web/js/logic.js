@@ -150,5 +150,8 @@ const L = {
     if (!(pageW > 0 && paneW > 0)) return 100;
     return Math.max(100, Math.round(100 * pageW / paneW));
   },
+  /* 按住拖动看别处只在内容真超出栏位时才给抓手：给了却拖不动，比不给更让人以为自己点坏了。
+     宽、高分开问。 */
+  canPan(content, pane){ return (content || 0) - (pane || 0) >= 1; },
 };
 if (typeof module !== "undefined") module.exports = L;
