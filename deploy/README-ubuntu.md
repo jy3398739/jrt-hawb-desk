@@ -33,8 +33,14 @@ python3.12 -m venv .venv
 .venv/bin/pip install -r requirements-server.lock.txt
 ```
 
-服务器用**锁文件**（精确复现现在跑着的这套）。`requirements.txt` 里的 `>=` 范围是给
-开发机用的——那台机器的全局 Python 被好几个服务共用，装精确版本会去动别的服务的包。
+服务器用**锁文件**（精确复现现在跑着的这套）。
+
+开发机（Windows）从 2026-10-02 起也建一份同名 `.venv`、装同一把锁：
+`python -m venv .venv` 后 `.venv\Scripts\python.exe -m pip install -r requirements-server.lock.txt`。
+`./deploy/release.sh` 见到 `.venv` 就用它跑回归，所以本地跑的版本组合 = 线上跑的版本组合；
+以前用全局 Python 时两边会漂（漂出过 pydantic 与 pydantic-core 对不上、本地一条回归都跑不起来）。
+`.venv` 已在 `.gitignore` 里，不会进部署清单。`requirements.txt` 的 `>=` 范围留着给"只想快速装个能跑的"用。
+双击启动的 `.bat` 仍走全局 Python——本机那份只是给人手动看结果，线上以服务为准。
 
 ## 3. 配置 `.env`（不进仓库、不进同步包）
 

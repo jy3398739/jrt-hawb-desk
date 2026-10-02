@@ -32,8 +32,17 @@ ROLLBACK=1
 
 echo "== 跑全量回归"
 # 跑一遍拿退出码，别为了取退出码再跑一遍（这套件要几分钟，跑两遍等于发版慢一倍）
+# 有 .venv 就用它：里面的包是按 requirements-server.lock.txt 装的，和服务器同一套版本；
+# 全局 Python 被本机其它服务共用，版本会漂（2026-10-02 就漂出过 pydantic/pydantic-core 对不上、本地一条都跑不了）。
+PY="python"
+if [ -x ".venv/Scripts/python.exe" ]; then
+  PY=".venv/Scripts/python.exe"
+elif [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+fi
+echo "   用 $PY"
 LOG="/tmp/hawb-release-reg.log"
-RC=0; python -X utf8 tests/run_tests.py >"$LOG" 2>&1 || RC=$?
+RC=0; "$PY" -X utf8 tests/run_tests.py >"$LOG" 2>&1 || RC=$?
 tail -3 "$LOG"
 [ "$RC" = "0" ] || { echo "停：回归没过（退出码 $RC，全文在 $LOG），版本号已退回（不发版）" >&2; exit 1; }
 ROLLBACK=0

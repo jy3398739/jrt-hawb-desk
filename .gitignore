@@ -3,6 +3,11 @@
 users.json
 *.local
 
+# 本机/服务器各自的独立环境：写了 .gitignore 才有意义——sync.sh 用 git status 判"工作区脏不脏"，
+# 一个没被忽略的 .venv 会让以后每次部署都停在"有未提交改动"上
+.venv/
+venv/
+
 __pycache__/
 *.py[cod]
 
