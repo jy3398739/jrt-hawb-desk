@@ -332,6 +332,23 @@ function installPan(){
   pane.addEventListener("pointerup", stop);
   pane.addEventListener("pointercancel", stop);
 }
+/* 滚轮 = 调倍率（挪视野已经交给按住拖动，滚轮再留着滚动意义不大）。两处必须挡住：
+   普通滚轮会连着滚整页，Ctrl+滚轮会被浏览器当成"缩放整个标签页"——所以 passive:false。
+   定位模式下不接：那边的倍率是 autoZoom 按命中行算的，这里改会跟它打架。
+   退回浏览器阅读器那张票也不接：iframe 的滚轮本来就该阅读器自己处理。 */
+function wheelZoom(e){
+  if (PREVIEW.mode === "viewer" || LOC.on) return;
+  const pane = $("#pvBody"), im = pane.querySelector("img");
+  if (!im) return;
+  e.preventDefault();
+  const r = pane.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+  const fx = im.offsetWidth ? (cx + pane.scrollLeft) / im.offsetWidth : 0;
+  const fy = im.offsetHeight ? (cy + pane.scrollTop) / im.offsetHeight : 0;
+  PREVIEW.zoom = L.zoomStep(PREVIEW.zoom, e.deltaY < 0 ? 1 : -1);
+  applyZoom();                        // 里面还会按渲染像素夹一次上限
+  pane.scrollLeft = L.zoomAnchor(im.offsetWidth, fx, cx);
+  pane.scrollTop = L.zoomAnchor(im.offsetHeight, fy, cy);
+}
 function showPreview(url, kind){
   releasePreview();
   PREVIEW.url = url;
@@ -1217,6 +1234,8 @@ $("#pvIn").addEventListener("click", () => { PREVIEW.zoom = Math.min(400, PREVIE
 $("#pvOut").addEventListener("click", () => { PREVIEW.zoom = Math.max(25, PREVIEW.zoom - 25); applyZoom(); });
 $("#pvFit").addEventListener("click", () => { PREVIEW.zoom = 100; applyZoom(); });
 installPan();
+/* passive:false 是必须的：默认 passive 监听里 preventDefault 会被浏览器忽略，滚轮就还是去滚页面 */
+$("#pvBody").addEventListener("wheel", wheelZoom, {passive: false});
 $("#pvPage").addEventListener("click", () => {
   if (PREVIEW.mode === "pages"){
     const pct = +($("#pvPage").dataset.pct || 100);

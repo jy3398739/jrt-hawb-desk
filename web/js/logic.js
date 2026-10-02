@@ -153,5 +153,17 @@ const L = {
   /* 按住拖动看别处只在内容真超出栏位时才给抓手：给了却拖不动，比不给更让人以为自己点坏了。
      宽、高分开问。 */
   canPan(content, pane){ return (content || 0) - (pane || 0) >= 1; },
+
+  /* 滚轮一格一格调倍率：乘法步进（±15%）比固定 ±25 自然——小倍率时一跳 25% 太猛，
+     大倍率时 25% 又太细；而且来回滚一格要能回到原值。 */
+  zoomStep(z, dir){
+    const v = (z > 0 ? z : 100) * (dir > 0 ? 1.15 : 1 / 1.15);
+    return Math.min(400, Math.max(25, Math.round(v)));
+  },
+  /* 缩放要钉住鼠标底下那一处，否则每滚一下视野都甩回左上角，看细节得重新找位置。
+     给"新内容尺寸、鼠标点在旧内容里的比例、光标距栏位左上角的距离"，返回该放到的滚动量。 */
+  zoomAnchor(contentNew, frac, cursorInPane){
+    return Math.max(0, Math.round(contentNew * frac - cursorInPane));
+  },
 };
 if (typeof module !== "undefined") module.exports = L;

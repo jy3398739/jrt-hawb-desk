@@ -182,6 +182,38 @@ def test_image_zoom_cannot_exceed_the_rendered_pixels():
     assert _eval("L.maxZoomPct(0, 675)") == 100
 
 
+def test_wheel_zoom_steps_are_multiplicative_and_bounded():
+    """滚轮一格一格调倍率：乘法步进比固定 ±25 自然（小倍率时 25% 一跳太猛，大倍率时又太细）。
+    上下都要有界，滚到头不能变成 0 或负宽。"""
+    assert _eval("L.zoomStep(100, 1)") == 115
+    assert _eval("L.zoomStep(100, -1)") == 87
+    assert _eval("L.zoomStep(115, -1)") == 100, "来回一格要回到原值，不能越走越偏"
+    assert _eval("L.zoomStep(25, -1)") == 25, "下限"
+    assert _eval("L.zoomStep(400, 1)") == 400, "上限"
+    assert _eval("L.zoomStep(0, 1)") == 115, "没读到当前倍率时按 100 起步"
+
+
+def test_zoom_keeps_the_point_under_the_cursor():
+    """缩放要钉住鼠标底下那一处：不然每次滚轮都把视野甩回左上角，看细节得重新找位置。"""
+    assert _eval("L.zoomAnchor(1000, 0.5, 200)") == 300, "内容中点仍在光标处"
+    assert _eval("L.zoomAnchor(2000, 0.25, 300)") == 200
+    assert _eval("L.zoomAnchor(1000, 0.1, 500)") == 0, "越界就贴边，别给负数滚动量"
+
+
+def test_desk_binds_the_wheel_on_our_pane_only():
+    """滚轮归缩放，所以必须挡住它原来的动作（滚页面 / Ctrl+滚轮=整页浏览器缩放）；
+    但退回浏览器阅读器那张票不能抢——那扇 iframe 的滚轮该由阅读器自己处理。"""
+    js = web_src.part("js/desk.js")
+    assert '"wheel"' in js, "票面栏要接滚轮"
+    assert "L.zoomStep(" in js and "L.zoomAnchor(" in js, "步进与锚点算式要走 logic"
+    assert "preventDefault" in js.split("function wheelZoom")[1][:900], "不挡住滚轮就会连带滚页面/缩放整个标签页"
+    assert 'PREVIEW.mode === "viewer"' in js.split("function wheelZoom")[1][:400], \
+        "阅读器那张票要把滚轮让回去"
+    assert "LOC.on" in js.split("function wheelZoom")[1][:400], \
+        "定位模式的倍率是 autoZoom 按命中行算的，滚轮去改会跟它打架"
+    assert "passive: false" in js, "passive 监听里 preventDefault 会被忽略，滚轮还是去滚页面"
+
+
 def test_pan_only_offered_when_content_overflows():
     """放大后要能按住拖动看别处（不用去够滚动条）。但内容没超出栏位时不给抓手——
     给了就是骗人：按住拖半天一动不动，比没有还糟。"""
