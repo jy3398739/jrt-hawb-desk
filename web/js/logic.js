@@ -138,5 +138,17 @@ const L = {
     for (const s of cycle) if (s.k === "fith") return s;
     return cycle[0];
   },
+
+  /* ── 页图模式（票面不再嵌浏览器阅读器）的算式 ─────────────────────────────
+     图宽按"占栏位宽的百分数"给：100% 就是适应宽度。 */
+  wholePagePct(pageW, pageH, paneW, paneH){
+    if (!(pageW > 0 && pageH > 0 && paneW > 0 && paneH > 0)) return 100;
+    return Math.min(100, Math.round(100 * paneH * pageW / (paneW * pageH)));
+  },
+  /* 放大到超过渲染出来的像素只是把糊图撑大，还多占滚动条：上限就是原生像素 */
+  maxZoomPct(pageW, paneW){
+    if (!(pageW > 0 && paneW > 0)) return 100;
+    return Math.max(100, Math.round(100 * pageW / paneW));
+  },
 };
 if (typeof module !== "undefined") module.exports = L;

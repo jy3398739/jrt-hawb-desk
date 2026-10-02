@@ -166,10 +166,38 @@ def test_first_view_stays_on_fit_width():
     assert _eval("L.firstView([])") is None
 
 
+def test_whole_page_width_for_image_pages():
+    """页图模式下『整页看全』= 让一页的高也放得下时的图宽（占栏位宽的百分数，上限 100）。
+    纵向票放进窄而高的栏里它等于 100（和『适应宽度』同一件事），那种情况下这颗按钮该藏起来。"""
+    assert _eval("L.wholePagePct(595, 842, 500, 800)") == 100, "窄高栏里纵向票的整页=适应宽度，别放一颗死按钮"
+    assert _eval("L.wholePagePct(595, 842, 900, 600)") == 47, "宽栏里整页要缩到 47% 才放得下整页高"
+    assert _eval("L.wholePagePct(842, 595, 900, 600)") == 94, "横向票差 6% 就同一件事，desk.js 要在 ≥90 时藏掉这颗"
+    assert _eval("L.wholePagePct(0, 0, 0, 0)") == 100, "尺寸没读到就退回 100，别算出 NaN"
+
+
+def test_image_zoom_cannot_exceed_the_rendered_pixels():
+    """放大上限由页图像素决定：超过原生像素只是把糊图放大，还占掉更多滚动条。"""
+    assert _eval("L.maxZoomPct(1190, 675)") == 176, "A4 @scale2 = 1190px，675 栏位最放到 176% 就见底了"
+    assert _eval("L.maxZoomPct(1190, 4000)") == 100, "栏位比图还宽时不许放大（放大也只会更糊）"
+    assert _eval("L.maxZoomPct(0, 675)") == 100
+
+
+def test_desk_renders_pages_itself_and_keeps_the_viewer_only_as_fallback():
+    """票面不再嵌浏览器阅读器：Edge/Chrome 各自的侧栏与工具栏会吃掉近 1/4 宽度，
+    而且参数两家不通用（实测 Edge 不理 navpanes=0）。走我们自己的 /render 页图，
+    缩放与『整页看全』全归我们算；只有拿不到归档（没勾落盘）才退回阅读器。"""
+    js = web_src.part("js/desk.js")
+    assert "/render/" in js, "票面要走服务端按页渲染"
+    assert "X-Ticket-Pages" in js, "页数从渲染响应的头里拿，别再发一次请求问"
+    assert "L.wholePagePct(" in js and "L.maxZoomPct(" in js, "整页宽与放大上限要走 logic 那两条算式"
+    assert ">= 90" in js, "整页与适应宽度差不到 10% 时要把这颗按钮藏起来"
+    assert "showPages" in js and "pvpage" in js, "页图模式要有自己的装载函数与图片类名"
+
+
 def test_desk_wires_the_preview_toggle_to_logic_not_its_own_math():
     """算式只在 logic.js 一处：desk.js 负责取字节、量栏位、拼地址，别再自己写一遍 min/max。"""
     js = web_src.part("js/desk.js")
-    assert "L.viewCycle(" in js and "L.nextView(" in js, "票面缩放档位要走 logic"
+    assert "L.viewCycle(" in js and "L.nextView(" in js, "阅读器回退路径的档位仍要走 logic"
     assert "L.firstView(" in js, "默认档位的选法也要走 logic，别再按排序结果猜"
     assert "L.pdfBox(" in js, "页面尺寸要从已在手的 PDF 字节里读"
     assert "arrayBuffer" in js, "blob 字节要读出来才能扫 MediaBox"

@@ -277,7 +277,7 @@ function payloadFor(t, who){
 }
 
 /* ── 票面浏览：核对时把原件和字段并排看 ───────────────────────────────── */
-const PREVIEW = {key:"", url:"", zoom:100, box:null, cycle:[], view:null};
+const PREVIEW = {key:"", url:"", zoom:100, pages:null, mode:"", box:null, cycle:[], view:null};
 let _pvSeq = 0, _pdfSeq = 0;
 
 function fileKind(name){
@@ -288,16 +288,29 @@ function fileKind(name){
 }
 function releasePreview(){
   if (PREVIEW.url){ URL.revokeObjectURL(PREVIEW.url); PREVIEW.url = ""; }
+  for (const u of (PREVIEW.pages || [])) URL.revokeObjectURL(u);
+  PREVIEW.pages = null;
 }
 function pvBody(html){ $("#pvBody").innerHTML = html; }
 function applyZoom(){
-  const img = $("#pvImg"); if (!img) return;
-  img.style.width = PREVIEW.zoom + "%";
+  const imgs = [...document.querySelectorAll("#pvBody img")];
+  if (!imgs.length) return;
+  const box = $("#pvBody"), im = imgs[0];
+  /* 放大不许超过渲染出来的像素（超了只是把糊图撑大），没解码完就先不设上限 */
+  PREVIEW.zoom = Math.min(PREVIEW.zoom, im.naturalWidth ? L.maxZoomPct(im.naturalWidth, box.clientWidth) : 400);
+  for (const x of imgs) x.style.width = PREVIEW.zoom + "%";
   $("#pvZoomTxt").textContent = PREVIEW.zoom + "%";
+  if (PREVIEW.mode !== "pages") return;
+  const pct = L.wholePagePct(im.naturalWidth, im.naturalHeight, box.clientWidth, box.clientHeight);
+  const btn = $("#pvPage");
+  btn.dataset.pct = String(pct);
+  btn.textContent = Math.abs(PREVIEW.zoom - pct) < 3 ? "适应宽度" : "整页看全";
+  btn.hidden = pct >= 90;               // 和适应宽度差不到 10% = 点了没反应，别放这颗按钮
 }
 function showPreview(url, kind){
   releasePreview();
   PREVIEW.url = url;
+  PREVIEW.mode = kind === "pdf" ? "viewer" : "img";     // 回退路径：按钮语义按阅读器/原图分开
   if (kind === "pdf"){
     $("#pvZoom").hidden = true;
     $("#pvPdf").hidden = false;
@@ -337,11 +350,47 @@ function readPdfBox(){
     PREVIEW.box = null; pdfFrame();     // 读不到就退回浏览器那两态，行为不比今天差
   });
 }
+/* 票面默认不再嵌浏览器阅读器：Chrome/Edge 各自的侧栏与工具栏要吃掉近 1/4 宽度，
+   而关侧栏的参数两家不通用（实测 Edge 完全不理 navpanes=0）。改成逐页取我们服务端渲染的
+   页图（/render，定位模式本来就在用），缩放与「整页看全」全归我们算，两家表现一致。
+   拿不到归档（上传时没勾「落盘留档」）才退回阅读器，所以这里返回 false 让调用方接着走老路。 */
+const PV_SCALE = 2;                     // ≈150dpi：A4 出 1190px，够放到 176% 不糊
+async function showPages(stem, seq){
+  const urls = [];
+  try{
+    const first = await fetch(BASE + `/render/${encodeURIComponent(stem)}?page=1&scale=${PV_SCALE}`);
+    if (!first.ok) return false;
+    const total = parseInt(first.headers.get("X-Ticket-Pages") || "1", 10) || 1;
+    urls.push(URL.createObjectURL(await first.blob()));
+    for (let n = 2; n <= total; n++){
+      const r = await fetch(BASE + `/render/${encodeURIComponent(stem)}?page=${n}&scale=${PV_SCALE}`);
+      if (r.ok) urls.push(URL.createObjectURL(await r.blob()));
+    }
+  }catch(e){ return false; }
+  if (seq !== _pvSeq){ for (const u of urls) URL.revokeObjectURL(u); return true; }
+  releasePreview();
+  PREVIEW.pages = urls.slice(1);        // 第 1 页放 url，「新窗口」拿它
+  PREVIEW.url = urls[0];
+  PREVIEW.mode = "pages";
+  PREVIEW.zoom = 100;
+  pvBody(`<img class="pvpage" id="pvImg" src="${urls[0]}" alt="票面第 1 页">` +
+         urls.slice(1).map((u, i) => `<img class="pvpage" src="${u}" alt="票面第 ${i + 2} 页">`).join(""));
+  $("#pvZoom").hidden = false;
+  $("#pvPage").textContent = "整页看全";
+  $("#pvPage").hidden = false;
+  $("#pvPdf").hidden = false;
+  const im = $("#pvBody img");
+  if (im && !im.naturalWidth) im.addEventListener("load", applyZoom);   // 量不到像素会把按钮错藏掉
+  applyZoom();
+  return true;
+}
 /* 同一张票不重建预览：render() 会因为解析进度等反复跑，重建会把 iframe 的滚动位置也一起清掉 */
 function previewKey(t){
   if (!t) return "";
+  /* 有归档名就能走页图模式；键里带上这个，刚上传那会儿只能吃 blob、归档一落定就升级成页图 */
+  if (t.stem) return "S|" + t.stem + (t.state === "done" ? "|d" : "|p");
   if (t.file && fileKind(t.filename) !== "other") return "F|" + t.filename;
-  return "A|" + (t.stem || t.filename) + (t.state === "done" ? "|d" : "|p");
+  return "A|" + t.filename + (t.state === "done" ? "|d" : "|p");
 }
 /* 主单视图：左栏放 L1 原文（公司资料逐行），右栏放解析出来的 36 列可编辑面。
    主单没有票面版式原件，所以这一栏是"资料文本"而不是"票面图"，点字段也不能定位——界面上说明白。 */
@@ -381,6 +430,9 @@ async function loadPreview(t){
   $("#pvTools").hidden = !t;
   if (!t){ pvBody(`<div class="empty">上传分单后这里显示票面原件，和右边字段逐条核对。</div>`); return; }
   const kind = fileKind(t.filename);
+  /* 有归档就一律走我们渲染的页图（页图模式没有阅读器侧栏/工具栏，两家浏览器表现一致）；
+     /render 拿不到（没勾落盘、或刚上传还没归档）才退回下面这条 blob 老路。 */
+  if (t.stem && await showPages(t.stem, seq)) return;
   if (t.file && kind !== "other"){
     showPreview(URL.createObjectURL(t.file), kind);     // 本次会话上传的：直接用浏览器里的文件，不占服务端
     return;
@@ -1139,6 +1191,12 @@ $("#pvIn").addEventListener("click", () => { PREVIEW.zoom = Math.min(400, PREVIE
 $("#pvOut").addEventListener("click", () => { PREVIEW.zoom = Math.max(25, PREVIEW.zoom - 25); applyZoom(); });
 $("#pvFit").addEventListener("click", () => { PREVIEW.zoom = 100; applyZoom(); });
 $("#pvPage").addEventListener("click", () => {
+  if (PREVIEW.mode === "pages"){
+    const pct = +($("#pvPage").dataset.pct || 100);
+    PREVIEW.zoom = Math.abs(PREVIEW.zoom - pct) < 3 ? 100 : pct;   // 再点一次回适应宽度，别做一颗第二次点了没反应的按钮
+    applyZoom();
+    return;
+  }
   const nxt = L.nextView(PREVIEW.cycle, PREVIEW.view);
   if (!nxt) return;
   PREVIEW.view = nxt.k;
