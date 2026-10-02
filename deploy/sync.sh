@@ -121,4 +121,10 @@ case "$BODY" in
   *'"stale_files":[]'*) ;;
   *) die "服务仍在跑旧代码或文件不齐（stale_files 非空）。回滚：ssh $HOST 'tar xf ~/$BK -C $REMOTE_DIR && sudo systemctl restart $UNIT'" ;;
 esac
+# 最后自证一次"跑的就是这一版"：文件推上去 ≠ 服务加载了它（uvicorn 只在启动时读一次代码）
+WANT="$(sed -n 's/^APP_VERSION = "\{0,1\}\([^"]*\)"\(.*\)$/\1/p' config.py | head -1)"
+case "$BODY" in
+  *"\"version\":\"$WANT\""*) say "== 服务器上报版本 $WANT，与本机 config 一致" ;;
+  *) die "服务器版本与本机不一致（本机 $WANT，服务器响应见上）——别把没生效的部署当成功" ;;
+esac
 say "== 部署完成（回滚包 ~/$BK）"

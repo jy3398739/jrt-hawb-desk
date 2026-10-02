@@ -10,9 +10,12 @@ from pathlib import Path
 
 import atomic
 
-# 版本标识：V1 = 2026-09-26 定版的现役形态（票面 PDF/图片 → L1 转录 → L2 提取 → 审核台核对 → mock 回传）。
-# V2 是另一套形态（对接真实网页制单，测试用、不走公司系统），两台会并存，所以 /health 与页面标题都得带它。
-APP_VERSION = "V1"
+# 版本号：发一次改一次（deploy/release.sh 负责改号 + 跑回归 + 打 tag + 推服务器 + 核对）。
+# 1.x = 现役形态（票面 PDF/图片 → L1 转录 → L2 提取 → 审核台核对 → 回传公司 j9 AMS）。
+# FORM 是"形态"标记，不是版本：V2（对接真实网页制单）已于 2026-09-29 删除，
+# 万一再出现两台并存的形态，靠它分辨，别把它塞进版本号里。
+APP_VERSION = "1.0.0"
+FORM = "V1"
 
 ENV_FILE = Path(__file__).with_name(".env")
 

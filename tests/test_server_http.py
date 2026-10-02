@@ -282,15 +282,37 @@ def test_health_is_open_and_no_longer_reports_auth_flag():
 
 
 def test_version_label_shows_on_both_ends():
-    """V1 定版（2026-09-26 用户点名）：/health 报出版本，审核台把 /health 的 version 显示到标题旁。
-    版本号只在 config.APP_VERSION 写一次——页面写死一份的话，改了 config 页面还在骗人。
-    V2 是另一套对接真网页的形态，两台并存时只凭端口号分不出谁是谁。"""
+    """版本要能当凭据用：一个真正的发布号（semver）+ 形态标记 + 构建时间。
+    只写 "V1" 的话，"服务器跑的是哪一版" 没人答得了（2026-10-01 用户点名要版本号）。
+    版本号只在 config 里写一次——页面写死一份的话，改了 config 页面还在骗人。"""
+    assert re.fullmatch(r"\d+\.\d+\.\d+", config.APP_VERSION), \
+        f"APP_VERSION 该是 1.0.0 这种 semver，现在是 {config.APP_VERSION!r}"
     with _stubbed():
-        assert TestClient(server.app).get("/health").json().get("version") == config.APP_VERSION
-    assert '"version": config.APP_VERSION' in (Path(server.__file__).read_text(encoding="utf-8")), \
-        "健康检查里的版本号要跟 config 同源，别再各处写死一遍"
+        h = TestClient(server.app).get("/health").json()
+    assert h["version"] == config.APP_VERSION
+    assert h["form"] == config.FORM, "形态标记（V1）单独报：两台并存时靠它分辨，不占版本号"
+    assert h["built_at"] and h["started_at"], "没有 git 的服务器上，构建时间与进程启动时间就是唯一的版本凭据"
+    srv = Path(server.__file__).read_text(encoding="utf-8")
+    assert '"version": config.APP_VERSION' in srv and '"form": config.FORM' in srv, \
+        "健康检查里的版本要跟 config 同源，别再各处写死一遍"
+    js = web_src.part("web/js/desk.js")
     assert 'id="verTag"' in web_src.part("index.html"), "页面要有版本号的位置"
-    assert ".version" in web_src.part("web/js/desk.js"), "脚本要把 /health 的 version 显示出来"
+    assert "r.version" in js and "r.built_at" in js and "r.form" in js, \
+        "标题旁要报出 版本 + 形态 + 构建时间，缺一样就又回到猜"
+
+
+def test_release_tooling_can_answer_which_version_the_server_runs():
+    """发版是一条命令，且部署完能自证"服务器上跑的确实是这个号"。"""
+    from pathlib import Path as P
+    rel = P(__file__).resolve().parent.parent / "deploy" / "release.sh"
+    assert rel.is_file(), "缺 deploy/release.sh：没有统一发版入口，版本号很快就会和代码脱节"
+    t = rel.read_text(encoding="utf-8")
+    for step in ("run_tests.py", "git tag", "sync.sh", "/health"):
+        assert step in t, f"发版脚本少了 {step} 这一步"
+    sync = (P(__file__).resolve().parent.parent / "deploy" / "sync.sh").read_text(encoding="utf-8")
+    assert "version" in sync and "APP_VERSION" in sync, \
+        "sync.sh 要核对服务器上报的版本与本机 config 一致，否则'部署完成'只是文件推上去了"
+
 
 
 def test_endpoints_refuse_without_login():

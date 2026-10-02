@@ -254,7 +254,7 @@ def _stale_files() -> list:
 @app.get("/health")
 def health():
     mb = config.master_model_bundle()
-    return {"ok": True, "version": config.APP_VERSION,
+    return {"ok": True, "version": config.APP_VERSION, "form": config.FORM,
             "model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE,
             "vision": config.MODEL_VISION, "key_configured": config.vlm_api_key_configured(),
             # 主单链默认走自己的渠道（MASTER_VLM_MODEL）：两条链各报各的，免得看着像配错了

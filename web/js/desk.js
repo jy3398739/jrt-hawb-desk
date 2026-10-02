@@ -555,7 +555,13 @@ function exitLocate(){
 async function probe(){
   try{
     const r = await fetch(BASE + "/health").then(x => x.json());
-    $("#verTag").textContent = r.version || "";   // 版本号只写在 config，页面照着报：V2 起两台并存
+    /* 版本只写在 config.APP_VERSION，页面照着报：v1.0.0 · V1形态 · 构建日期。
+       服务器上没有 .git，所以 built_at（源码最新修改时刻）才是能拿来对账的那一格。 */
+    $("#verTag").textContent = "v" + (r.version || "?") + " · " + (r.form || "")
+      + " · " + String(r.built_at || "").slice(0, 10);
+    $("#verTag").title = "版本 " + (r.version || "?") + "（形态 " + (r.form || "?") + "）\n"
+      + "代码构建：" + (r.built_at || "?") + "\n进程启动：" + (r.started_at || "?")
+      + (r.commit ? "\ngit：" + r.commit : "\n服务器只收 tar 推的文件，没有 git 仓库");
     /* 服务端跑的是改动前的旧进程时，票面浏览这类新功能会像坏了——直接说清是没重启 */
     const stale = r.stale_files || [];
     $("#svcDot").className = "dot " + (stale.length ? "bad" :
