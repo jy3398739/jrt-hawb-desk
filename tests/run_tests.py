@@ -19,7 +19,7 @@ import tempfile
 import traceback
 from pathlib import Path
 
-sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows 控制台默认 GBK，票面名会炸
+sys.stdout.reconfigure(errors="replace")  # 编码跟着控制台走（强改 UTF-8 会在 GBK 窗口里成一屏乱码），编不出的字符换 ? 继续跑
 
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent

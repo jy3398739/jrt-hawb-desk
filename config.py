@@ -39,10 +39,14 @@ def git_commit() -> str:
 
 def fix_console() -> None:
     """CLI 入口先调它。票面文件名常带不间断空格 U+00A0，Windows 控制台/重定向默认 GBK，
-    print 这类名字会抛 UnicodeEncodeError 把整批处理打断——日志不该有资格搞死任务。"""
+    print 这类名字会抛 UnicodeEncodeError 把整批处理打断——日志不该有资格搞死任务。
+
+    只改 errors，不改 encoding：这里曾是 reconfigure(encoding="utf-8")，结果在 cp936 的
+    cmd 窗口里打出**一屏乱码**（双击 bat 的人看到的就是那个）。编码跟着控制台走才看得懂，
+    编不出的字符换成 ? 继续跑。服务器那侧 locale 是 UTF-8，这条改动对它无感。"""
     for s in (sys.stdout, sys.stderr):
         try:
-            s.reconfigure(encoding="utf-8", errors="replace")
+            s.reconfigure(errors="replace")
         except Exception:
             pass  # 被替换成非标准流（如某些测试夹具）时跳过
 

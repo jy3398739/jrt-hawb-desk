@@ -38,3 +38,27 @@ def test_cli_entries_call_fix_console():
     for f in ("run_batch.py", "watch_folder.py", "ask_vision.py"):
         src = (ROOT / f).read_text(encoding="utf-8")
         assert "config.fix_console()" in src, f"{f} 的入口没调 config.fix_console()，打印票面名会打断任务"
+
+
+def test_fix_console_keeps_the_console_own_codepage():
+    """fix_console 的本职是"别炸"，不是"改编码"。它原先把输出强行写成 UTF-8，而中文
+    Windows 控制台是 cp936 —— 不死之后换来的是**一屏乱码**，双击 bat 的人根本看不懂。
+    所以这里要求：按控制台的 GBK 能解开，而不是只有 UTF-8 才对。"""
+    env = {**os.environ, "PYTHONIOENCODING": "gbk"}
+    r = subprocess.run([sys.executable, "-c",
+                        "import config; config.fix_console(); print('通过 306，全部绿灯')"],
+                       capture_output=True, cwd=str(ROOT), env=env)
+    assert r.returncode == 0, r.stderr.decode("gbk", errors="replace")[-300:]
+    assert "全部绿灯" in r.stdout.decode("gbk"), \
+        "输出不是控制台那一套编码（GBK 解不开）——那就是又回到一屏乱码"
+
+
+def test_regression_runner_is_readable_in_a_gbk_console():
+    """跑回归的那个子进程入口（tests/run_tests.py）也走同一规矩：GBK 窗口里看得懂，
+    且 GBK 编不出的字符（那行末尾的 ✅）要替换掉继续跑，而不是打断整个套件。"""
+    env = {**os.environ, "PYTHONIOENCODING": "gbk"}
+    r = subprocess.run([sys.executable, str(ROOT / "tests" / "run_tests.py"), "gitignore"],
+                       capture_output=True, cwd=str(ROOT), env=env)
+    out = r.stdout.decode("gbk", errors="replace")
+    assert r.returncode == 0, out[-400:] + r.stderr.decode("gbk", errors="replace")[-300:]
+    assert "全部绿灯" in out, out[-400:]
