@@ -228,11 +228,20 @@ def test_users_json_posix_permissions_600():
 
 def test_login_gate_makes_the_page_behind_clearly_inert():
     """遮罩只有五成透明度时，背后的按钮看着完全可用：用户点了"今日台账"却毫无反应，
-    以为功能坏了（2026-10-01 实测）。未登录时要么看不见背后的控件，要么明确点不动。"""
+    以为功能坏了（2026-10-01 实测）。未登录时要么看不见背后的控件，要么明确点不动。
+    2026-10-03 色值归口到 tokens.css：判的还是同一个 alpha，只是值搬到了 --c-gate 上，
+    所以这里先跟着 var() 解析一次，别把它当成"遮罩没色值了"。"""
     css = web_src.part("css/desk.css")
     i = css.index(".gate{")
     gate = css[i:css.index("}", i) + 1]
-    m = re.search(r"background:\s*rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\s*\)", gate)
+    ref = re.search(r"background:\s*var\(--([\w-]+)\)", gate)
+    if ref:
+        hit = re.search(r"--%s\s*:\s*([^;}]+)" % ref.group(1), web_src.part("css/tokens.css"))
+        assert hit, f"遮罩底色挂在 --{ref.group(1)} 上，tokens.css 里却没这个令牌"
+        alpha_at = hit.group(1)
+    else:
+        alpha_at = gate
+    m = re.search(r"rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*([0-9.]+)\s*\)", alpha_at)
     assert m and float(m.group(1)) >= 0.8, f"登录遮罩太薄（alpha {m and m.group(1)}）：背后控件看着仍可点"
     assert "backdrop-filter" in gate, "再加一层模糊：未登录时页面要明显是停着的"
     js = web_src.part("js/desk.js")
