@@ -185,6 +185,16 @@ def test_text_tokens_pass_wcag_aa_on_their_real_backgrounds():
             ratio(fill, bg, 3.0, "状态点/竖条这类图形")
 
 
+def test_state_fill_tokens_are_never_used_as_text():
+    """「绿橙红各配两个值」这件事写在注释里一定会被忘，所以立一条静态规矩：
+    --c-ok / --c-warn / --c-bad 是"看得见的点"（≥3.0 就够），带 -text 的那支才是"读得清的字"
+    （≥4.5）。谁把前者写进 color:，浅底上的 11px 小字就退回 4.38:1——正是这轮换色板要修的错。
+    主色 --c-accent 例外：它两个角色都用，本身 6.7:1 够。"""
+    css = _code(web_src.part("css/desk.css"))
+    bad = [ln.strip()[:56] for ln in css.splitlines() if re.search(r"(?<!-)color:var\(--c-(ok|warn|bad)\)", ln)]
+    assert not bad, "状态填充色被当成文字色用了，改 --c-*-text：" + " / ".join(bad)
+
+
 """ ── 设计令牌的三条守卫（2026-10-03 立，先红后绿）────────────────────────────
    外部方案说 desk.css 有 50 处硬编码色值——实测 69 处 hex + 6 处 rgba；它还说内联样式只有
    index.html 的 8 处，漏了 desk.js 模板字符串里的 32 处（比 html 多一倍）。守卫扫的是三处，

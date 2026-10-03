@@ -114,7 +114,7 @@ input,textarea{font:inherit;color:inherit}
 .empty{padding:20px 14px;color:var(--c-text-3);font-size:var(--f-sm)}
 .empty-hero{padding:64px 20px;text-align:center}      /* 整栏空状态：等一张票进来时的那块白 */
 .empty .sub{font-size:var(--f-sm);color:var(--c-text-3)}     /* 空状态里的第二行说明 */
-.empty-err{color:var(--c-bad)}                        /* 解析失败的整块空状态 */
+.empty-err{color:var(--c-bad-text)}                    /* 解析失败的整块空状态：字要用文字档 */
 .hd{padding:12px;border-bottom:1px solid var(--c-line);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
 .hd .dot{margin-top:6px}
 .hd .nm{font-weight:var(--w-bold);font-size:var(--f-lg);word-break:break-all}
