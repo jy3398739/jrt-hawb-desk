@@ -1,7 +1,81 @@
-/* 设计令牌：颜色的唯一来源。改主题只改这里；页面与组件不再写死色值。
-   注：三个正文字色都要在白底与页面底上双双过 WCAG AA（≥4.5:1）——tests 里算的是真比值。
-   --ink3 从前是 #8d99a9（≈2.9:1），浅底小字在强光屏幕上糊成一片；表达状态仍必须同时带文字，不能只靠色点。*/
+/* 设计令牌：颜色/圆角/阴影/层级的唯一来源。tests/test_server_http.py 里那三条守卫会扫
+   desk.css、index.html、desk.js —— 再出现一个 hex 或 rgba 就是回归，改主题只改这一份。
+   本文件只做「把已有的值请进变量」，一个值都没改；换色板与排版是下一刀，单独可回退。
+   角色分工写在名字里：--c-x 填充、--c-x-text 文字、--c-x-bg 状态底、--c-x-line 状态描边，
+   同一种绿在点上是填充、在字上是文字，两者的合格对比度不是一个数（见那条 WCAG 用例）。 */
+:root{
+  /* ── 底与线 ── */
+  --c-bg:#f4f6f9;              /* 页面底 */
+  --c-surface:#fff;            /* 卡片、按钮、输入框 */
+  --c-surface-2:#fbfcfe;       /* 表头、工具栏、待办条——比卡片暗一丝 */
+  --c-surface-3:#f3f6fa;       /* 分组列、列头再暗一档 */
+  --c-canvas:#eef1f6;          /* 票面栏的底：页图必须压在灰底上才看得出边 */
+  --c-line:#e2e7ee;
+  --c-line-soft:#eff3f7;       /* 行分隔：密集表格里比 --c-line 轻一档才不吵 */
+  --c-line-strong:#c6d2e2;     /* 拖放框那种虚线 */
+  --c-line-hover:#a9bdd8;      /* 悬停描边（按钮、chip 共用这一个） */
+  --c-neutral:#eef2f7;         /* 中性 chip / badge 底 */
+
+  /* ── 文字三级：都要在白底和页面底上双双过 AA，tests 里算的是真比值 ── */
+  --c-text-1:#1c2430; --c-text-2:#5b6879; --c-text-3:#616e80;
+
+  /* ── 功能主色：唯一的交互色（选中、主按钮、链接、焦点）── */
+  --c-accent:#1c5fbf; --c-accent-hover:#18519f; --c-accent-line:#9cc3ee;
+  --c-accent-soft:#eaf1fb;     /* 徽标、管理员标签：跟主色沾边的底 */
+  --c-accent-sel:#eef5ff;      /* 选中行、当前状态点的底 */
+  --c-accent-glow:#f7faff;     /* 悬停底：比选中轻一档 */
+  --c-edited:#f4f9ff;          /* 改过的字段格：和「选中」差一档才看得出一实一虚 */
+  --c-focus:#cfe0f7;           /* 焦点描边 */
+  --c-focus-ring:#e6f0fb;      /* 输入框聚焦那圈外发光 */
+  --c-inverse:#fff;            /* 压在深色上的字（主按钮、toast）——不是「卡片底」那个白 */
+
+  /* ── 语义状态：只用于状态，不参与装饰 ── */
+  --c-ok:#1f8b4d;     --c-ok-text:#1f8b4d;  --c-ok-bg:#eef7f0;
+  --c-warn:#b8602a;  --c-warn-text:#8c4a17; --c-warn-bg:#fdf1e6; --c-warn-line:#eccdb0;
+  --c-warn-strip:#fff8f1;                   /* 提示条整条的底 */
+  --c-bad:#c0392b;   --c-bad-text:#9c2b20;  --c-bad-bg:#fdeceb;  --c-bad-line:#eec7c3;
+
+  /* ── 票面定位高亮：功能色，别拿它去点缀界面 ── */
+  --c-locate:rgba(255,196,0,.30); --c-locate-hi:rgba(255,196,0,.62); --c-locate-line:rgba(28,95,191,.9);
+  --c-hit:#fff3d6;                            /* 台账里「找到这一行」闪一下 */
+
+  /* ── 深色浮层 ── */
+  --c-gate:rgba(20,28,40,.86);                /* 登录遮罩：压深到「一眼就是停着」 */
+  --c-toast:#22303f; --c-toast-ok:#186b3d; --c-toast-bad:#8f2b21;
+
+  /* ── 圆角：四档 ── */
+  --r-sm:4px;      /* badge、版本号这类小片 */
+  --r-md:6px;      /* 按钮、输入框 */
+  --r-lg:10px;     /* 卡片、浮层列表 */
+  --r-pill:99px;   /* chip、角色标签 */
+
+  /* ── 阴影：只用来区分「贴在页面上」和「浮起来盖住别的」── */
+  --sh-1:0 1px 8px rgba(20,32,48,.16);   /* 页图、主单资料卡 */
+  --sh-2:0 6px 24px rgba(20,32,48,.16);  /* 展开的窄轨列表、toast */
+
+  /* ── 层级：顺序是有意义的，谁压谁写在这儿，别在组件里随手加 ── */
+  --z-th:5;        /* 表头 */
+  --z-sticky:12;   /* 待办条、底部操作条（钉在栏内） */
+  --z-hdr:20;      /* 顶栏 */
+  --z-rail:25;     /* 窄轨：sticky 自成层叠上下文，浮层要连着它一起想 */
+  --z-pop:40;      /* 窄轨展开的覆盖式列表 */
+  --z-gate:80;     /* 登录遮罩 */
+  --z-toast:90;    /* 提示：必须压在遮罩之上——「登录已过期」正是和遮罩同时弹的 */
+
+  /* ── 动效 ── */
+  --dur-fast:.12s; --dur:.2s; --dur-slow:.4s;
+  --ez-out:cubic-bezier(.22,1,.36,1);
+  --ez-spring:cubic-bezier(.34,1.56,.64,1);
+
+  /* ── 布局：两个高度由 JS 实测写回（desk.js measureChrome），这里的值只是首屏兜底 ── */
+  --hdh:54px;      /* 顶栏：1020-1460px 会折成两排 */
+  --todoH:37px;    /* 待办条 */
+  --stick:calc(var(--hdh) + 10px);   /* 窄轨/票面栏/字段栏的 sticky top，跟着实测顶栏走 */
+}
+
+/* ↓ 旧令牌名。换色板那一步与被引用处、那条按名字读字面值的 WCAG 用例同批删除；
+   这里必须是字面重复值而不是 var 别名——别名会让那条用例读不到十六进制而 KeyError。 */
 :root{
   --bg:#f4f6f9; --panel:#fff; --line:#e2e7ee; --ink:#1c2430; --ink2:#5b6879; --ink3:#616e80;
-  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7; --hdh:54px; --todoH:37px;   /* 待办条高度：表头吸顶时要让开它 */
+  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7;
 }

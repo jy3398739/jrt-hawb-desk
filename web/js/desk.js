@@ -1137,10 +1137,21 @@ function renderMain(){
       <button class="btn gh" id="dropOne">从列表移除</button>
     </div>`;
   wireMain(t);
-  // 待办条的真实高度量一次给表头吸顶用：写死数字会在文字换行那天把第一行字段压住
-  const tb = el.querySelector(".todo");
-  if (tb) document.documentElement.style.setProperty("--todoH", tb.offsetHeight + "px");
+  measureChrome();
   $("#main").querySelectorAll("textarea").forEach(autoGrow);
+}
+/* 吸顶高度是量出来的，不是抄下来的：顶栏在 1020-1460px 会折成两排、待办条会随红旗多少换行，
+   写死一次就在折行那天压住第一行字段（--todoH 有过这个教训，--hdh 从前干脆只是个静态令牌）。
+   两个都由这里写回，ResizeObserver 负责"变了再量一次"，renderMain 负责"刚画完就先量一次"。 */
+function measureChrome(){
+  const r = document.documentElement, hdr = $(".hdr"), tb = $("#main .todo");
+  if (hdr) r.style.setProperty("--hdh", hdr.offsetHeight + "px");
+  if (tb) r.style.setProperty("--todoH", tb.offsetHeight + "px");
+}
+if (window.ResizeObserver){
+  const ro = new ResizeObserver(measureChrome);
+  ro.observe($(".hdr"));
+  ro.observe($("#main"));        // 待办条是渲染出来的、节点会换，观察整栏：内容一改高度就重算
 }
 function todoText(t, ef){
   const empt = FIELDS.filter(x => !String(airVal(t, x[0]) || "").trim()).length;
