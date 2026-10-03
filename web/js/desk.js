@@ -56,7 +56,7 @@ const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm"
 const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
 const SUBMIT_URL = BASE + "/submit";
 
-const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts"};
+const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -82,6 +82,13 @@ function toast(msg, kind){
   while (box.children.length > 4) box.removeChild(box.firstChild);   // 上限：堆几十条等于没有
   el.addEventListener("click", () => el.remove());                   // 看一眼就能手动关掉，不用等它自己消失
   setTimeout(() => el.remove(), kind === "bad" ? 9000 : 3500);       // 失败留久一点：那是要拿去改的东西
+}
+/* 定位这件事在界面上只剩六个字（点字段名 → 定位票面），第一次核票的人不知道那能点。
+   所以首次解析成功时提一次，提过就写进 localStorage——天天弹同一句就是噪音。 */
+function hintLocate(){
+  if (localStorage.getItem(LS.hintLocate)) return;
+  localStorage.setItem(LS.hintLocate, "1");
+  toast("点右边的字段名，左边票面会定位并放大对应原文", "ok");
 }
 const esc = L.esc;
 /* ── 轮度调度器：三处"等结果"共用一个（主单检索、主单核对、解析作业） ──────────────
@@ -471,7 +478,7 @@ async function loadPreview(t){
   releasePreview();
   $("#pvName").textContent = t ? (t.filename || "") : "";
   $("#pvTools").hidden = !t;
-  if (!t){ pvBody(`<div class="empty">上传分单后这里显示票面原件，和右边字段逐条核对。</div>`); return; }
+  if (!t){ pvBody(`<div class="empty">上传分单后显示票面。</div>`); return; }
   const kind = fileKind(t.filename);
   /* 有归档就一律走我们渲染的页图（页图模式没有阅读器侧栏/工具栏，两家浏览器表现一致）；
      /render 拿不到（没勾落盘、或刚上传还没归档）才退回下面这条 blob 老路。 */
@@ -488,7 +495,7 @@ async function loadPreview(t){
     if (!r.ok){
       const j = await r.json().catch(() => ({}));
       pvBody(`<div class="empty">${esc(j.detail || ("取票面失败 HTTP " + r.status))}<br>
-        <span class="sub">上传时勾上「落盘留档」才会归档原件。</span></div>`);
+        <span class="sub">要回看票面，上传时勾「落盘留档」。</span></div>`);
       return;
     }
     const blob = await r.blob();
@@ -623,7 +630,7 @@ async function showLocPage(page, seq){
       if (LOC.url) URL.revokeObjectURL(LOC.url);
       src = LOC.url = URL.createObjectURL(await r.blob());
     }catch(e){ pvBody(`<div class="empty">取票面页图失败：${esc(String(e.message || e))}<br>
-        <span class="sub">上传时勾上「落盘留档」才会归档原件，服务器才能按页渲染。</span></div>`); return; }
+        <span class="sub">按页渲染读的是归档原件：上传时勾「落盘留档」。</span></div>`); return; }
   }
   if (seq !== _pvSeq) return;                 // 期间又点了别的字段/票，这份丢掉
   const boxes = LOC.hits.filter(l => (l.page || 1) === LOC.page).map(l => {
@@ -796,6 +803,7 @@ async function runQueue(){
                         qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ll:j.transcript || null});
       if (S.sel === t.filename) S.sel = t.stem;
       saveDraft(t);
+      hintLocate();          // 第一次解析成功时提一次「点字段名能定位」，之后不再啰嗦
     }catch(e){
       t.state = "failed"; t.error = String(e.message || e);
     }
@@ -1073,15 +1081,15 @@ function renderMain(){
   }
   if (t.state === "busy" || t.state === "queued"){
     el.innerHTML = `<div class="empty empty-hero">正在解析 ${esc(t.filename)}…<br>
-      <span class="sub">扫描件约 7-20 秒；Excel 先由 LibreOffice 转 PDF，再直读文字层，通常更快。</span></div>`;
+      <span class="sub">扫描件约 7-20 秒，Excel 通常更快。</span></div>`;
     return;
   }
   if (t.state === "failed"){
     el.innerHTML = `<div class="hd"><span class="nm">${esc(t.filename)}</span></div>
       <div class="empty empty-err">解析失败：${esc(t.error || "未知错误")}<br><br>
       <button class="btn pri" id="retryParse">重试解析</button><br><br>
-      <span class="sub">Request timed out 多是模型服务临时拥堵，等一会儿点上面按钮重试即可，不用重新上传。
-      其它常见原因：登录已过期（401，请重新登录）、文件超上限（413）、原件读不出。</span></div>`;
+      <span class="sub">超时多是模型临时拥堵：等一会儿点「重试解析」，不用重新上传。
+      其它：登录过期（401，重新登录）、文件超限（413）、原件读不出。</span></div>`;
     $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
   }
@@ -1124,7 +1132,7 @@ function renderMain(){
       <button class="btn sm" id="jumpFirst" type="button">跳到首个红旗字段</button>
       <label><input type="checkbox" id="onlyFlag"> 只看有红旗 / 空值的字段</label>
       <span class="sp"></span>
-      <span class="hint">点左边字段名 → 票面定位并放大对应原文</span>
+      <span class="hint">点字段名 → 定位票面</span>
     </div>
     ${chips ? `<div class="chips">${chips}</div>` : ""}
     <table><thead><tr>
@@ -1735,8 +1743,7 @@ function renderDay(){
       <th>分单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
       <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th></tr></thead>
       <tbody>${rows}</tbody></table>
-      <p class="hint hintp">「公司发送状态」不在这一页：它要按主单去公司系统查（限流 10 次/秒）。
-      要看哪张已发给航司，点顶栏「主单检索」按主单号查那张主单下的全部票。</p>`;
+      <p class="hint hintp">「公司发送状态」要按主单去公司系统查（限流 10 次/秒）：点顶栏「主单检索」查那张主单下的全部票。</p>`;
 }
 $("#viewDesk").addEventListener("click", () => setView("desk"));
 $("#rail").addEventListener("click", e => {

@@ -40,7 +40,7 @@
         <div class="lgerr" id="lgErr" role="status" aria-live="polite" hidden></div>
         <button class="btn pri lgbtn" id="lgBtn" type="submit">登录</button>
       </form>
-      <div class="lghint">管理员 admin 登录后，可在「账号管理」给制单员（马殿齐 / 宛平 / 陈新 / 叶庭伸 / 赵文宇 / 杨皓荃 / 隗一航 / 董文志）下发或重置密码。</div>
+      <div class="lghint">制单员口令请在「账号管理」里下发。</div>
     </div>
   </div>
 </div>
@@ -60,7 +60,7 @@
       <button class="btn sm pri" id="acAdd">保存</button>
     </div>
     <div class="lgerr" id="acctErr" role="status" aria-live="polite" hidden></div>
-    <div class="lghint">制单员可上传、看票面、核对与提交；主单检索（原录入员检索台）已并入制单台：登录后点顶栏「主单检索」或滚到该卡片即可；只有管理员能切换模型与在此管理账号。改管理员自己的口令：在上方填 admin + 新口令保存即可。</div>
+    <div class="lghint">制单员：上传、看票面、核字段、提交。只有管理员能切模型与管账号。改自己的口令：上方填 admin + 新口令保存。</div>
   </div>
 </div>
 
@@ -74,8 +74,8 @@
     <section class="card">
       <div class="t">上传分单<span class="sp"></span><span class="n" id="cnt">0 票</span></div>
       <div class="drop" id="drop">
-        <b>把分单拖进来</b>
-        图片 / PDF / Excel 电子单，逐张解析后在此排队
+        <b>拖入分单</b>
+        图片 / PDF / Excel
         <div class="btns"><button class="btn pri" id="pick">选择文件</button></div>
       </div>
       <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
@@ -87,7 +87,7 @@
         <input id="mstNo" type="text" aria-label="主单号" placeholder="主单号，如 235-96146363" size="18">
         <button class="btn sm pri" id="mstGo">检索</button>
       </div>
-      <div class="hint">按主单号取回主单原生资料并自动解析；名下分单列在页面底部长条里，原件点开即看。原录入员检索台已并入本页。</div>
+      <div class="hint">按主单号取回主单资料并自动解析，名下分单列在页面底部。</div>
       <div id="mstResult"></div>
     </section>
     <section class="card stack">
@@ -120,15 +120,12 @@
       <button class="btn sm" id="pvDl">下载原件</button>
     </div>
     <div class="pv" id="pvBody">
-      <div class="empty">上传分单后这里显示票面原件，和右边字段逐条核对。</div>
+      <div class="empty">上传分单后显示票面。</div>
     </div>
   </section>
 
   <section id="main">
-    <div class="empty empty-hero">
-      上传分单后在这里逐字段核对。<br>
-      <span class="sub">左边是票面原件，这里是航空口径全字段（国家两位码 / 城市三字码 / 电话归一），可直接改。<br>点字段名可在票面上定位并放大对应原文。</span>
-    </div>
+    <div class="empty empty-hero">上传分单后在这里逐字段核对。</div>
   </section>
 </div>
 
