@@ -164,6 +164,62 @@ def test_text_tokens_pass_wcag_aa_on_both_backgrounds():
             assert r >= 4.5, f"{ink} 在 {name}(#{bg}) 上只有 {r:.2f}:1，正文小字要 ≥4.5:1"
 
 
+""" ── 设计令牌的三条守卫（2026-10-03 立，先红后绿）────────────────────────────
+   外部方案说 desk.css 有 50 处硬编码色值——实测 69 处 hex + 6 处 rgba；它还说内联样式只有
+   index.html 的 8 处，漏了 desk.js 模板字符串里的 32 处（比 html 多一倍）。守卫扫的是三处，
+   不立起来的话「归口令牌」这件事每一轮都会重做一遍。"""
+
+# 十六进制色：3/4/6/8 位才算，长度 5 的一律不是色值（否则 $("#acAdd") 这种选择器会被当成颜色）
+_COLOR = re.compile(r"#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b|rgba?\(")
+
+
+def _code(text: str) -> str:
+    """去掉块注释但保住行数：注释里举的色值不生效，别被自己的注释判成违规，
+    而报错给的行号要能直接跳到那一行（注释经常跨行，整段删掉就全偏了）。"""
+    return re.sub(r"/\*.*?\*/", lambda m: "\n" * m.group(0).count("\n"), text, flags=re.S)
+
+
+def test_color_literals_only_live_in_tokens():
+    """颜色只有 tokens.css 一个来源。写死一处，换色板那天就得全文搜索，而「浅底小字糊成一片」
+    这类问题（§3.2）正是会在几十个写死值里被漏掉的那一类。tokens.css 里允许出现色值，
+    但只能出现在变量定义上——否则等于又开了第二个来源。"""
+    offenders = []
+    for rel in ("web/css/desk.css", "web/index.html", "web/js/desk.js"):
+        for n, line in enumerate(_code(web_src.part(rel)).splitlines(), 1):
+            if _COLOR.search(line):
+                offenders.append("%s:%d" % (rel, n))
+    assert not offenders, "色值写死了，该走 var(--…)：" + "、".join(offenders[:14]) + \
+        ("…（共 %d 处）" % len(offenders) if len(offenders) > 14 else "")
+    residue = re.sub(r"--[\w-]+\s*:[^;}]+", "", _code(web_src.part("web/css/tokens.css")))
+    assert not _COLOR.search(residue), "tokens.css 里有色值没挂在变量定义上"
+
+
+def test_no_inline_style_except_runtime_forms():
+    """内联 style 是第二份样式表：不吃令牌、desk.css 里搜不到，去卡片化/换色板必然漏。
+    只有「值当场算出来」的才留在行内——票面 bbox 的百分比、台账的列宽比例，它们是数据不是装饰。"""
+    allowed = ('style="left:', '<col style="width:')
+    offenders = []
+    for rel in ("web/index.html", "web/js/desk.js"):
+        for n, line in enumerate(web_src.part(rel).splitlines(), 1):
+            if "style=" in line and not any(a in line for a in allowed):
+                offenders.append("%s:%d %s" % (rel, n, line.strip()[:56]))
+    assert not offenders, "这些内联样式该收成 class：\n" + "\n".join(offenders[:24])
+
+
+def test_measured_tokens_are_re_measured():
+    """吸顶高度是量出来的，不是抄下来的：--todoH 从前写死，待办条一换行就把第一行字段压住，
+    后来改成 JS 实测；--hdh 却还留在 tokens.css 里当常量，而顶栏在 1020–1460px 会折成两排，
+    于是样式里那三处 64px（窄轨/票面栏/字段栏的 sticky top）在折行那天全都对不上。
+    所以两个令牌都要 JS 写入 + 尺寸变化后重测，样式里的魔法数换成派生令牌。"""
+    js, css = web_src.part("js/desk.js"), _code(web_src.css())
+    for name in ("--hdh", "--todoH"):
+        assert 'setProperty("%s"' % name in js, f"{name} 没由 JS 实测写入，静态值早晚和真实高度不一致"
+    assert "ResizeObserver" in js, "只测一次不算实测：窗口变窄顶栏折行后要重测"
+    for magic in ("top:64px", "calc(100vh - 78px)"):
+        assert magic not in css, f"「{magic}」是抄来的魔法数，该由 var(--stick)/栏高派生令牌给"
+    assert "#main.has-todo th{top:var(--todoH)}" in css, "表头给待办条让位的那条引用别丢"
+
+
 def test_desk_clickables_are_real_buttons_with_visible_focus():
     """可点的非元素（票行、字段名、chip、还原、分单号）从前是带 cursor:pointer 的 div/span/a：
     键盘 Tab 到不了、回车不触发、读屏器念不出它是可点的（§3.4 第 2 条）。
