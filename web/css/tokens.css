@@ -1,48 +1,58 @@
-/* 设计令牌：颜色/圆角/阴影/层级的唯一来源。tests/test_server_http.py 里那三条守卫会扫
+/* 设计令牌：颜色/圆角/阴影/层级/字阶的唯一来源。tests/test_server_http.py 里那三条守卫会扫
    desk.css、index.html、desk.js —— 再出现一个 hex 或 rgba 就是回归，改主题只改这一份。
-   本文件只做「把已有的值请进变量」，一个值都没改；换色板与排版是下一刀，单独可回退。
-   角色分工写在名字里：--c-x 填充、--c-x-text 文字、--c-x-bg 状态底、--c-x-line 状态描边，
-   同一种绿在点上是填充、在字上是文字，两者的合格对比度不是一个数（见那条 WCAG 用例）。 */
+   命名把"角色"写进名字里：--c-x 是填充（状态点、主按钮、3px 竖条），--c-x-text 是文字，
+   --c-x-bg 是状态底，--c-x-line 是状态描边。同一种绿当点和当字，合格对比度不是一个数：
+   点只要 ≥3.0，小字要 ≥4.5——所以绿橙红各配两个值，别为了少写一行而共用。
+   对比度不是"看着还行"：tests 里按 WCAG 相对亮度真算过每一对（含去卡片后的页面底）。 */
 :root{
-  /* ── 底与线 ── */
-  --c-bg:#f4f6f9;              /* 页面底 */
+  /* ── 底与线：控制塔灰，比原来冷一度 ── */
+  --c-bg:#f2f4f7;              /* 页面底 */
   --c-surface:#fff;            /* 卡片、按钮、输入框 */
-  --c-surface-2:#fbfcfe;       /* 表头、工具栏、待办条——比卡片暗一丝 */
-  --c-surface-3:#f3f6fa;       /* 分组列、列头再暗一档 */
-  --c-canvas:#eef1f6;          /* 票面栏的底：页图必须压在灰底上才看得出边 */
-  --c-line:#e2e7ee;
-  --c-line-soft:#eff3f7;       /* 行分隔：密集表格里比 --c-line 轻一档才不吵 */
-  --c-line-strong:#c6d2e2;     /* 拖放框那种虚线 */
-  --c-line-hover:#a9bdd8;      /* 悬停描边（按钮、chip 共用这一个） */
-  --c-neutral:#eef2f7;         /* 中性 chip / badge 底 */
+  --c-surface-2:#f8fafc;       /* 表头、工具栏、待办条——比卡片暗一丝 */
+  --c-surface-3:#eef2f7;       /* 分组列、列头再暗一档 */
+  --c-canvas:#e8edf4;          /* 票面栏的底：页图必须压在灰底上才看得出边 */
+  --c-line:#dfe5ec;            /* 装饰性分隔线：有意不过 AA（它的作用就是"轻"），别顺手改粗 */
+  --c-line-soft:#eaeef4;       /* 行分隔：密集表格里比 --c-line 再轻一档才不吵 */
+  --c-line-strong:#c3cedd;     /* 拖放框那种虚线 */
+  --c-line-hover:#a3b3c8;      /* 悬停描边（按钮、chip 共用这一个） */
+  --c-neutral:#e9eef5;         /* 中性 chip / badge 底 */
 
-  /* ── 文字三级：都要在白底和页面底上双双过 AA，tests 里算的是真比值 ── */
-  --c-text-1:#1c2430; --c-text-2:#5b6879; --c-text-3:#616e80;
+  /* ── 文字三级：在白底与页面底上双双过 AA，最暗的一档也留足余量 ── */
+  --c-text-1:#0f172a; --c-text-2:#475569; --c-text-3:#5b6779;
 
   /* ── 功能主色：唯一的交互色（选中、主按钮、链接、焦点）── */
-  --c-accent:#1c5fbf; --c-accent-hover:#18519f; --c-accent-line:#9cc3ee;
-  --c-accent-soft:#eaf1fb;     /* 徽标、管理员标签：跟主色沾边的底 */
-  --c-accent-sel:#eef5ff;      /* 选中行、当前状态点的底 */
-  --c-accent-glow:#f7faff;     /* 悬停底：比选中轻一档 */
-  --c-edited:#f4f9ff;          /* 改过的字段格：和「选中」差一档才看得出一实一虚 */
-  --c-focus:#cfe0f7;           /* 焦点描边 */
-  --c-focus-ring:#e6f0fb;      /* 输入框聚焦那圈外发光 */
+  --c-accent:#1d4ed8; --c-accent-hover:#1e40af; --c-accent-line:#93b8f0;
+  --c-accent-soft:#e7efff;     /* 徽标、管理员标签：跟主色沾边的底 */
+  --c-accent-sel:#e0eaff;      /* 选中行、当前状态点的底 */
+  --c-accent-glow:#f5f9ff;     /* 悬停底：比选中轻一档 */
+  --c-edited:#eef4ff;          /* 改过的字段格：和「选中」差一档才看得出一实一虚 */
+  --c-focus:#1d4ed8;           /* 键盘焦点描边：就用主色，从前那支浅蓝在浅底上几乎看不见 */
+  --c-focus-ring:#dbeafe;      /* 输入框聚焦那圈外发光 */
   --c-inverse:#fff;            /* 压在深色上的字（主按钮、toast）——不是「卡片底」那个白 */
 
   /* ── 语义状态：只用于状态，不参与装饰 ── */
-  --c-ok:#1f8b4d;     --c-ok-text:#1f8b4d;  --c-ok-bg:#eef7f0;
-  --c-warn:#b8602a;  --c-warn-text:#8c4a17; --c-warn-bg:#fdf1e6; --c-warn-line:#eccdb0;
-  --c-warn-strip:#fff8f1;                   /* 提示条整条的底 */
-  --c-bad:#c0392b;   --c-bad-text:#9c2b20;  --c-bad-bg:#fdeceb;  --c-bad-line:#eec7c3;
+  --c-ok:#059669;     --c-ok-text:#047857;  --c-ok-bg:#ecfdf5;
+  --c-warn:#c2650a;   --c-warn-text:#b45309; --c-warn-bg:#fffbeb; --c-warn-line:#fcd39b;
+  --c-warn-strip:#fff7ed;                   /* 提示条整条的底 */
+  --c-bad:#dc2626;    --c-bad-text:#b91c1c;  --c-bad-bg:#fef2f2;  --c-bad-line:#fbcaca;
 
   /* ── 票面定位高亮：功能色，别拿它去点缀界面 ── */
-  --c-locate:rgba(255,196,0,.30); --c-locate-hi:rgba(255,196,0,.62); --c-locate-line:rgba(28,95,191,.9);
-  --c-locate-halo:rgba(255,196,0,.35);        /* 定位脉冲外圈：只扩阴影，框本身不能缩 */
-  --c-hit:#fff3d6;                            /* 台账里「找到这一行」闪一下 */
+  --c-locate:rgba(250,204,21,.30); --c-locate-hi:rgba(250,204,21,.62); --c-locate-line:rgba(29,78,216,.9);
+  --c-locate-halo:rgba(250,204,21,.35);      /* 定位脉冲外圈：只扩阴影，框本身不能缩 */
+  --c-hit:#fef3c7;                           /* 台账里「找到这一行」闪一下 */
 
   /* ── 深色浮层 ── */
-  --c-gate:rgba(20,28,40,.86);                /* 登录遮罩：压深到「一眼就是停着」 */
-  --c-toast:#22303f; --c-toast-ok:#186b3d; --c-toast-bad:#8f2b21;
+  --c-gate:rgba(15,23,42,.86);               /* 登录遮罩：压深到「一眼就是停着」 */
+  --c-toast:#1f2937; --c-toast-ok:#065f46; --c-toast-bad:#991b1b;
+
+  /* ── 字阶与字重：六档字号、三档字重，正文数字一律等宽 ── */
+  --f-xs:11px;   /* 状态、列头、badge 这类密集小标签 */
+  --f-sm:12px;   /* 次要文字、说明、票行副行 */
+  --f-md:13px;   /* 控件与字段值：界面上读得最多的一档 */
+  --f-base:14px; /* 正文 */
+  --f-lg:15px;   /* 区块标题（票名、登录框） */
+  --f-xl:16px;   /* 页面标题 */
+  --w-normal:400; --w-semi:600; --w-bold:700;
 
   /* ── 圆角：四档 ── */
   --r-sm:4px;      /* badge、版本号这类小片 */
@@ -51,8 +61,8 @@
   --r-pill:99px;   /* chip、角色标签 */
 
   /* ── 阴影：只用来区分「贴在页面上」和「浮起来盖住别的」── */
-  --sh-1:0 1px 8px rgba(20,32,48,.16);   /* 页图、主单资料卡 */
-  --sh-2:0 6px 24px rgba(20,32,48,.16);  /* 展开的窄轨列表、toast */
+  --sh-1:0 1px 8px rgba(15,23,42,.14);
+  --sh-2:0 6px 24px rgba(15,23,42,.18);
 
   /* ── 层级：顺序是有意义的，谁压谁写在这儿，别在组件里随手加 ── */
   --z-th:5;        /* 表头 */
@@ -72,11 +82,4 @@
   --hdh:54px;      /* 顶栏：1020-1460px 会折成两排 */
   --todoH:37px;    /* 待办条 */
   --stick:calc(var(--hdh) + 10px);   /* 窄轨/票面栏/字段栏的 sticky top，跟着实测顶栏走 */
-}
-
-/* ↓ 旧令牌名。换色板那一步与被引用处、那条按名字读字面值的 WCAG 用例同批删除；
-   这里必须是字面重复值而不是 var 别名——别名会让那条用例读不到十六进制而 KeyError。 */
-:root{
-  --bg:#f4f6f9; --panel:#fff; --line:#e2e7ee; --ink:#1c2430; --ink2:#5b6879; --ink3:#616e80;
-  --ok:#1f8b4d; --warn:#b8602a; --bad:#c0392b; --edit:#1c5fbf; --chip:#eef2f7;
 }

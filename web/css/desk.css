@@ -1,7 +1,9 @@
 /* 组件样式。颜色/圆角/阴影/层级一律走 tokens.css，守卫用例会扫这份，出现 hex 或 rgba 就是回归。
    本轮只是把值请进令牌，一个色值都没改——换色板与排版是单独一刀，觉得不对可以只退那一刀。*/
 *{box-sizing:border-box}
-body{margin:0;background:var(--c-bg);color:var(--c-text-1);font:14px/1.5 "Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+body{margin:0;background:var(--c-bg);color:var(--c-text-1);
+  font:var(--f-base)/1.5 "Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}   /* 件数/重量/单号要能竖着比：数字不等宽时核票会看串行 */
 button{font:inherit;cursor:pointer}
 /* 键盘焦点必须看得见：从前输入框聚焦时把描边关掉了，改哪一格看不见光标落在哪。
    :focus-visible 让鼠标点击不描边、Tab 到了一定描边。 */
@@ -9,18 +11,18 @@ button{font:inherit;cursor:pointer}
 input,textarea{font:inherit;color:inherit}
 .hdr{position:sticky;top:0;z-index:var(--z-hdr);background:var(--c-surface);border-bottom:1px solid var(--c-line);
   padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-.hdr h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
+.hdr h1{font-size:var(--f-xl);margin:0;font-weight:var(--w-bold);letter-spacing:.5px}
 .sp{flex:1}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--c-text-3);flex:none}
 .dot.ok{background:var(--c-ok)}.dot.warn{background:var(--c-warn)}.dot.bad{background:var(--c-bad)}
 .dot.busy{background:var(--c-accent);animation:pulse 1s infinite alternate}
 @keyframes pulse{to{opacity:.25}}
-.svc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-2)}
-.svc b{color:var(--c-text-1);font-weight:600}
-.svc .svc-warn{color:var(--c-warn-text);font-weight:600}
-.svc .svc-bad{color:var(--c-bad-text);font-weight:600}
-.ver{font-size:11px;font-weight:600;color:var(--c-accent);background:var(--c-accent-soft);border-radius:var(--r-sm);padding:1px 6px;margin-left:6px;vertical-align:middle}
-.f{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-2)}
+.svc{display:flex;align-items:center;gap:6px;font-size:var(--f-sm);color:var(--c-text-2)}
+.svc b{color:var(--c-text-1);font-weight:var(--w-semi)}
+.svc .svc-warn{color:var(--c-warn-text);font-weight:var(--w-semi)}
+.svc .svc-bad{color:var(--c-bad-text);font-weight:var(--w-semi)}
+.ver{font-size:var(--f-xs);font-weight:var(--w-semi);color:var(--c-accent);background:var(--c-accent-soft);border-radius:var(--r-sm);padding:1px 6px;margin-left:6px;vertical-align:middle}
+.f{display:flex;align-items:center;gap:6px;font-size:var(--f-sm);color:var(--c-text-2)}
 /* .f 的 display:flex 会盖过 UA 的 [hidden]{display:none}，不补这条则 applyRole 收起模型下拉/身份条形同虚设 */
 .f[hidden]{display:none}
 .f input[type=text],.f input[type=password],.f select{border:1px solid var(--c-line);border-radius:var(--r-md);padding:5px 8px;background:var(--c-surface-2)}
@@ -36,8 +38,8 @@ input,textarea{font:inherit;color:inherit}
    从前展开列表靠"没跟 #view 重叠"侥幸不撞，窄一点就要被票面栏盖掉半截。 */
 .rail{position:sticky;top:var(--stick);z-index:var(--z-rail);align-self:stretch;display:flex;flex-direction:column;align-items:center;
   gap:8px;padding:6px 0}
-.rail .railBtn{padding:2px 6px;min-height:28px;font-size:14px;line-height:1}
-.railPrg{font-size:11px;color:var(--c-text-2);text-align:center;font-variant-numeric:tabular-nums}
+.rail .railBtn{padding:2px 6px;min-height:28px;font-size:var(--f-base);line-height:1}
+.railPrg{font-size:var(--f-xs);color:var(--c-text-2);text-align:center;font-variant-numeric:tabular-nums}
 .railDots{display:flex;flex-direction:column;align-items:center;gap:4px;overflow:auto;max-height:60vh;width:100%}
 .railDots .rd{display:flex;align-items:center;justify-content:center;width:32px;min-height:28px;
   border:0;background:transparent;cursor:pointer;border-radius:var(--r-md)}
@@ -55,18 +57,18 @@ input,textarea{font:inherit;color:inherit}
   border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;border-radius:var(--r-md)}
 .railList .rr:hover{background:var(--c-accent-glow)}
 .railList .rr[aria-current="true"]{background:var(--c-accent-sel);box-shadow:inset 3px 0 0 var(--c-accent)}
-.railList .rr .nm{flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.railList .rr .st{font-size:11px;color:var(--c-text-2);white-space:nowrap}
+.railList .rr .nm{flex:1;min-width:0;font-size:var(--f-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.railList .rr .st{font-size:var(--f-xs);color:var(--c-text-2);white-space:nowrap}
 /* 待办条置顶、操作条常驻底部：#main 自己滚，核到最后一个字段时也看得见"还剩什么"和提交 */
 .todo{position:sticky;top:0;z-index:var(--z-sticky);display:flex;gap:10px;align-items:center;flex-wrap:wrap;
-  padding:7px 12px;background:var(--c-surface);border-bottom:1px solid var(--c-line);font-size:12.5px}
-.todo .lbl{font-weight:700}
+  padding:7px 12px;background:var(--c-surface);border-bottom:1px solid var(--c-line);font-size:var(--f-sm)}
+.todo .lbl{font-weight:var(--w-bold)}
 .ft.bottom{position:sticky;bottom:0;z-index:var(--z-sticky);background:var(--c-surface);border-top:1px solid var(--c-line)}
 .card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-lg)}
 /* .t 是"区块标题行"，跟卡片皮没关系：去卡片化后票面栏/字段栏/台账都还要用它。 */
-.t{padding:10px 12px;border-bottom:1px solid var(--c-line);font-weight:700;font-size:13px;
+.t{padding:10px 12px;border-bottom:1px solid var(--c-line);font-weight:var(--w-bold);font-size:var(--f-md);
   display:flex;align-items:center;gap:8px}
-.t .n{font-weight:400;color:var(--c-text-3);font-size:12px}
+.t .n{font-weight:var(--w-normal);color:var(--c-text-3);font-size:var(--f-sm)}
 /* 去卡片化：票面栏、字段栏和两张整宽表不再套边框与圆角——它们是工作台本身，不是"一张卡片"。
    边界改由分隔线和底色差承担：标题行的下边线、字段栏的白底、票面栏的灰底、宽屏时两者之间那道竖线。
    仍然留卡片的是侧栏三块与两个浮层——那里是真的交互容器，登录框更得有表面才读得下去。 */
@@ -82,17 +84,17 @@ input,textarea{font:inherit;color:inherit}
 .drop.hot{border-color:var(--c-accent);background:var(--c-accent-sel);color:var(--c-accent)}
 .drop b{display:block;color:var(--c-text-1);margin-bottom:2px}
 .drop .btns{margin-top:9px}
-.btn{border:1px solid var(--c-line);background:var(--c-surface);border-radius:var(--r-md);padding:6px 11px;font-size:13px;
+.btn{border:1px solid var(--c-line);background:var(--c-surface);border-radius:var(--r-md);padding:6px 11px;font-size:var(--f-md);
   transition:border-color var(--dur-fast),background var(--dur-fast)}
 .btn:hover:not(:disabled){border-color:var(--c-line-hover);background:var(--c-accent-glow)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn.pri{background:var(--c-accent);border-color:var(--c-accent);color:var(--c-inverse)}
 .btn.pri:hover:not(:disabled){background:var(--c-accent-hover)}
-.btn.sm{padding:2px 8px;font-size:12px;min-height:28px}   /* 点按目标要够大：从前只有 22px 高 */
+.btn.sm{padding:2px 8px;font-size:var(--f-sm);min-height:28px}   /* 点按目标要够大：从前只有 22px 高 */
 /* 视图切换（核对工作台 / 今日台账）：一副分段控件，选中段实心。白字压在 --c-accent 上约 5.1:1 */
 .seg{display:inline-flex;align-items:center;border:1px solid var(--c-line);border-radius:var(--r-md);overflow:hidden}
 .seg .btn{border:0;border-radius:0;background:var(--c-surface);color:var(--c-text-2);min-height:30px;padding:2px 12px}
-.seg .btn.on{background:var(--c-accent);color:var(--c-inverse);font-weight:600}
+.seg .btn.on{background:var(--c-accent);color:var(--c-inverse);font-weight:var(--w-semi)}
 .btn.gh{border-style:dashed;color:var(--c-text-2);background:transparent}
 .list{max-height:calc(100vh - 250px);overflow:auto}
 /* 票行 / 还原 / 字段名 / 分单号 / 红旗跳转从前是带 cursor:pointer 的 div、span、a：
@@ -104,36 +106,36 @@ input,textarea{font:inherit;color:inherit}
   width:100%;text-align:left;transition:background var(--dur-fast)}
 .row:hover{background:var(--c-accent-glow)}
 .row.sel{background:var(--c-accent-sel);box-shadow:inset 3px 0 0 var(--c-accent)}
-.row .nm{flex:1;min-width:0;font-size:12.5px;line-height:1.35;word-break:break-all}
-.row .nm .m{color:var(--c-text-3);font-size:11px}
-.row .st{font-size:11px;color:var(--c-text-2);white-space:nowrap;text-align:right}
+.row .nm{flex:1;min-width:0;font-size:var(--f-sm);line-height:1.35;word-break:break-all}
+.row .nm .m{color:var(--c-text-3);font-size:var(--f-xs)}
+.row .st{font-size:var(--f-xs);color:var(--c-text-2);white-space:nowrap;text-align:right}
 .row .dot{margin-top:5px}                     /* 点要跟两行票名顶部对齐，不是居中 */
 .st-edited{color:var(--c-accent)}             /* 「改 N 项」：只有编辑过才出现 */
-.empty{padding:20px 14px;color:var(--c-text-3);font-size:12.5px}
+.empty{padding:20px 14px;color:var(--c-text-3);font-size:var(--f-sm)}
 .empty-hero{padding:64px 20px;text-align:center}      /* 整栏空状态：等一张票进来时的那块白 */
-.empty .sub{font-size:12px;color:var(--c-text-3)}     /* 空状态里的第二行说明 */
+.empty .sub{font-size:var(--f-sm);color:var(--c-text-3)}     /* 空状态里的第二行说明 */
 .empty-err{color:var(--c-bad)}                        /* 解析失败的整块空状态 */
 .hd{padding:12px;border-bottom:1px solid var(--c-line);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
 .hd .dot{margin-top:6px}
-.hd .nm{font-weight:700;font-size:15px;word-break:break-all}
-.hd .meta{color:var(--c-text-3);font-size:12px;margin-top:2px}
+.hd .nm{font-weight:var(--w-bold);font-size:var(--f-lg);word-break:break-all}
+.hd .meta{color:var(--c-text-3);font-size:var(--f-sm);margin-top:2px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:var(--c-warn-strip);border-bottom:1px solid var(--c-warn-line)}
-.chip{font-size:12px;background:var(--c-neutral);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:2px 9px;
+.chip{font-size:var(--f-sm);background:var(--c-neutral);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:2px 9px;
   color:var(--c-text-2);max-width:100%;display:inline-flex;align-items:center;gap:2px;min-height:28px}
 /* chip 里两个动作各一个按钮：跳到字段（chipb）与确认这条提示（ackb）。没有对应字段的（chipx）就只有文字。 */
 .chip .chipb{padding:0;text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}
-.chip .ackb{cursor:pointer;margin-left:6px;padding:0 7px;font-size:11px;border:1px solid currentColor;
+.chip .ackb{cursor:pointer;margin-left:6px;padding:0 7px;font-size:var(--f-xs);border:1px solid currentColor;
   border-radius:var(--r-pill);background:transparent;color:inherit;opacity:.7;min-height:24px}
 .chip .ackb:hover{opacity:1;background:var(--c-surface)}
 .chip:hover{border-color:var(--c-line-hover)}
 .chip.warn{background:var(--c-warn-bg);border-color:var(--c-warn-line);color:var(--c-warn-text)}
 .chip.bad{background:var(--c-bad-bg);border-color:var(--c-bad-line);color:var(--c-bad-text)}
 .tools{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--c-line);
-  background:var(--c-surface-2);flex-wrap:wrap;font-size:12px;color:var(--c-text-2)}
+  background:var(--c-surface-2);flex-wrap:wrap;font-size:var(--f-sm);color:var(--c-text-2)}
 .tools label{display:flex;gap:5px;align-items:center}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-th{position:sticky;top:var(--hdh);z-index:var(--z-th);background:var(--c-surface-2);text-align:left;font-size:11.5px;color:var(--c-text-3);
-  font-weight:600;padding:7px 10px;border-bottom:1px solid var(--c-line);letter-spacing:.3px}
+th{position:sticky;top:var(--hdh);z-index:var(--z-th);background:var(--c-surface-2);text-align:left;font-size:var(--f-xs);color:var(--c-text-3);
+  font-weight:var(--w-semi);padding:7px 10px;border-bottom:1px solid var(--c-line);letter-spacing:.3px}
 th.g{background:var(--c-surface-3);color:var(--c-text-2)}
 th.num{text-align:right}
 tr.hit{animation:hitFlash 1.5s var(--ez-out) 1}   /* 从红旗 chip 跳过来的那一行：闪一下告诉人跳到哪了 */
@@ -141,27 +143,27 @@ tr.hit{animation:hitFlash 1.5s var(--ez-out) 1}   /* 从红旗 chip 跳过来的
 td{border-bottom:1px solid var(--c-line-soft);vertical-align:top;padding:0}
 td.k{padding:8px 10px;width:206px;background:var(--c-surface-2)}
 /* .kk/.ky 在定位按钮里是 span（<button> 只能装短语内容），靠 display:block 保持一行一个 */
-td.k .kk{font-weight:600;font-size:13px;display:block}
-td.k .ky{color:var(--c-text-3);font-size:11px;font-family:Consolas,monospace;display:block}
+td.k .kk{font-weight:var(--w-semi);font-size:var(--f-md);display:block}
+td.k .ky{color:var(--c-text-3);font-size:var(--f-xs);font-family:Consolas,monospace;display:block}
 td.c{padding:6px 8px}
 td.c.edited{background:var(--c-edited)}
 tr.flag td.k{box-shadow:inset 3px 0 0 var(--c-warn)}
-tr.grp td{background:var(--c-neutral);padding:6px 12px;font-weight:700;font-size:12px;color:var(--c-text-2);letter-spacing:1px}
+tr.grp td{background:var(--c-neutral);padding:6px 12px;font-weight:var(--w-bold);font-size:var(--f-sm);color:var(--c-text-2);letter-spacing:1px}
 td.v textarea,td.v input{width:100%;border:1px solid transparent;background:transparent;border-radius:var(--r-md);
-  padding:6px 7px;resize:vertical;font-size:13px;line-height:1.45;min-height:32px}
+  padding:6px 7px;resize:vertical;font-size:var(--f-md);line-height:1.45;min-height:32px}
 td.v textarea{max-height:320px;overflow-y:auto}
 td.v textarea:hover,td.v input:hover{border-color:var(--c-line-strong);background:var(--c-surface)}
 td.v textarea:focus,td.v input:focus{outline:2px solid var(--c-accent-line);outline-offset:-1px;border-color:var(--c-accent-line);
   background:var(--c-surface);box-shadow:0 0 0 3px var(--c-focus-ring)}
 td.s{width:120px;padding:8px 10px;text-align:right}
-.note{font-size:11px;margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
-.note .q{color:var(--c-warn)}.note .b{color:var(--c-bad)}.note .e{color:var(--c-accent)}
+.note{font-size:var(--f-xs);margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.note .q{color:var(--c-warn-text)}.note .b{color:var(--c-bad-text)}.note .e{color:var(--c-accent)}
 .note .rs{color:var(--c-text-3);cursor:pointer;text-decoration:underline dotted;display:inline-block;
   min-height:28px;padding:0 4px}
-.badge{font-size:11px;padding:1px 6px;border-radius:var(--r-sm);background:var(--c-neutral);color:var(--c-text-2);white-space:nowrap}
+.badge{font-size:var(--f-xs);padding:1px 6px;border-radius:var(--r-sm);background:var(--c-neutral);color:var(--c-text-2);white-space:nowrap}
 .badge.miss{background:var(--c-bad-bg);color:var(--c-bad-text)}.badge.warn{background:var(--c-warn-bg);color:var(--c-warn-text)}
 .badge.same{background:var(--c-ok-bg);color:var(--c-ok-text)}
-.mvnotes{margin:0;padding:2px 16px 10px 30px;font-size:12px;color:var(--c-text-2);line-height:1.75}
+.mvnotes{margin:0;padding:2px 16px 10px 30px;font-size:var(--f-sm);color:var(--c-text-2);line-height:1.75}
 /* 名下分单整宽卡：一个主单下几十张分单时表格自己滚、表头粘住，
    不再塞回 264px 的左栏（那里五列就挤成竖排了） */
 #mstHawbBox{max-height:440px;overflow:auto;padding:0 4px 4px}
@@ -169,14 +171,14 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 #mstHawbBox td{padding:7px 8px}
 .ft{padding:10px 12px;border-top:1px solid var(--c-line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ft.top{border-top:0;border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
-.hint{font-size:12px;color:var(--c-text-2)}
+.hint{font-size:var(--f-sm);color:var(--c-text-2)}
 /* 表格/结果底下那段说明：段落的 UA 边距归零，换成一道内边距（从前四处各写各的 padding，
    6px/8px/10px/12px 都有，同一个"下面补一句话"长四种样子）。父容器自己有内边距的用 .flush。 */
 .hintp{margin:0;padding:16px 12px}
 .hintp.flush{padding-inline:0}
 /* 主单检索卡片（并入自录入员检索台）用的小标题与等宽列 */
-.t2{font-size:13px;font-weight:600;margin:14px 0 4px}
-.j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.t2{font-size:var(--f-md);font-weight:var(--w-semi);margin:14px 0 4px}
+.j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:var(--f-sm)}
 .j.cell{padding:7px 8px}                     /* 主单表里当单元格用的那种 */
 /* 主单资料借票面栏展示：那一栏底色是灰的且居中，纯文字要一张左对齐白卡才读得下去 */
 .pv .mvtxt{text-align:left;background:var(--c-surface);padding:12px 14px;box-shadow:var(--sh-1)}
@@ -194,7 +196,7 @@ td.s{width:120px;padding:8px 10px;text-align:right}
   #main.has-todo th{top:var(--todoH)}   /* 待办条压在上面时表头要跟着让出它的高度 */
   #view{border-right:1px solid var(--c-line)}   /* 去卡片后票面与字段之间靠这道竖线分开 */
 }
-#view .t .pvname{margin-left:auto;font-weight:400;color:var(--c-text-3);font-size:11.5px;max-width:58%;
+#view .t .pvname{margin-left:auto;font-weight:var(--w-normal);color:var(--c-text-3);font-size:var(--f-xs);max-width:58%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pvtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 10px;
   border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
@@ -218,7 +220,7 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 /* 不压掉原生拖拽的话，按住图片拖出去的是图片本身，而不是视野 */
 #pvBody img{-webkit-user-drag:none;user-select:none}
 .pv iframe{width:100%;height:100%;min-height:440px;border:0;background:var(--c-surface)}
-.pv .empty{padding:26px 14px;color:var(--c-text-3);font-size:12.5px;text-align:left}
+.pv .empty{padding:26px 14px;color:var(--c-text-3);font-size:var(--f-sm);text-align:left}
 /* 字段→票面定位：点右边字段名，把 L1 转录 bbox 叠在按页渲染的票面图上并自动放大。
    浏览器内嵌 PDF 阅读器做不到按区域高亮/缩放，所以定位模式换页图打底。 */
 td.k.loc{cursor:pointer}
@@ -242,7 +244,7 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 #toasts{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;
   align-items:center;gap:6px;z-index:var(--z-toast);pointer-events:none;max-width:86vw}
 .toast{background:var(--c-toast);color:var(--c-inverse);
-  padding:9px 16px;border-radius:var(--r-lg);font-size:13px;box-shadow:var(--sh-2);
+  padding:9px 16px;border-radius:var(--r-lg);font-size:var(--f-md);box-shadow:var(--sh-2);
   opacity:0;transition:var(--dur);pointer-events:auto;max-width:100%;cursor:pointer}
 .toast.on{opacity:1}.toast.bad{background:var(--c-toast-bad)}.toast.ok{background:var(--c-toast-ok)}
 @media (max-width:1460px){
@@ -266,30 +268,30 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
   display:flex;align-items:center;justify-content:center;padding:20px}
 .gate[hidden]{display:none}
 .login{width:340px;max-width:100%;padding:0}
-.login .t{font-size:15px;justify-content:center}
+.login .t{font-size:var(--f-lg);justify-content:center}
 .login .body{padding:16px 18px 18px}
-.lf{display:block;margin:0 0 12px;font-size:12.5px;color:var(--c-text-2)}
+.lf{display:block;margin:0 0 12px;font-size:var(--f-sm);color:var(--c-text-2)}
 .lf input{display:block;width:100%;margin-top:5px;border:1px solid var(--c-line);border-radius:var(--r-md);
-  padding:8px 10px;background:var(--c-surface-2);font-size:14px;color:var(--c-text-1)}
+  padding:8px 10px;background:var(--c-surface-2);font-size:var(--f-base);color:var(--c-text-1)}
 .lf input:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
 .lgbtn{width:100%;margin-top:2px}
-.lgerr{font-size:12.5px;color:var(--c-bad);background:var(--c-bad-bg);border:1px solid var(--c-bad-line);border-radius:var(--r-md);
+.lgerr{font-size:var(--f-sm);color:var(--c-bad-text);background:var(--c-bad-bg);border:1px solid var(--c-bad-line);border-radius:var(--r-md);
   padding:7px 10px;margin-bottom:12px}
 .lgerr[hidden]{display:none}
-.lghint{font-size:11.5px;color:var(--c-text-3);margin-top:12px;line-height:1.5}
-.who{font-size:12.5px;color:var(--c-text-1);font-weight:600}
-.role{font-size:11px;color:var(--c-text-3);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:0 7px;margin-left:4px}
+.lghint{font-size:var(--f-xs);color:var(--c-text-3);margin-top:12px;line-height:1.5}
+.who{font-size:var(--f-sm);color:var(--c-text-1);font-weight:var(--w-semi)}
+.role{font-size:var(--f-xs);color:var(--c-text-3);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:0 7px;margin-left:4px}
 .acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
-.acctbox .t{font-size:14px}
+.acctbox .t{font-size:var(--f-base)}
 .acctlist{overflow:auto;padding:4px 0}
-.arow{display:flex;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--c-line-soft);font-size:13px;
+.arow{display:flex;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--c-line-soft);font-size:var(--f-md);
   transition:background var(--dur-fast)}
-.arow .an{flex:1;min-width:0;font-weight:600;word-break:break-all}
-.arow .tag{font-size:11px;border-radius:var(--r-sm);padding:1px 6px;background:var(--c-neutral);color:var(--c-text-2)}
+.arow .an{flex:1;min-width:0;font-weight:var(--w-semi);word-break:break-all}
+.arow .tag{font-size:var(--f-xs);border-radius:var(--r-sm);padding:1px 6px;background:var(--c-neutral);color:var(--c-text-2)}
 .arow .tag.admin{background:var(--c-accent-soft);color:var(--c-accent)}
-.arow .nopw{font-size:11.5px;color:var(--c-warn)}
+.arow .nopw{font-size:var(--f-xs);color:var(--c-warn-text)}
 .acctadd{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--c-line);background:var(--c-surface-2);flex-wrap:wrap}
-.acctadd input{flex:1;min-width:140px;border:1px solid var(--c-line);border-radius:var(--r-md);padding:6px 8px;font-size:13px}
+.acctadd input{flex:1;min-width:140px;border:1px solid var(--c-line);border-radius:var(--r-md);padding:6px 8px;font-size:var(--f-md)}
 .acctadd input:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
 /* 会动的东西点名关掉（不用 *{animation:none!important} 那种大锤：它把该留的反馈也一起砸了）。
    留着的两处是"换色"不是"位移"——点字段名之后那个框还在闪、跳过去的那一行还在黄，

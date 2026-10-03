@@ -151,17 +151,38 @@ def _ratio(fg: str, bg: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-def test_text_tokens_pass_wcag_aa_on_both_backgrounds():
-    """正文与说明文字要过 AA（4.5:1）。--ink3 从前是 ≈2.6:1：浅底上小字糊成一片，
-    制单员在强光下的屏幕上核票就是看不清（§3.2）。这里算的是真比值，不是"看着还行"。"""
+def test_text_tokens_pass_wcag_aa_on_their_real_backgrounds():
+    """对比度按「这个字实际会压在什么底上」算，不是一句「所有文字对所有底色」。
+    2026-10-03 换控制塔色板时，外部方案那套值里有四个过不了这一关：--c-text-3 用 #64748b 在页面底
+    只有 4.32、#d97706 2.89、#dc2626 4.38、#059669 3.42——因为它把「状态点」和「状态文字」当成
+    同一个颜色用了。点 ≥3.0 就够，小字必须 ≥4.5，所以绿橙红各配两个值，这张表就是盯这件事的。
+    去卡片化会把文字从白底搬到页面底，所以每个文字角色都要在它真实会出现的每种底上过。
+    分隔线（--c-line*）故意不过 AA：它的作用就是轻，别被人「顺手修」成看得见的粗边框。"""
     raw = dict(re.findall(r"(--[\w-]+)\s*:\s*#([0-9a-fA-F]{3,6})", web_src.part("web/css/tokens.css")))
-    # #fff 这种三位缩写先展开，否则比值算的是另一个颜色
-    tokens = {k: ("".join(c * 2 for c in v) if len(v) == 3 else v) for k, v in raw.items()}
-    for name in ("--bg", "--panel"):
-        bg = tokens[name]
-        for ink in ("--ink", "--ink2", "--ink3"):
-            r = _ratio(tokens[ink], bg)
-            assert r >= 4.5, f"{ink} 在 {name}(#{bg}) 上只有 {r:.2f}:1，正文小字要 ≥4.5:1"
+    tok = {k: ("".join(c * 2 for c in v) if len(v) == 3 else v) for k, v in raw.items()}
+
+    def ratio(fg, bg, floor, tag):
+        assert fg in tok, f"{tag}：令牌 {fg} 没定义成十六进制色值，这张表算不了它"
+        assert bg in tok, f"{tag}：令牌 {bg} 没定义成十六进制色值，这张表算不了它"
+        r = _ratio(tok[fg], tok[bg])
+        assert r >= floor, f"{fg}(#{tok[fg]}) 在 {bg}(#{tok[bg]}) 上只有 {r:.2f}:1，{tag} 要 ≥{floor}:1"
+
+    LIGHT = ["--c-surface", "--c-bg", "--c-surface-2", "--c-surface-3", "--c-canvas",
+             "--c-neutral", "--c-accent-sel", "--c-accent-glow", "--c-edited"]
+    for ink in ("--c-text-1", "--c-text-2", "--c-text-3"):
+        for bg in LIGHT:
+            ratio(ink, bg, 4.5, "正文/说明文字")
+    for fg, bgs in (("--c-accent", ["--c-surface", "--c-bg", "--c-surface-2", "--c-accent-soft"]),
+                    ("--c-ok-text", ["--c-surface", "--c-bg", "--c-ok-bg", "--c-accent-sel"]),
+                    ("--c-warn-text", ["--c-surface", "--c-bg", "--c-warn-bg", "--c-warn-strip", "--c-edited"]),
+                    ("--c-bad-text", ["--c-surface", "--c-bg", "--c-bad-bg", "--c-accent-sel"])):
+        for bg in bgs:
+            ratio(fg, bg, 4.5, "带语义的文字")
+    for dark in ("--c-accent", "--c-toast", "--c-toast-ok", "--c-toast-bad"):
+        ratio("--c-inverse", dark, 4.5, "深色底上的白字（主按钮/toast）")
+    for fill in ("--c-ok", "--c-warn", "--c-bad", "--c-accent"):
+        for bg in ("--c-surface", "--c-bg", "--c-surface-2", "--c-canvas", "--c-accent-sel"):
+            ratio(fill, bg, 3.0, "状态点/竖条这类图形")
 
 
 """ ── 设计令牌的三条守卫（2026-10-03 立，先红后绿）────────────────────────────
