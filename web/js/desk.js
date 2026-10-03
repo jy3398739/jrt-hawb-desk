@@ -445,7 +445,7 @@ function mvPreview(){
   if (!lines.length) return '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
   const rows = lines.map(x => '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) + '</div>').join("");
   return '<div class="mvtxt"><div class="t2">L1 原文 · 公司主单资料（逐字，未加工）</div>' + rows +
-    '<p class="hint" style="padding:6px 0 0">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。</p></div>';
+    '<p class="hint hintp flush">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。</p></div>';
 }
 function renderPreview(){
   if (MV){
@@ -488,7 +488,7 @@ async function loadPreview(t){
     if (!r.ok){
       const j = await r.json().catch(() => ({}));
       pvBody(`<div class="empty">${esc(j.detail || ("取票面失败 HTTP " + r.status))}<br>
-        <span style="font-size:12px">上传时勾上「落盘留档」才会归档原件。</span></div>`);
+        <span class="sub">上传时勾上「落盘留档」才会归档原件。</span></div>`);
       return;
     }
     const blob = await r.blob();
@@ -623,7 +623,7 @@ async function showLocPage(page, seq){
       if (LOC.url) URL.revokeObjectURL(LOC.url);
       src = LOC.url = URL.createObjectURL(await r.blob());
     }catch(e){ pvBody(`<div class="empty">取票面页图失败：${esc(String(e.message || e))}<br>
-        <span style="font-size:12px">上传时勾上「落盘留档」才会归档原件，服务器才能按页渲染。</span></div>`); return; }
+        <span class="sub">上传时勾上「落盘留档」才会归档原件，服务器才能按页渲染。</span></div>`); return; }
   }
   if (seq !== _pvSeq) return;                 // 期间又点了别的字段/票，这份丢掉
   const boxes = LOC.hits.filter(l => (l.page || 1) === LOC.page).map(l => {
@@ -685,10 +685,10 @@ async function probe(){
     const mMod = r.master_model ? String(r.master_model).split("/").pop() : "";
     $("#svcTxt").innerHTML = "提取服务在线 · 分单模型 <b>" + esc(String(r.model || "").split("/").pop()) + "</b>" +
       (mMod ? " · 主单模型 <b>" + esc(mMod) + "</b>" : "") +
-      (r.vision === false ? " · <b style='color:#8c4a17'>纯文本模型：扫描件会失败，电子单/文字层 PDF 可用</b>" : "") +
-      (r.key_configured ? "" : " · <b style='color:#9c2b20'>服务端未配当前模型渠道的密钥</b>") +
-      (r.master_key_configured === false ? " · <b style='color:#9c2b20'>主单链渠道缺密钥</b>" : "") +
-      (stale.length ? " · <b style='color:#9c2b20'>服务端代码改了没重启（" + esc(stale.join("、")) +
+      (r.vision === false ? " · <b class='svc-warn'>纯文本模型：扫描件会失败，电子单/文字层 PDF 可用</b>" : "") +
+      (r.key_configured ? "" : " · <b class='svc-bad'>服务端未配当前模型渠道的密钥</b>") +
+      (r.master_key_configured === false ? " · <b class='svc-bad'>主单链渠道缺密钥</b>" : "") +
+      (stale.length ? " · <b class='svc-bad'>服务端代码改了没重启（" + esc(stale.join("、")) +
         "），票面浏览等功能不生效：关掉服务窗口，重跑 4_启动HTTP服务.bat</b>" : "");
     if (stale.length) toast("提取服务还是改动前的旧进程：关掉服务窗口重跑 4_启动HTTP服务.bat，票面浏览才会生效", "bad");
   }catch(e){
@@ -888,9 +888,9 @@ function render(){
     const [c, label] = statusOf(t), n = editedList(t).length;
     const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
     return `<button type="button" class="row${isCur ? " sel" : ""}" data-i="${i}"${isCur ? ' aria-current="true"' : ""}>
-      <span class="dot ${c}" style="margin-top:5px" aria-hidden="true"></span>
+      <span class="dot ${c}" aria-hidden="true"></span>
       <span class="nm">${esc(t.filename)}<br><span class="m">${esc(t.stem || "等待解析")}</span></span>
-      <span class="st">${label}${n ? `<br><span style="color:var(--edit)">改 ${n} 项</span>` : ""}</span></button>`;
+      <span class="st">${label}${n ? `<br><span class="st-edited">改 ${n} 项</span>` : ""}</span></button>`;
   }).join("") : `<div class="empty">尚无票据。</div>`;
   renderRail();
   renderMain(); renderDrafts(); renderPreview();
@@ -946,7 +946,7 @@ function renderDrafts(){
   $("#drafts").innerHTML = keys.length ? keys.map(k => {
     const t = d[k], n = Object.keys(t.airE || {}).length;
     return `<button type="button" class="row" data-load="${esc(k)}">
-      <span class="dot warn" style="margin-top:5px" aria-hidden="true"></span>
+      <span class="dot warn" aria-hidden="true"></span>
       <span class="nm">${esc(k)}<br><span class="m">${esc(t.savedAt || "")} · 改 ${n} 项 · 未提交</span></span>
       <span class="st">载入</span></button>`;
   }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功后仍可在此回看。</div>`;
@@ -1000,7 +1000,7 @@ function renderMain(){
       rows += `<tr class="grp"><td colspan="3">${esc(MVG[g] || g)}</td></tr>`; last = g;
       (metaBy[g] || []).forEach(m => {
         rows += `<tr><td class="k"><div class="kk">${esc(m.label)}</div><div class="ky">${esc(m.col)}</div></td>
-          <td class="c"><div class="j" style="padding:7px 8px">${esc(String(m.value == null ? "" : m.value))}</div></td>
+          <td class="c"><div class="j cell">${esc(String(m.value == null ? "" : m.value))}</div></td>
           <td class="s"><span class="badge">只读</span></td></tr>`;
       });
     };
@@ -1023,7 +1023,7 @@ function renderMain(){
     el.innerHTML = `
       <div class="hd">
         <span class="dot ${rec.state === "failed" ? "bad" : rec.state === "parsing" ? "busy"
-          : (left.length ? "warn" : "ok")}" style="margin-top:6px"></span>
+          : (left.length ? "warn" : "ok")}"></span>
         <div><div class="nm">主单 ${esc(MV.mawb)} · 公司 AMS 解析</div>
           <div class="meta">${st} · 模型 ${esc(rec.model || "—")} · ${rec.elapsed || 0}s
             ${fid ? ` · 保真 ${fid.passed}/${fid.checked} 列有资料出处` : ""}
@@ -1035,8 +1035,8 @@ function renderMain(){
       </div>
       ${chips ? `<div class="chips">${chips}</div>` : ""}
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机草稿与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
-      ${rec.state === "failed" ? `<div class="empty" style="color:var(--bad)">解析失败：${esc(rec.error || "未知错误")}<br>
-        <span style="font-size:12px;color:var(--ink3)">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
+      ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
+        <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="ft top">
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
@@ -1046,7 +1046,7 @@ function renderMain(){
         主单表没有件重/航路/税号列，<b>18 位 USCI 按公司口径填同主体的 EORI 列</b>；
         CNPJ/RFC/GST/VAT 那类仍不要塞进 EORI，走人工确认。</span></div>
       <table><thead><tr>
-        <th>字段</th><th class="g">公司 AMS 列 · 可改</th><th style="text-align:right">状态</th>
+        <th>字段</th><th class="g">公司 AMS 列 · 可改</th><th class="num">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
@@ -1064,19 +1064,19 @@ function renderMain(){
     return;
   }
   if (!t){
-    el.innerHTML = `<div class="empty" style="padding:64px 20px;text-align:center">上传分单后在这里逐字段核对。</div>`;
+    el.innerHTML = `<div class="empty empty-hero">上传分单后在这里逐字段核对。</div>`;
     return;
   }
   if (t.state === "busy" || t.state === "queued"){
-    el.innerHTML = `<div class="empty" style="padding:64px 20px;text-align:center">正在解析 ${esc(t.filename)}…<br>
-      <span style="font-size:12px">扫描件约 7-20 秒；Excel 先由 LibreOffice 转 PDF，再直读文字层，通常更快。</span></div>`;
+    el.innerHTML = `<div class="empty empty-hero">正在解析 ${esc(t.filename)}…<br>
+      <span class="sub">扫描件约 7-20 秒；Excel 先由 LibreOffice 转 PDF，再直读文字层，通常更快。</span></div>`;
     return;
   }
   if (t.state === "failed"){
     el.innerHTML = `<div class="hd"><span class="nm">${esc(t.filename)}</span></div>
-      <div class="empty" style="color:var(--bad)">解析失败：${esc(t.error || "未知错误")}<br><br>
+      <div class="empty empty-err">解析失败：${esc(t.error || "未知错误")}<br><br>
       <button class="btn pri" id="retryParse">重试解析</button><br><br>
-      <span style="color:var(--ink3);font-size:12px">Request timed out 多是模型服务临时拥堵，等一会儿点上面按钮重试即可，不用重新上传。
+      <span class="sub">Request timed out 多是模型服务临时拥堵，等一会儿点上面按钮重试即可，不用重新上传。
       其它常见原因：登录已过期（401，请重新登录）、文件超上限（413）、原件读不出。</span></div>`;
     $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
@@ -1108,7 +1108,7 @@ function renderMain(){
   el.classList.add("has-todo");
   el.innerHTML = `
     <div class="hd">
-      <span class="dot ${c}" style="margin-top:6px" aria-hidden="true"></span>
+      <span class="dot ${c}" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
           ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}
@@ -1125,7 +1125,7 @@ function renderMain(){
     ${chips ? `<div class="chips">${chips}</div>` : ""}
     <table><thead><tr>
       <th>字段</th><th class="g">航空口径 L3 · 已归一（可改）</th>
-      <th style="text-align:right">状态</th>
+      <th class="num">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="ft bottom">
       <button class="btn pri" id="submit">提交本票</button>
@@ -1166,7 +1166,7 @@ function refreshRow(t, k){
   const hint = $("#editedHint");
   if (hint) hint.textContent = todoText(t, ef);
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
-  if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span style="color:var(--edit)">改 ${editedList(t).length} 项</span>` : "");
+  if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span class="st-edited">改 ${editedList(t).length} 项</span>` : "");
 }
 function wireMain(t){
   /* 委托挂 #main（renderMain 每次换的是它的 innerHTML，节点不毁）：只接一次，
@@ -1195,7 +1195,9 @@ function wireMain(t){
     const k = ch.dataset.jump; if (!k) return;
     const row = $("#f-" + CSS.escape(k)); if (!row) return;
     row.scrollIntoView({behavior:"smooth", block:"center"});
-    row.style.background = "#fff3d6"; setTimeout(() => row.style.background = "", 1500);
+    row.classList.remove("hit");
+    void row.offsetWidth;             // 先重排一次：连着点同一个字段第二次也要真的闪
+    row.classList.add("hit");
     const inp = row.querySelector("[data-k]"); if (inp) inp.focus();
   }));
   $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
@@ -1439,7 +1441,7 @@ function pendingUnder(mawb){
 function mstTable(list, pend){
   pend = pend || [];
   if (!list.length && !pend.length)
-    return '<p class="hint" style="padding:12px">这条主单下公司还没有分单记录。' +
+    return '<p class="hint hintp">这条主单下公司还没有分单记录。' +
            '<b>解析不等于提交</b>：分单要点「提交」回传公司之后，这里才会有记录。</p>';
   const rows = list.map(o => {
     const ss = o.send_status === undefined || o.send_status === null ? "—"
@@ -1464,7 +1466,7 @@ function mstTable(list, pend){
     '<col style="width:18%"><col style="width:16%"><col></colgroup><thead><tr>' +
     '<th>分单号</th><th>主单号</th><th>提交人</th><th>提交时间</th><th>公司发送状态</th><th>票面原件</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>' +
-    '<p class="hint" style="padding:8px 4px 2px">「提交人/提交时间」是本审核台提交回公司的留痕；' +
+    '<p class="hint hintp">「提交人/提交时间」是本审核台提交回公司的留痕；' +
     '「公司发送状态」是公司有没有把这条分单发给航司。' +
     '待公司发送 = 公司已收到、还没往航司发，不是说本台没提交。' +
     (pend.length ? '标「本台待提交」的那 ' + pend.length + ' 张只在这台机器上解析过，还没回传公司。' : '') + '</p>';
@@ -1700,7 +1702,7 @@ async function loadDay(){
     $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
     renderDay();
   }catch(e){
-    box.innerHTML = `<div class="empty" style="color:var(--bad)">读台账失败：${esc(e.message || e)}</div>`;
+    box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
   }
 }
 function renderDay(){
@@ -1729,7 +1731,7 @@ function renderDay(){
       <th>分单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
       <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th></tr></thead>
       <tbody>${rows}</tbody></table>
-      <p class="hint" style="padding:10px 12px">「公司发送状态」不在这一页：它要按主单去公司系统查（限流 10 次/秒）。
+      <p class="hint hintp">「公司发送状态」不在这一页：它要按主单去公司系统查（限流 10 次/秒）。
       要看哪张已发给航司，点顶栏「主单检索」按主单号查那张主单下的全部票。</p>`;
 }
 $("#viewDesk").addEventListener("click", () => setView("desk"));

@@ -81,22 +81,22 @@
       <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
       <div class="list" id="list" role="group" aria-label="待核对的分单"><div class="empty">尚无票据。</div></div>
     </section>
-    <section class="card" style="margin-top:14px">
+    <section class="card stack">
       <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus" role="status" aria-live="polite"></span></div>
-      <div class="f" style="gap:8px;margin-bottom:6px">
+      <div class="f mstbar">
         <input id="mstNo" type="text" aria-label="主单号" placeholder="主单号，如 235-96146363" size="18">
         <button class="btn sm pri" id="mstGo">检索</button>
       </div>
       <div class="hint">按主单号取回主单原生资料并自动解析；名下分单列在页面底部长条里，原件点开即看。原录入员检索台已并入本页。</div>
       <div id="mstResult"></div>
     </section>
-    <section class="card" style="margin-top:14px">
+    <section class="card stack">
       <div class="t">本地暂存<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
-      <div class="list" id="drafts" role="group" aria-label="本机暂存的编辑" style="max-height:210px"></div>
+      <div class="list compact" id="drafts" role="group" aria-label="本机暂存的编辑"></div>
     </section>
   </div>
 
-  <section class="card" id="view">
+  <section id="view">
     <div class="t">票面浏览<span class="sp"></span><span class="pvname" id="pvName"></span></div>
     <div class="pvtools" id="pvTools" hidden>
       <span id="pvZoom" hidden>
@@ -124,20 +124,20 @@
     </div>
   </section>
 
-  <section class="card" id="main">
-    <div class="empty" style="padding:64px 20px;text-align:center">
+  <section id="main">
+    <div class="empty empty-hero">
       上传分单后在这里逐字段核对。<br>
-      <span style="font-size:12px">左边是票面原件，这里是航空口径全字段（国家两位码 / 城市三字码 / 电话归一），可直接改。<br>点字段名可在票面上定位并放大对应原文。</span>
+      <span class="sub">左边是票面原件，这里是航空口径全字段（国家两位码 / 城市三字码 / 电话归一），可直接改。<br>点字段名可在票面上定位并放大对应原文。</span>
     </div>
   </section>
 </div>
 
-<section class="card" id="mstHawbCard" hidden style="margin-top:14px">
+<section class="stack" id="mstHawbCard" hidden>
   <div class="t">名下分单<span class="sp"></span><span class="n" id="mstHawbCnt"></span></div>
   <div id="mstHawbBox"></div>
 </section>
 
-<section class="card" id="dayCard" hidden style="margin-top:14px">
+<section class="stack" id="dayCard" hidden>
   <div class="t">今日台账<span class="sp"></span>
     <label class="f">日期<input id="dayDate" type="date" aria-label="台账日期"></label>
     <button class="btn sm" id="dayGo" type="button">刷新</button>

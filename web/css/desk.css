@@ -17,6 +17,8 @@ input,textarea{font:inherit;color:inherit}
 @keyframes pulse{to{opacity:.25}}
 .svc{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-2)}
 .svc b{color:var(--c-text-1);font-weight:600}
+.svc .svc-warn{color:var(--c-warn-text);font-weight:600}
+.svc .svc-bad{color:var(--c-bad-text);font-weight:600}
 .ver{font-size:11px;font-weight:600;color:var(--c-accent);background:var(--c-accent-soft);border-radius:var(--r-sm);padding:1px 6px;margin-left:6px;vertical-align:middle}
 .f{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--c-text-2)}
 /* .f 的 display:flex 会盖过 UA 的 [hidden]{display:none}，不补这条则 applyRole 收起模型下拉/身份条形同虚设 */
@@ -57,9 +59,20 @@ input,textarea{font:inherit;color:inherit}
 .todo .lbl{font-weight:700}
 .ft.bottom{position:sticky;bottom:0;z-index:var(--z-sticky);background:var(--c-surface);border-top:1px solid var(--c-line)}
 .card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-lg)}
-.card .t{padding:10px 12px;border-bottom:1px solid var(--c-line);font-weight:700;font-size:13px;
+/* .t 是"区块标题行"，跟卡片皮没关系：去卡片化后票面栏/字段栏/台账都还要用它。 */
+.t{padding:10px 12px;border-bottom:1px solid var(--c-line);font-weight:700;font-size:13px;
   display:flex;align-items:center;gap:8px}
-.card .t .n{font-weight:400;color:var(--c-text-3);font-size:12px}
+.t .n{font-weight:400;color:var(--c-text-3);font-size:12px}
+/* 去卡片化：票面栏、字段栏和两张整宽表不再套边框与圆角——它们是工作台本身，不是"一张卡片"。
+   边界改由分隔线和底色差承担：标题行的下边线、字段栏的白底、票面栏的灰底、宽屏时两者之间那道竖线。
+   仍然留卡片的是侧栏三块与两个浮层——那里是真的交互容器，登录框更得有表面才读得下去。 */
+#main,#mstHawbCard,#dayCard{background:var(--c-surface)}
+/* 这两张是 body 级的整宽表，不在 .wrap 里：去卡片之后边框没了，横向就得自己留出 .wrap 那道 16px，
+   否则表格贴着视口边缘，看着像没排完。 */
+#mstHawbCard,#dayCard{margin-inline:16px}
+.stack{margin-top:14px}
+.mstbar{gap:8px;margin-bottom:6px}
+.list.compact{max-height:210px}
 .drop{margin:12px;padding:16px 10px;border:1.5px dashed var(--c-line-strong);border-radius:var(--r-lg);text-align:center;
   color:var(--c-text-2);background:var(--c-surface-2);transition:var(--dur-fast)}
 .drop.hot{border-color:var(--c-accent);background:var(--c-accent-sel);color:var(--c-accent)}
@@ -90,8 +103,14 @@ input,textarea{font:inherit;color:inherit}
 .row .nm{flex:1;min-width:0;font-size:12.5px;line-height:1.35;word-break:break-all}
 .row .nm .m{color:var(--c-text-3);font-size:11px}
 .row .st{font-size:11px;color:var(--c-text-2);white-space:nowrap;text-align:right}
+.row .dot{margin-top:5px}                     /* 点要跟两行票名顶部对齐，不是居中 */
+.st-edited{color:var(--c-accent)}             /* 「改 N 项」：只有编辑过才出现 */
 .empty{padding:20px 14px;color:var(--c-text-3);font-size:12.5px}
+.empty-hero{padding:64px 20px;text-align:center}      /* 整栏空状态：等一张票进来时的那块白 */
+.empty .sub{font-size:12px;color:var(--c-text-3)}     /* 空状态里的第二行说明 */
+.empty-err{color:var(--c-bad)}                        /* 解析失败的整块空状态 */
 .hd{padding:12px;border-bottom:1px solid var(--c-line);display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.hd .dot{margin-top:6px}
 .hd .nm{font-weight:700;font-size:15px;word-break:break-all}
 .hd .meta{color:var(--c-text-3);font-size:12px;margin-top:2px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:var(--c-warn-strip);border-bottom:1px solid var(--c-warn-line)}
@@ -112,6 +131,9 @@ table{width:100%;border-collapse:collapse;table-layout:fixed}
 th{position:sticky;top:var(--hdh);z-index:var(--z-th);background:var(--c-surface-2);text-align:left;font-size:11.5px;color:var(--c-text-3);
   font-weight:600;padding:7px 10px;border-bottom:1px solid var(--c-line);letter-spacing:.3px}
 th.g{background:var(--c-surface-3);color:var(--c-text-2)}
+th.num{text-align:right}
+tr.hit{animation:hitFlash 1.5s var(--ez-out) 1}   /* 从红旗 chip 跳过来的那一行：闪一下告诉人跳到哪了 */
+@keyframes hitFlash{0%,55%{background:var(--c-hit)}100%{background:transparent}}
 td{border-bottom:1px solid var(--c-line-soft);vertical-align:top;padding:0}
 td.k{padding:8px 10px;width:206px;background:var(--c-surface-2)}
 /* .kk/.ky 在定位按钮里是 span（<button> 只能装短语内容），靠 display:block 保持一行一个 */
@@ -144,9 +166,14 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .ft{padding:10px 12px;border-top:1px solid var(--c-line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .ft.top{border-top:0;border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
 .hint{font-size:12px;color:var(--c-text-2)}
+/* 表格/结果底下那段说明：段落的 UA 边距归零，换成一道内边距（从前四处各写各的 padding，
+   6px/8px/10px/12px 都有，同一个"下面补一句话"长四种样子）。父容器自己有内边距的用 .flush。 */
+.hintp{margin:0;padding:16px 12px}
+.hintp.flush{padding-inline:0}
 /* 主单检索卡片（并入自录入员检索台）用的小标题与等宽列 */
 .t2{font-size:13px;font-weight:600;margin:14px 0 4px}
 .j{word-break:break-all;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.j.cell{padding:7px 8px}                     /* 主单表里当单元格用的那种 */
 /* 主单资料借票面栏展示：那一栏底色是灰的且居中，纯文字要一张左对齐白卡才读得下去 */
 .pv .mvtxt{text-align:left;background:var(--c-surface);padding:12px 14px;box-shadow:var(--sh-1)}
 .pv .mvtxt .t2:first-child{margin-top:0}
@@ -161,6 +188,7 @@ td.s{width:120px;padding:8px 10px;text-align:right}
   #main{position:sticky;top:var(--stick);align-self:start;height:calc(100vh - var(--stick) - 14px);overflow:auto}
   #main th{top:0}
   #main.has-todo th{top:var(--todoH)}   /* 待办条压在上面时表头要跟着让出它的高度 */
+  #view{border-right:1px solid var(--c-line)}   /* 去卡片后票面与字段之间靠这道竖线分开 */
 }
 #view .t .pvname{margin-left:auto;font-weight:400;color:var(--c-text-3);font-size:11.5px;max-width:58%;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
