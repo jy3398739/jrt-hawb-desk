@@ -41,10 +41,14 @@ input,textarea{font:inherit;color:inherit}
 .railDots{display:flex;flex-direction:column;align-items:center;gap:4px;overflow:auto;max-height:60vh;width:100%}
 .railDots .rd{display:flex;align-items:center;justify-content:center;width:32px;min-height:28px;
   border:0;background:transparent;cursor:pointer;border-radius:var(--r-md)}
-.railDots .rd:hover{background:var(--c-accent-sel)}
+.railDots .rd:hover{background:var(--c-accent-sel);transform:scale(1.15)}
+.railDots .rd{transition:transform var(--dur-fast) var(--ez-spring),background var(--dur-fast)}
 .railDots .rd[aria-current="true"]{background:var(--c-accent-sel);box-shadow:inset 0 0 0 1px var(--c-accent)}
-/* 展开的覆盖式列表：浮在窄轨右边，不换页、不推挤版面 */
-.railList{position:absolute;left:40px;top:34px;z-index:var(--z-pop);width:246px;max-height:70vh;overflow:auto;
+/* 展开的覆盖式列表：浮在窄轨右边，不换页、不推挤版面。
+   动效 ②：滑出。节点是当场建、当场插的，所以用 animation 而不是 transition——
+   加类的写法在同一帧里根本不会触发。收起是直接 remove()，没有退场这回事。 */
+@keyframes railIn{from{opacity:0;transform:translateX(-12px)}}
+.railList{animation:railIn var(--dur) var(--ez-out);position:absolute;left:40px;top:34px;z-index:var(--z-pop);width:246px;max-height:70vh;overflow:auto;
   background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--r-lg);padding:6px;
   box-shadow:var(--sh-2)}
 .railList .rr{display:flex;gap:8px;align-items:center;width:100%;text-align:left;padding:6px 8px;min-height:32px;
@@ -199,6 +203,15 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .pvtools[hidden],.pvtools #pvZoom[hidden]{display:none}
 .pv{flex:1;min-height:200px;overflow:auto;background:var(--c-canvas);padding:10px;text-align:center}
 .pv img{display:inline-block;height:auto;background:var(--c-surface);box-shadow:var(--sh-1)}
+/* 动效 ①：页图入场。一张票常常好几页，一起砸下来眼睛跟不上，错开一档"铺"开。
+   只做位移和透明度——票面缩放是宽度制的（canPan/zoomAnchor 读的是 scrollWidth），
+   这里一旦用 transform:scale，量出来的尺寸就和看到的不一样，抓手与滚轮锚点会一起算错。 */
+@keyframes pvIn{from{opacity:0;transform:translateY(6px)}}
+.pv img.pvpage{animation:pvIn var(--dur-slow) var(--ez-out) both}
+.pv img.pvpage:nth-of-type(2){animation-delay:60ms}
+.pv img.pvpage:nth-of-type(3){animation-delay:120ms}
+.pv img.pvpage:nth-of-type(4){animation-delay:180ms}
+.pv img.pvpage:nth-of-type(n+5){animation-delay:240ms}
 /* 放大后按住拖动看别处：.pannable 由 JS 按"内容是否超出栏位"加上，没超出就别亮抓手骗人 */
 #pvBody.pannable{cursor:grab}
 #pvBody.grabbing{cursor:grabbing}
@@ -221,7 +234,9 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .pv .lyr{position:absolute;left:0;top:0;width:100%;height:100%}
 .pv .bbox{position:absolute;border:2px solid var(--c-locate-line);background:var(--c-locate);
   border-radius:2px;animation:flashb 1.2s ease 2}
-@keyframes flashb{50%{background:var(--c-locate-hi)}}
+/* 动效 ③：定位巡航。只加外圈光晕——不碰 transform/边框宽/透明度归零，
+   脉冲跑完那个框必须还在原地，不然"到底哪一行"又说不清了。 */
+@keyframes flashb{50%{background:var(--c-locate-hi);box-shadow:0 0 0 6px var(--c-locate-halo)}}
 /* 提示堆在底部居中，一条一个节点：后一条不覆盖前一条（一次失败的原因常常不止一个，
    被吃掉的那一条正是线索）。整条可点，看一眼就能关掉。 */
 #toasts{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;
@@ -276,3 +291,13 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .acctadd{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--c-line);background:var(--c-surface-2);flex-wrap:wrap}
 .acctadd input{flex:1;min-width:140px;border:1px solid var(--c-line);border-radius:var(--r-md);padding:6px 8px;font-size:13px}
 .acctadd input:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
+/* 会动的东西点名关掉（不用 *{animation:none!important} 那种大锤：它把该留的反馈也一起砸了）。
+   留着的两处是"换色"不是"位移"——点字段名之后那个框还在闪、跳过去的那一行还在黄，
+   关掉它们等于把功能关掉，制单员就不知道自己点到哪儿了。 */
+@media (prefers-reduced-motion:reduce){
+  .pv img.pvpage,.railList{animation:none}
+  .railDots .rd{transition:none}
+  .railDots .rd:hover{transform:none}
+  .btn,.row,.arow,.drop,.toast{transition:none}
+  .dot.busy{animation:none}          /* 呼吸停掉，但 --c-accent 那颗点还在，旁边也有文字状态 */
+}

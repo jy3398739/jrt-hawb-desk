@@ -220,6 +220,26 @@ def test_measured_tokens_are_re_measured():
     assert "#main.has-todo th{top:var(--todoH)}" in css, "表头给待办条让位的那条引用别丢"
 
 
+def test_desk_motion_is_keyframes_not_class_toggles():
+    """三个动效都写成 @keyframes，不靠"加一个类触发 transition"：窄轨展开的列表和票面页图都是
+    当场建、当场插的节点，同一帧里改类浏览器根本不会过渡（外部方案给的 .railList.open / img.on
+    就是这么颗死按钮——而且 img 那条还只在没解码完时才挂 load，票面会永久空白）。
+    减少动态效果要逐个点名：一把 *{animation:none!important} 会把"我点到哪儿了"那两个闪色也关掉。"""
+    css, js = _code(web_src.part("css/desk.css")), web_src.part("js/desk.js")
+    for kf, user in (("pvIn", ".pv img.pvpage{animation:pvIn"), ("railIn", ".railList{animation:railIn"),
+                     ("flashb", "@keyframes flashb")):
+        assert "@keyframes " + kf in css, kf + " 这个动效没了"
+        assert user in css, kf + " 定义了却没接到元素上"
+    rm = re.search(r"@media \(prefers-reduced-motion:reduce\)\{(.*?)\n\}", css, re.S)
+    assert rm, "没有减少动态效果的降级：前庭功能敏感的人只能用浏览器缩放自救"
+    assert "animation:none" in rm.group(1) and "transition:none" in rm.group(1)
+    assert "!important" not in rm.group(1), "别用大锤关动画：那两个闪色是反馈，不是装饰"
+    assert "scroll-behavior:smooth" not in css, \
+        "不给 #pvBody 写全局 smooth：installPan 每次 pointermove 都在写 scrollLeft/Top，那会让拖动变果冻"
+    assert "behavior:" in js[js.index("function locFit()"):js.index("function pvSetTools()")], \
+        "定位巡航要走 scrollTo 并尊重减少动态效果"
+
+
 def test_desk_clickables_are_real_buttons_with_visible_focus():
     """可点的非元素（票行、字段名、chip、还原、分单号）从前是带 cursor:pointer 的 div/span/a：
     键盘 Tab 到不了、回车不触发、读屏器念不出它是可点的（§3.4 第 2 条）。

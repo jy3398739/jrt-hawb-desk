@@ -651,8 +651,12 @@ function locFit(){
   page.style.width = z + "%";
   if (first){
     const pr = page.getBoundingClientRect(), fr = first.getBoundingClientRect(), br = pane.getBoundingClientRect();
-    pane.scrollTop += (fr.top + fr.height / 2) - (pr.top + br.height / 2);
-    pane.scrollLeft += (fr.left + fr.width / 2) - (pr.left + br.width / 2);
+    /* 巡航用 scrollTo：一次调用同时给两个方向，浏览器自己合成一段滚动。
+       不给 #pvBody 写 scroll-behavior:smooth——installPan 每次 pointermove 都在改 scrollLeft/Top，
+       那会让"按住拖动"变成果冻。设了系统"减少动态效果"就直给，不滚。 */
+    pane.scrollTo({left: pane.scrollLeft + (fr.left + fr.width / 2) - (pr.left + br.width / 2),
+                   top: pane.scrollTop + (fr.top + fr.height / 2) - (pr.top + br.height / 2),
+                   behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth"});
   }
 }
 function pvSetTools(){
