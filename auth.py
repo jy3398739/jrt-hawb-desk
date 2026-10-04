@@ -221,6 +221,13 @@ def authenticate(name: str, password: str):
             "token": make_token(u["name"], u.get("role"), data["secret"])}
 
 
+def admin_still_uses_seed_password() -> bool:
+    """管理员口令还是种子默认值吗？"上线先改 admin123"这件事不能只写在文档里——
+    写在文档里就等于没写（清单挂了两周没人动）。只回答是/否，不回口令本身，也不回哈希。"""
+    u = load()["users"].get(SEED_ADMIN_NAME)
+    return bool(u) and verify_password(SEED_ADMIN_PASSWORD, u.get("pw"))
+
+
 def session_user(request) -> dict:
     """从请求 Cookie 还原当前登录用户；无效或账号已删/已改角色一律 None。
     无 Cookie 时不读盘（省掉 /health 这类免登录路径的 users.json 打开）。"""

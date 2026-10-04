@@ -69,6 +69,7 @@ const MV_LONG = new Set(["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
                          "CONSIGNEE_INFO_COMP_NAME", "CONSIGNEE_INFO_COMP_ADDRESS",
                          "NOTIFY_INFO_COMP_NAME", "NOTIFY_INFO_COMP_ADDRESS"]);
 let ME = null;   // 当前登录者 {name, role}：null = 未登录（显示登录遮罩）
+let PW_DEFAULT = false;   // 管理员口令还是默认值——服务端只告诉管理员本人（见 /api/me）
 
 /* 提示成队列：一次失败常常同时冒出两条原因（"这张票没提交" + "登录已过期"），
    后一条把前一条吃掉，制单员就只剩半句线索可猜。读屏器靠容器的 aria-live 知道有新消息，
@@ -1319,6 +1320,7 @@ function applyRole(){
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = L.roleCn(ME.role);
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
+  $("#pwWarn").hidden = !(admin && PW_DEFAULT);   // 默认口令没改：把话放在管理员天天看得见的地方
   $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
   $("#fModelM").hidden = !admin;             // 主单链那条也是
@@ -1334,7 +1336,8 @@ async function checkAuth(){
   try{
     const j = await fetch(BASE + "/api/me").then(x => x.json());
     ME = j.authenticated ? j.user : null;
-  }catch(e){ ME = null; }
+    PW_DEFAULT = !!j.admin_pw_default;
+  }catch(e){ ME = null; PW_DEFAULT = false; }
   applyRole();
   if (ME) startDesk();
 }
@@ -1349,7 +1352,7 @@ $("#loginForm").addEventListener("submit", async e => {
                                            body:JSON.stringify({name, password:pw})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
-    ME = j.user; applyRole(); startDesk();
+    await checkAuth();               // 登录后统一走 /api/me：ME 与「口令未改」提示同一个来源，别两处各设一遍
     $("#lgPass").value = "";
     toast("已登录：" + ME.name + (ME.role === "admin" ? "（管理员）" : ""), "ok");
   }catch(e2){ err.textContent = "登录失败：" + (e2.message || e2); err.hidden = false; }
@@ -1386,9 +1389,11 @@ async function saveAcct(name, password, role){
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
     toast("已保存账号：" + name, "ok"); loadAcct();
+    if (ME && name === ME.name) await checkAuth();   // 改的是自己的口令：顶栏那颗提示要当场灭掉
   }catch(e){ acctErr("保存失败：" + (e.message || e)); }
 }
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
+$("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说到哪儿，入口就在哪儿
 $("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"滚过去 + 聚焦输入框"
   setView("desk");                                // 在今日台账里点它，要先回到工作台才看得见那张卡
   const box = $("#mstNo");

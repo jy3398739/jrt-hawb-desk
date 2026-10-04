@@ -20,7 +20,7 @@
   <label class="f">复核人<input id="reviewer" type="text" placeholder="制单员姓名" size="10"></label>
   <label class="f" title="勾选后原件与结果一并落盘留档（L0 原件归档 / L1 转录 / L2 / L3 / 质检记录）。不勾选则不落盘，离开本页后也无法再回看票面">
     <input type="checkbox" id="doSave" checked>落盘留档</label>
-  <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
+  <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span><button class="pwwarn" id="pwWarn" type="button" hidden title="管理员口令还是出厂默认值：登录门禁等于没上，点这里去「账号管理」改掉">口令未改</button></span>
   <span class="seg" role="tablist" aria-label="视图切换">
     <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
     <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日台账</button>

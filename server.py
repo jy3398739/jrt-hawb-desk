@@ -143,9 +143,14 @@ def logout(response: Response):
 
 @app.get("/api/me")
 def me(request: Request):
-    """前端据此决定显登录页还是进审核台，并按角色隐藏模型下拉/账号管理。"""
+    """前端据此决定显登录页还是进审核台，并按角色隐藏模型下拉/账号管理。
+    默认口令没改掉这件事只告诉管理员：免登录的 /health 上说等于送人一个答案，
+    告诉制单员则是推一个改不了的人。"""
     user = auth.session_user(request)
-    return {"authenticated": bool(user), "user": user}
+    out = {"authenticated": bool(user), "user": user}
+    if user and user.get("role") == "admin":
+        out["admin_pw_default"] = auth.admin_still_uses_seed_password()
+    return out
 
 
 @app.get("/admin/users")

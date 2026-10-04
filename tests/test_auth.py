@@ -58,6 +58,36 @@ def test_seed_has_admin_and_reviewers_without_plaintext():
         assert "pbkdf2_sha256$" in raw
 
 
+def test_default_admin_password_is_flagged_to_the_logged_in_admin():
+    """"上线先改 admin123"这条待办只写在文档里，系统自己从不吭声——所以它一直没被做。
+    登录后 /api/me 要说出现状（只说"还是种子默认口令"，不说口令是什么），改了就不再说。"""
+    with _accounts() as client:
+        _login(client, "admin", "admin123")
+        me = client.get("/api/me").json()
+        assert me["user"]["role"] == "admin"
+        assert me.get("admin_pw_default") is True, "管理员还在用默认口令，页面要看得见这件事"
+        r = client.post("/admin/users", json={"name": "admin", "password": "huan-diao-a-123"})
+        assert r.status_code == 200, r.text
+        assert client.get("/api/me").json().get("admin_pw_default") is False, \
+            "口令已经改了还报默认，等于狼来了，提示会失去可信度"
+
+
+def test_default_password_flag_stays_out_of_the_anonymous_endpoint():
+    """`/health` 是免登录的（监控与部署脚本要能打到），口令状态绝不能放上去：
+    那等于站在门外告诉对方"管理员还是 admin123"。同理也不发给制单员——改不了的人不必被推，
+    少一处出现就少一处泄露面。"""
+    with _accounts() as client:
+        assert not [k for k in client.get("/health").json()
+                    if "pw" in k.lower() or "password" in k.lower()], \
+            "/health 免登录，口令状态不能出现在这里"
+        _login(client, "admin", "admin123")
+        client.post("/admin/users", json={"name": "马殿齐", "password": "pw-123456", "role": "reviewer"})
+        client.post("/login", json={"name": "马殿齐", "password": "pw-123456"})
+        me = client.get("/api/me").json()
+        assert me["user"]["role"] == "reviewer"
+        assert not me.get("admin_pw_default"), "这个标志只给管理员看"
+
+
 def test_ensure_seed_creates_once_and_is_idempotent():
     with _accounts():
         assert auth.ensure_seed() is True and auth.USERS_FILE.is_file()

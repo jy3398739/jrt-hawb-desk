@@ -281,6 +281,12 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .lghint{font-size:var(--f-xs);color:var(--c-text-3);margin-top:12px;line-height:1.5}
 .who{font-size:var(--f-sm);color:var(--c-text-1);font-weight:var(--w-semi)}
 .role{font-size:var(--f-xs);color:var(--c-text-3);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:0 7px;margin-left:4px}
+/* 「口令还是默认值」这颗：只给管理员看，点一下直接进「账号管理」。
+   常驻而不是 toast——一闪就没的提醒等于没提醒。 */
+.pwwarn{font-size:var(--f-xs);color:var(--c-bad-text);background:var(--c-bad-bg);border:1px solid var(--c-bad-line);
+  border-radius:var(--r-pill);padding:0 8px;margin-left:6px;min-height:28px;cursor:pointer}
+.pwwarn:hover{border-color:var(--c-line-hover)}
+.pwwarn[hidden]{display:none}
 .acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
 .acctbox .t{font-size:var(--f-base)}
 .acctlist{overflow:auto;padding:4px 0}
