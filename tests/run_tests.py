@@ -77,6 +77,22 @@ def update_baseline():
     print("请逐条确认上面这些差异确实是本次改动想要的，再提交。")
 
 
+def _machine_files():
+    """跑回归之前先记住这两个文件的字节与修改时刻：它们是**这台机器的真配置**，不是测试夹具。
+    2026-10-08 就是被这套件悄悄改掉的——`_ModelState` 只存了模块全局、没重定向 ENV_FILE，
+    于是每个 set_model() 都写进真 .env；在服务器上跑就等于每次部署都把模型选择改回去。
+    光比字节不够（写回同一个值就查不出来），所以 mtime 也一起比：原子替换一定会动它。"""
+    import hashlib
+    import os
+    out = {}
+    for name, p in (("config.ENV_FILE", ROOT / ".env"), ("auth.USERS_FILE", ROOT / "users.json")):
+        if os.path.isfile(p):
+            out[name] = (hashlib.sha256(p.read_bytes()).hexdigest(), os.stat(p).st_mtime_ns)
+        else:
+            out[name] = None
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="HAWB 提取器离线回归测试")
     ap.add_argument("filter", nargs="?", default="", help="只跑模块名含此串的用例")
@@ -85,6 +101,7 @@ def main():
     if args.update_baseline:
         return update_baseline()
 
+    before = _machine_files()
     passed = failed = ran = 0
     for p, m in _load_modules(args.filter):
         print(f"\n[{p.stem}]")
@@ -103,6 +120,11 @@ def main():
     print("\n" + "=" * 56)
     if not ran:
         print(f"没有任何用例被跑到（过滤词 {args.filter!r} 没匹配上 test_*.py），这不算通过。")
+        return 1
+    changed = [k for k, v in before.items() if _machine_files()[k] != v]
+    if changed:
+        print(f"❌ 这套回归把这台机器的真配置改了：{changed}（用例必须指到自己的临时文件，"
+              f"否则在服务器上跑就等于每次部署都改掉线上选择）")
         return 1
     print(f"通过 {passed}，失败 {failed}" + ("  ✅ 全部绿灯" if not failed else "  ❌ 有回归"))
     return 1 if failed else 0

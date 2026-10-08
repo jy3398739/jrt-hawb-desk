@@ -21,14 +21,19 @@ import web_src
 
 @contextlib.contextmanager
 def _accounts():
-    """把账号表指到临时目录，返回一个共享 Cookie 的 TestClient（首次登录时 users.json 会自动种子）。"""
+    """把账号表**和 .env** 一起指到临时目录，返回一个共享 Cookie 的 TestClient。
+    两个都要指：首次登录时 users.json 会自动种子；而 POST /model 会把选择写回 config.ENV_FILE ——
+    只隔账号表的话，用例就在改这台机器的真 .env（2026-10-08 服务器上每次部署跑回归都把线上
+    模型选择改回去了，跑的就是这条路径）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_users_test_"))
-    old_file = auth.USERS_FILE
+    old_file, old_env = auth.USERS_FILE, config.ENV_FILE
     auth.USERS_FILE = tmp / "users.json"
+    config.ENV_FILE = tmp / ".env"
+    config.ENV_FILE.write_text("VLM_MODEL=intern-s2-official\n", encoding="utf-8")
     try:
         yield TestClient(server.app)
     finally:
-        auth.USERS_FILE = old_file
+        auth.USERS_FILE, config.ENV_FILE = old_file, old_env
         shutil.rmtree(tmp, ignore_errors=True)
 
 

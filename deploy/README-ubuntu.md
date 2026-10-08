@@ -48,7 +48,8 @@ python3.12 -m venv .venv
 cp .env.example .env && chmod 600 .env
 ```
 
-- 必填：`INTERNLM_API_KEY`（默认渠道 `intern-s2-official`）。
+- 必填：`QWEN_API_KEY`（公司百炼专属实例 token，`sk-ws-` 开头，默认渠道 `qwen38-flash-bailian`）。
+  兜底渠道 `intern-s2-official` 要能切过去，才需要 `INTERNLM_API_KEY`。
 - 主单链默认走 `qwen38-flash-bailian` → 需要 `QWEN_API_KEY`（公司百炼专属实例 token，`sk-ws-` 开头；向管理员索取，不是公共百炼控制台那把）
   （不想配就把 `MASTER_VLM_MODEL=` 留空，让它跟分单同渠道）。
 - 真连公司系统才需要：`COMPANY_API_MODE=live`、`COMPANY_API_URL`、
@@ -124,7 +125,8 @@ curl -s http://127.0.0.1:8020/health                   # 版本戳 + 队列水�
 - **j9 是整表写回**：请求里没带的列会被写成 NULL。所以提交前一定先读回公司当前值
   （读不到就直接拒发，不硬写），并且只有 `SEND_STATUS` 为 0/2 的行允许更新（1 = 已发送锁定）。
 - **限流**：IT 侧每把 key 10 次/秒，本机默认按 8 走并留两成余量。
-- **并发**：同时解析 2 张、排队上限 200（`DESK_CONCURRENCY` / `DESK_QUEUE_MAX`），
+- **并发**：同时解析 4 张、排队上限 200（`DESK_CONCURRENCY` / `DESK_QUEUE_MAX`；2026-10-08 实测后从 2 提到 4，
+  2 槽吞吐 15 张/分钟、内存高水位才 142MB，闸 900M/1.3G），
   满了直接回 429 而不是把服务压死；单票最长等 30 分钟。
 - **慢在模型**：单次调用超时 300s，超时类失败最多再试 1 次，其余错误按 2/8/20s 退避重试。
 - 每次提交都按"接受即写 0"处理，所以界面上的「待公司发送」是**公司还没往航司发**，

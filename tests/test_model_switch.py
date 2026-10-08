@@ -28,14 +28,22 @@ class _FakeClient:
 
 
 class _ModelState:
-    """保存/恢复 config 里的生效模型：用例都在一个进程里跑，函数会改模块全局。"""
+    """保存/恢复 config 里的生效模型：用例都在一个进程里跑，函数会改模块全局。
+    还必须把 ENV_FILE 指到自己的临时文件 —— `set_model()` 是会写盘的，不重定向就等于
+    改这台机器的真 .env：2026-10-08 在服务器上每次部署跑回归，都把线上的模型选择悄悄改回去了。"""
 
     def __enter__(self):
-        self.old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION)
+        self.old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE)
+        self._dir = tempfile.TemporaryDirectory()
+        env = Path(self._dir.name) / ".env"
+        env.write_text(f"VLM_MODEL={config.VLM_MODEL_CHOICE}\n"
+                       f"MASTER_VLM_MODEL={config.MASTER_VLM_MODEL}\n", encoding="utf-8")
+        config.ENV_FILE = env
         return self
 
     def __exit__(self, *exc):
-        config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION = self.old
+        config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE = self.old
+        self._dir.cleanup()
         return False
 
 
