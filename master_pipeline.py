@@ -44,6 +44,15 @@ class MasterFlagged(RuntimeError):
         self.flags = list(flags or [])
 
 
+class MasterNeedsAck(RuntimeError):
+    """主单没被录入员复核过（暂存记录里没有 inputter 的角色事件），要多点一次确认才发。
+    带 `ack` 让前端知道要点哪一种确认——与分单 `/submit` 的第三道门同构。"""
+
+    def __init__(self, msg: str, ack: str = "no_inputter_review"):
+        super().__init__(msg)
+        self.ack = ack
+
+
 def _now() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
@@ -80,6 +89,41 @@ def _write(rec: dict) -> dict:
     atomic.write_json(p, rec, mode=0o600)      # 主单缓存里是公司资料，新建就收 600
     rec["path"] = str(p)
     return rec
+
+
+def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = None) -> dict:
+    """把主单 36 列的当前人工值存进这条主单缓存（**不发公司**）。
+
+    与分单的 `store.stage_ticket` 同一套形态（快照基线 + 追加事件 + 服务器算差异），
+    但字段面是主单自己的 36 列——统一的是机制，不是业务契约。
+    基线取第一次暂存时的 `ams`：重解析会覆盖它，不快照就查不回模型当初读了什么。"""
+    rec = read_master(mawb)
+    if not rec:
+        raise ValueError("这条主单还没有解析结果（先在审核台检索一次主单号）")
+    ams = ams if isinstance(ams, dict) else {}
+    base = rec.get("ams_model")
+    if not isinstance(base, dict) or not base:
+        base = rec.get("ams") if isinstance(rec.get("ams"), dict) else {}
+    last = rec.get("ams_final") if isinstance(rec.get("ams_final"), dict) else base
+    now = _now()
+    events = list(rec.get("events") or [])
+    events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
+                   "edits": store.field_diff(last, ams),
+                   "acked_flags": [str(x) for x in (acked_flags or [])]})
+    rec.update({"ams_model": base, "ams_final": ams, "events": events,
+                "staged_at": now, "stager": str(by or ""), "stager_role": str(role or ""),
+                "updated_at": now})
+    return _write(rec)
+
+
+def mark_master_sent(mawb: str, by: str) -> dict | None:
+    """给主单记录盖"已发出"的章；没暂存过就不盖章也不造记录。"""
+    rec = read_master(mawb)
+    if not rec or not rec.get("events"):
+        return rec
+    rec["submitted_at"] = _now()
+    rec["submitter"] = str(by or "")
+    return _write(rec)
 
 
 def master_flags(ams: dict, transcript: dict | None = None) -> list:
@@ -235,9 +279,17 @@ def submit_master(payload: dict) -> dict:
     if left:
         raise MasterFlagged("主单还有未确认的红旗，逐条点「确认无误」后才能回传公司：\n" +
                             "\n".join(left), left)
+    reviewed = store.reviewed_by_inputter(cached)
+    if not reviewed and not p.get("acked_no_review"):
+        raise MasterNeedsAck(f"主单 {mawb} 没有录入员复核过的暂存记录："
+                             "确认「未经录入员复核，仍要回传公司」后再提交")
     # 只发调用方给过的列（clean_ams 会丢掉没给的）：mawb2 是整表写回，
     # "这次没碰"要由 company_api 用库里的现值补齐，"人工清空"才是显式 null。
     res = company_api.submit_master({"mawb": mawb, "ams": mf.clean_ams(ams)})
     store.mark_master_submitted(mawb, reviewer, receipt=res, acked_flags=acked,
-                                snapshot=res.get("before"))
+                                snapshot=res.get("before"), ams_sent=ams,
+                                stager=cached.get("stager") or "",
+                                staged_at=cached.get("staged_at") or "",
+                                no_inputter_review=not reviewed)
+    mark_master_sent(mawb, reviewer)
     return res

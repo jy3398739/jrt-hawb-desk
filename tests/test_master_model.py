@@ -48,7 +48,13 @@ def test_unknown_master_choice_is_carried_as_custom_id():
 
 
 def test_extract_master_uses_the_master_client_not_the_global_one():
-    """两条链各自发请求：主单那份走 master bundle 的端点，且绝不因为分单在跑就串渠道。"""
+    """两条链各自发请求：主单那份走 master bundle 的端点，不因为分单在跑就串渠道。
+
+    全局那条链**在测试里显式钉成另一个渠道**：`vlm_extract` 判"要不要复用分单那把客户端"用的是
+    `bundle["base_url"] == config.vlm_base_url()`，而从前这条用例拿 `config.vlm_base_url()` 当全局通道，
+    等于依赖"这台机器分单链此刻用的是哪家"。分单默认换成公司 qwen 之后两条链地址相同——
+    复用同一个客户端是对的，用例却会判成"串渠道"。要测的是主单按自己的 bundle 找客户端，
+    那就必须让两个地址真的不一样。"""
     calls = {"global": 0, "master": 0}
 
     def fake(reply):
@@ -65,9 +71,12 @@ def test_extract_master_uses_the_master_client_not_the_global_one():
                     usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1))
         return C()
 
-    old = (vlm_extract._client, vlm_extract._client_channel, dict(vlm_extract._extra_clients))
-    vlm_extract._client, vlm_extract._client_channel = fake("global"), config.vlm_base_url()
+    old = (vlm_extract._client, vlm_extract._client_channel, dict(vlm_extract._extra_clients),
+           config.VLM_MODEL_CHOICE)
     mb = _bundle_of(config.DEFAULT_MASTER_MODEL_KEY)
+    config.VLM_MODEL_CHOICE = "intern-s2-official"          # 分单链钉成另一家，两条链才分得开
+    assert config.vlm_base_url() != mb["base_url"], "两条链撞在同一地址时这条用例测不出东西"
+    vlm_extract._client, vlm_extract._client_channel = fake("global"), config.vlm_base_url()
     vlm_extract._extra_clients[mb["base_url"]] = fake("master")
     tr = {"lines": [{"i": 1, "text": "MASTER_NO: 176-62400004"}], "full_text": "MASTER_NO: 176-62400004"}
     try:
@@ -76,6 +85,7 @@ def test_extract_master_uses_the_master_client_not_the_global_one():
         assert calls == {"global": 0, "master": 1}, "主单必须发在它的渠道上，不能蹭分单那份客户端"
     finally:
         vlm_extract._client, vlm_extract._client_channel = old[0], old[1]
+        config.VLM_MODEL_CHOICE = old[3]
         vlm_extract._extra_clients.clear()
         vlm_extract._extra_clients.update(old[2])
 

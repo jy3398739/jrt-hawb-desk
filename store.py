@@ -240,9 +240,12 @@ def ledger() -> dict:
 
 
 def mark_master_submitted(mawb: str, reviewer: str, receipt: dict = None,
-                          acked_flags: list = None, snapshot: dict = None) -> dict:
+                          acked_flags: list = None, snapshot: dict = None,
+                          ams_sent: dict = None, stager: str = "", staged_at: str = "",
+                          no_inputter_review: bool = False) -> dict:
     """主单提交台账（键=归一化主单号）。与分单台账分开：那边以 stem 为键，主单没有原件 stem。
-    snapshot 存提交前公司侧的 AMS_RECORD——整表写回会把没给的列写成 NULL，出事时要能看出抹掉了什么。"""
+    snapshot 存提交前公司侧的 AMS_RECORD——整表写回会把没给的列写成 NULL，出事时要能看出抹掉了什么。
+    ams_sent/stager/no_inputter_review 与分单台账同一套含义：发了什么值、发之前谁核对过。"""
     key = norm_no(mawb)
     with _LEDGER_LOCK:
         data = _load_ledger(config.MASTER_LEDGER)
@@ -250,6 +253,9 @@ def mark_master_submitted(mawb: str, reviewer: str, receipt: dict = None,
                  "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "action": (receipt or {}).get("action"),
                  "acked_flags": [str(a) for a in (acked_flags or [])],
+                 "ams_sent": ams_sent if isinstance(ams_sent, dict) else {},
+                 "stager": str(stager or ""), "staged_at": str(staged_at or ""),
+                 "no_inputter_review": bool(no_inputter_review),
                  "receipt": receipt or {}, "snapshot": snapshot or {}}
         data[key] = entry
         _write_ledger(data, config.MASTER_LEDGER)

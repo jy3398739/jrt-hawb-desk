@@ -13,7 +13,9 @@ import company_api
 import config
 import master_pipeline as mp
 import server
+import store
 import vlm_extract
+import web_src
 
 AMS = {"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "841290901", "SLAC": 10,
        "SHIPPER_INFO_COMP_NAME": "METSO (TIANJIN) INVESTMENT CO., LTD.",
@@ -24,17 +26,32 @@ MASTER_ROW = {"JOB_ID": 1, "MASTER_NO": "176-62400004",
 
 
 def _isolate(tmp: Path):
-    old = (auth.USERS_FILE, config.SUBMIT_LEDGER, config.MASTER_DIR, config.MASTER_LEDGER)
+    """主单这条链要指开的目录：账号表、两张台账、主单缓存，以及检索现在会读的落盘目录。
+
+    `/company/mawb` 现在会带 pending（`store.ticket_rows` 扫 qc/staged/archive）——
+    不指开的话，这条用例就是在读那台机器真 output 里的票，换台机器结果不一样。
+    """
+    old = (auth.USERS_FILE, config.SUBMIT_LEDGER, config.MASTER_DIR, config.MASTER_LEDGER,
+           config.OUTPUT_QC_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+           config.TRANSCRIPT_DIR, config.STAGED_DIR, config.ARCHIVE_DIR)
     auth.USERS_FILE = tmp / "users.json"
     config.SUBMIT_LEDGER = tmp / "submitted.json"
     config.MASTER_DIR = tmp / "master"
     config.MASTER_LEDGER = tmp / "master_submitted.json"
+    config.OUTPUT_QC_DIR, config.OUTPUT_AIR_DIR = tmp / "qc", tmp / "air"
+    config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "raw", tmp / "transcript"
+    config.STAGED_DIR, config.ARCHIVE_DIR = tmp / "staged", tmp / "archive"
+    for p in (config.OUTPUT_QC_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+              config.TRANSCRIPT_DIR, config.STAGED_DIR, config.ARCHIVE_DIR):
+        p.mkdir()
     return old
 
 
 def _restore(old, tmp):
     (auth.USERS_FILE, config.SUBMIT_LEDGER,
-     config.MASTER_DIR, config.MASTER_LEDGER) = old
+     config.MASTER_DIR, config.MASTER_LEDGER,
+     config.OUTPUT_QC_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+     config.TRANSCRIPT_DIR, config.STAGED_DIR, config.ARCHIVE_DIR) = old
     shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -226,11 +243,14 @@ def test_master_submit_blocks_flags_and_passes_after_ack():
             assert sent == [], "被门拦下时一次公司请求都不该发"
             flags = mp.master_flags(bad)
             r2 = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
-                                                "ams": bad, "acked_flags": flags})
+                                                "ams": bad, "acked_flags": flags,
+                                                "acked_no_review": True})
             assert r2.status_code == 200, r2.text
             assert any(s["path"].endswith("/mawb2/") for s in sent), "确认无误后才真正回传"
             led = json.loads((tmp / "master_submitted.json").read_text(encoding="utf-8"))
             assert led["17662400004"]["acked_flags"] == flags
+            assert led["17662400004"]["no_inputter_review"] is True, \
+                "没录入员复核过就发的，主单台账也要留下这一档（与分单同构）"
         finally:
             undo()
     finally:
@@ -247,7 +267,8 @@ def test_master_submit_maps_locked_record_to_409_and_config_to_502():
         undo = _stub_live(master_rows=[locked])
         try:
             c = _login()
-            r = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin", "ams": dict(AMS)})
+            r = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
+                                               "ams": dict(AMS), "acked_no_review": True})
             assert r.status_code == 409, r.text
             assert "SEND_STATUS" in r.text
         finally:
@@ -256,9 +277,101 @@ def test_master_submit_maps_locked_record_to_409_and_config_to_502():
         config.COMPANY_API_MODE = "live"
         try:
             c2 = _login()
-            r2 = c2.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin", "ams": dict(AMS)})
+            r2 = c2.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
+                                                 "ams": dict(AMS), "acked_no_review": True})
             assert r2.status_code == 502, f"live 缺端点要 502 而不是静默成功：{r2.status_code} {r2.text[:120]}"
         finally:
             config.COMPANY_API_MODE = old_mode
     finally:
         _restore(old, tmp)
+
+
+def _acct(name, role, pw):
+    auth.ensure_seed()
+    u, err = auth.set_password(name, pw, role)
+    assert err is None, err
+    return _login(name, pw)
+
+
+def test_master_stage_stores_the_edited_columns_without_writing_to_the_company():
+    """主单侧的「暂存」：录入员改的 36 列从前根本没上过服务器（MV.edit 只在浏览器里，
+    换台机器、刷新一下就没了），所以分单有了暂存档，主单也必须有——需求二说的是"主单和分单的暂存内容"。
+
+    这一条同时钉住"暂存不写公司"：fake_post 记下每一次外发，暂存之后不许出现 /mawb2/。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mstage_"))
+    old = _isolate(tmp)
+    sent = []
+    undo = _stub_live(sent=sent)
+    try:
+        rv = _acct("马殿齐", "reviewer", "rv-123456")
+        assert rv.get("/company/mawb", params={"mawb": "176-62400004"}).status_code == 200
+        body = {"mawb": "176-62400004", "ams": dict(AMS, GOODS_INFO_HSCODE="8412909080"),
+                "acked_flags": []}
+        r = rv.post("/master/stage", json=body)
+        assert r.status_code == 200, r.text
+        rec = json.loads((config.MASTER_DIR / "17662400004.json").read_text(encoding="utf-8"))
+        assert rec["ams_final"]["GOODS_INFO_HSCODE"] == "8412909080", rec.get("ams_final")
+        assert rec["ams_model"]["GOODS_INFO_HSCODE"] == "841290901", "模型那版被人工值盖掉了"
+        assert list(rec["events"][0]["edits"]) == ["GOODS_INFO_HSCODE"], rec["events"]
+        assert rec["events"][0]["role"] == "reviewer" and rec["stager"] == "马殿齐", rec["events"]
+        assert not [s for s in sent if "mawb2" in s["path"]], f"暂存居然写了公司：{sent}"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_master_submit_requires_the_ack_when_no_inputter_reviewed():
+    """与分单同一条门：没录入员复核过就要一次显式确认，台账留下 no_inputter_review 与发出去的值。
+
+    同构不是抄样式：主单同样是整表写回，没核对过就发，出事时一样要能回答"这张当时谁看过"。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mack_"))
+    old = _isolate(tmp)
+    undo = _stub_live()
+    try:
+        rv = _acct("马殿齐", "reviewer", "rv-123456")
+        assert rv.get("/company/mawb", params={"mawb": "176-62400004"}).status_code == 200
+        ams = dict(AMS, GOODS_NAME="PISTON ROD ASSY")
+        assert rv.post("/master/stage", json={"mawb": "176-62400004", "ams": ams}).status_code == 200
+        r = rv.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "马殿齐",
+                                           "ams": ams, "acked_flags": []})
+        assert r.status_code == 400, f"没人复核过却直接发出去了：{r.status_code} {r.text[:150]}"
+        assert r.json()["detail"].get("ack") == "no_inputter_review", r.text
+        assert store.master_ledger() == {}, "被拒的提交不许进主单台账"
+
+        r2 = rv.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "马殿齐",
+                                            "ams": ams, "acked_flags": [], "acked_no_review": True})
+        assert r2.status_code == 200, r2.text
+        e = store.master_ledger()["17662400004"]
+        assert e["no_inputter_review"] is True and e["ams_sent"]["GOODS_NAME"] == "PISTON ROD ASSY", e
+        rec = json.loads((config.MASTER_DIR / "17662400004.json").read_text(encoding="utf-8"))
+        assert rec["submitted_at"] and rec["submitter"] == "马殿齐", rec
+
+        inp = _acct("刘明", "inputter", "in-123456")
+        assert inp.post("/master/stage", json={"mawb": "176-62400004", "ams": ams}).status_code == 200
+        r3 = inp.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "刘明",
+                                             "ams": ams, "acked_flags": []})
+        assert r3.status_code == 200, f"录入员自己复核过就不该再要确认：{r3.text[:150]}"
+        assert store.master_ledger()["17662400004"]["no_inputter_review"] is False
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_desk_has_a_master_stage_button_next_to_the_submit_one():
+    """主单核对页也要有那一档：只给分单做暂存，录入员就没法把主单的核对结果交给同事。"""
+    js = web_src.desk()
+    assert 'id="mvStage"' in js, "主单核对页没有「暂存」按钮"
+    i = js.index("async function mvStage(")
+    body = js[i:js.index("\n}", i)]
+    assert 'BASE + "/master/stage"' in body, "暂存没接到 /master/stage"
+    assert "/master/submit" not in body, "主单暂存里混进了回传那条路：那会真写公司"
+    assert 'MV.rec.ams_final' in js or "rec.ams_final" in js, "打开主单要认服务器上那份人工值"
+    # 主单同样要有"未经录入员复核"的那次确认，而且不能把事件对象当成确认参数（老 listener 的坑）
+    i2 = js.index("async function mvSubmit(")
+    body2 = js[i2:js.index("\n}", i2)]
+    assert "no_inputter_review" in body2, "主单没接未经复核的确认要求"
+    assert "if (ackNoReview === true) payload.acked_no_review = true;" in body2, \
+        "acked_no_review 必须只在人确认之后才带"
+    assert 'addEventListener("click", () => mvSubmit())' in js, \
+        "直接把 mvSubmit 当监听器会把 MouseEvent 当成 ackNoReview，等于默认替人确认"

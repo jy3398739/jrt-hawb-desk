@@ -20,7 +20,9 @@
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器**不发公司**，缺号也允许存
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
-  GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1）
+  GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
+  POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器**不发公司**
+  POST /master/submit      需登录会话；主单回传公司(mawb2)的唯一出口；没录入员复核过要带 acked_no_review
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
   GET  /staged/{stem}      需登录会话；一份暂存（模型原样 + 人工最新值 + 每次谁改了哪几列）
@@ -335,6 +337,24 @@ class MasterSubmitBody(BaseModel):
     reviewer: str = ""
     ams: dict = {}
     acked_flags: list = []
+    acked_no_review: bool = False
+
+
+@app.post("/master/stage")
+def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
+    """主单暂存：把 36 列的人工核对结果存进这条主单缓存，**不发公司**。
+
+    分单有了暂存档，主单也必须有——需求二说的是"主单和分单的暂存内容"。从前 `MV.edit`
+    只活在浏览器里（换台机器、刷新一次就没了），录入员根本交不出主单的核对结果。"""
+    try:
+        rec = master_pipeline.stage_master(body.mawb, body.ams, str(user.get("name") or ""),
+                                           str(user.get("role") or ""), body.acked_flags)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    LOG.info("主单暂存 who=%s(%s) %s 改动=%d 列", user.get("name"), user.get("role"),
+             body.mawb, len((rec.get("events") or [{}])[-1].get("edits") or {}))
+    return {"ok": True, "mawb": rec.get("mawb"), "edited": len(rec.get("events")[-1]["edits"]),
+            "stager": rec.get("stager"), "reviewed_by_inputter": store.reviewed_by_inputter(rec)}
 
 
 @app.post("/master/submit")
@@ -354,6 +374,8 @@ def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
     except master_pipeline.MasterFlagged as e:
         # detail 带结构化红旗：前端逐条出「确认无误」按钮，不用解析提示文案
         raise HTTPException(400, {"message": str(e), "flags": e.flags})
+    except master_pipeline.MasterNeedsAck as e:
+        raise HTTPException(400, {"message": str(e), "ack": e.ack})
     except company_api.CompanyLocked as e:
         LOG.warning("主单回传被公司锁行：%s → %s", body.mawb, e)
         raise HTTPException(409, str(e))

@@ -1075,9 +1075,12 @@ function renderMain(){
       </div>
       ${chips ? `<div class="chips">${chips}</div>` : ""}
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机草稿与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
+      ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
+      ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机草稿里</span></div>` : ""}
       ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="ft top">
+        <button class="btn" id="mvStage" type="button" title="把现在这 36 列存到服务器上给同事核对：不发公司">暂存主单</button>
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
@@ -1100,7 +1103,8 @@ function renderMain(){
     }));
     $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
-    $("#mvSubmit").addEventListener("click", mvSubmit);
+    $("#mvStage").addEventListener("click", mvStage);
+    $("#mvSubmit").addEventListener("click", () => mvSubmit());
     return;
   }
   if (!t){
@@ -1620,8 +1624,13 @@ function mvLabel(k){
 }
 function mvRestore(rec){
   const m = L.draftMerge(mstDrafts()[MV.mawb], (rec || {}).ams || {});
-  MV.edit = m.edit; MV.acked = m.acked; MV.extraFlags = m.extraFlags;
-  MV.editBase = m.editBase; MV.conflicts = m.conflicts;
+  /* 服务器上有别人（或自己上次）暂存的核对结果时，那份赢；本机未存的改动不删，冲突列点名。
+     和分单侧同一条规则：静悄悄盖掉任何一边，人都会拿着错的版本往下核。 */
+  const mg = L.stagedMerge((rec || {}).ams || {}, rec && rec.ams_final, m.edit);
+  MV.edit = mg.airE; MV.acked = m.acked; MV.extraFlags = m.extraFlags;
+  MV.editBase = m.editBase; MV.conflicts = m.conflicts; MV.localDiff = mg.conflicts;
+  MV.staged = (rec && rec.ams_final && !rec.submitted_at)
+    ? {by: rec.stager || "?", role: rec.stager_role || "", at: rec.staged_at || ""} : null;
 }
 /* 换解析记录的唯一入口：重解析、轮询、提交后都走这里，绕开它就等于把刚恢复的草稿弄丢。 */
 function mvSetRec(rec){
@@ -1663,7 +1672,23 @@ function mvPoll(){
 }
 /* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。 */
 function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
-async function mvSubmit(){
+/* 主单暂存：把这 36 列存进服务器上的这条主单记录，不发公司。
+   与分单同一个道理——从前 MV.edit 只在浏览器里，换台机器就什么都没交出去。 */
+async function mvStage(){
+  if (!MV) return;
+  try{
+    const r = await fetch(BASE + "/master/stage", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({mawb: MV.mawb, ams: mvValues(), acked_flags: MV.acked})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false){
+      const d = j.detail;
+      throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
+    }
+    toast("主单已暂存（相对模型改了 " + j.edited + " 列）：不发公司，同事检索这条主单就能看到", "ok");
+  }catch(e){ toast("主单暂存失败：" + (e.message || e), "bad"); }
+}
+async function mvSubmit(ackNoReview){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
   const left = mvFlags().filter(f => !MV.acked.includes(f));
@@ -1674,8 +1699,10 @@ async function mvSubmit(){
   }
   const btn = $("#mvSubmit"); if (btn) btn.disabled = true;
   try{
+    const payload = {mawb: MV.mawb, reviewer: who, ams: mvValues(), acked_flags: MV.acked};
+    if (ackNoReview === true) payload.acked_no_review = true;   // 只在人确认过之后才带
     const r = await fetch(BASE + "/master/submit", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({mawb: MV.mawb, reviewer: who, ams: mvValues(), acked_flags: MV.acked})});
+      body: JSON.stringify(payload)});
     const j = await r.json().catch(() => ({}));
     const d = j.detail || {};
     if (!r.ok){
@@ -1684,6 +1711,10 @@ async function mvSubmit(){
         MV.msg = "服务端重算后仍有 " + d.flags.length + " 条红旗，确认后再提交";
         mvSave();                              // 退回的红旗也是工作，刷新不能又丢一遍
         toast(MV.msg, "bad");
+      } else if (r.status === 400 && d.ack === "no_inputter_review"){
+        // 与分单同一条门：没人复核过要多点一次确认，点才算；不点什么都不发
+        if (confirm((d.message || "这条主单没有录入员复核过的暂存记录。") +
+                    "\n\n确认「未经录入员复核，仍要回传公司」？")) mvSubmit(true);
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};

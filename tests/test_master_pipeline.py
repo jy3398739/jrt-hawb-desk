@@ -267,7 +267,7 @@ def test_submit_master_reads_then_sends_only_the_36_columns():
                                                   CONSIGNEE_INFO_COMP_NAME="OLD NAME")}])
     try:
         out = mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐",
-                                "ams": dict(AMS_OUT, SLAC=12)})
+                                "ams": dict(AMS_OUT, SLAC=12), "acked_no_review": True})
         assert out["accepted"] is True
         assert len(sent) == 2 and sent[0]["path"].endswith("/mawb/") and sent[0]["key"] == "km"
         body = sent[1]["body"]["AMS_RECORD"]
@@ -295,7 +295,8 @@ def test_submit_master_refuses_locked_record_without_writing():
                                "AMS_RECORD": dict(AMS_OUT, SEND_STATUS=1)}])
     try:
         try:
-            mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": dict(AMS_OUT)})
+            mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": dict(AMS_OUT),
+                              "acked_no_review": True})
             raise AssertionError("SEND_STATUS=1 的主单居然放行了")
         except company_api.CompanyLocked as e:
             assert "SEND_STATUS" in str(e)
@@ -325,7 +326,7 @@ def test_submit_master_gate_blocks_uncleared_flags():
         assert sent == [], "被门拦下时一次请求都不该发出去"
         flags = mp.master_flags(bad)
         out = mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": bad,
-                                "acked_flags": flags})
+                                "acked_flags": flags, "acked_no_review": True})
         assert out["accepted"] is True and len(sent) == 2
         led = json.loads((tmp / "master_submitted.json").read_text(encoding="utf-8"))
         assert len(led["17662400004"]["acked_flags"]) == len(flags), "确认无误要留痕"
