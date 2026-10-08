@@ -437,16 +437,23 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                 "message": f"{hawb} 没有录入员复核过的暂存记录：确认「未经录入员复核，仍要回传公司」后再提交",
                 "ack": "no_inputter_review"})
         passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed))
-    results = []
+    results, codes = [], []
     for tk, stem, mawb, hawb, rec, acked, st, reviewed in passed:
+        # 逐张收集成败，不在第一张错上 raise：/submit 收的是列表，前面几张已经写进公司库了，
+        # 让它们随异常一起消失，调用方就分不清"没发出去"和"发出去了但没回执"，
+        # 再点一次等于第二次整表写回。
         try:
             receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem, "air": rec})
         except company_api.CompanyLocked as e:
             LOG.warning("分单回传被公司锁行：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
-            raise HTTPException(409, str(e))
+            results.append({"stem": stem, "ok": False, "error": f"公司锁行：{e}"})
+            codes.append(409)
+            continue
         except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
             LOG.warning("分单回传失败：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
-            raise HTTPException(502, f"回传公司失败：{e}")
+            results.append({"stem": stem, "ok": False, "error": str(e)})
+            codes.append(502)
+            continue
         fp = _sent_fingerprint(mawb, hawb, rec)
         entry = store.mark_submitted(stem, mawb, hawb, str(user.get("name") or ""), receipt,
                                      acked_flags=acked,
@@ -459,11 +466,19 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                                      no_inputter_review=not reviewed)
         if st:
             store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)
-        results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
+        results.append({"stem": stem, "ok": True, "submitted": True,
+                        "key": entry["key"], "mode": receipt.get("mode")})
         LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s%s",
                  user.get("name"), mawb, hawb, receipt.get("mode"), receipt.get("action") or "-",
                  bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked),
                  st.get("stager") or "-", "" if reviewed else "（未经录入员复核，已确认）")
+    if codes:
+        bad = [r for r in results if not r["ok"]]
+        n_ok = len(results) - len(bad)
+        raise HTTPException(502 if 502 in codes else 409, {
+            "message": f"{len(bad)} 张没发出去（{bad[0]['error']}）"
+                       + (f"；另外 {n_ok} 张已成功并发出，台账已记，别再重发这批" if n_ok else ""),
+            "results": results})
     return {"ok": True, "results": results}
 
 

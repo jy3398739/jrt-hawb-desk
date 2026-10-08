@@ -592,3 +592,41 @@ def test_desk_has_a_stage_button_that_cannot_reach_the_company():
     assert "/submit" not in body, "暂存那段里混进了 /submit：那会真发给公司"
     assert 'BASE + "/staged/"' in js, "录入员打开别人暂存的票要读 /staged"
     assert "L.stagedMerge(" in js, "本地未存改动与服务器暂存合并要走 logic，别在渲染里再算一遍"
+
+
+def test_a_batch_reports_which_tickets_made_it_when_one_does_not():
+    """/submit 收的是 tickets 列表，但发送循环第一张撞错就 raise：
+    前面已经发出去的几张随异常一起没了回音——调用方只看到一句失败，不知道其实有 N 张
+    已经进了公司库，于是再点一次（整表写回第二次）或者以为全没发。
+
+    现在逐张收集成败：成功的照常进台账并原样回给调用方，失败的带着公司给的原因一起回。
+    整批状态取最贴切的那个码：全是锁行 409，有接口失败 502，全成功 200。
+    """
+    import company_api
+    old_submit = server._company_submit
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_batch_"))
+    try:
+        with _desk_dirs(tmp):
+            def flaky(payload):
+                if payload["hawb"] == "BAD001":
+                    raise company_api.CompanyApiError("公司返回 400：SHIPPER_INFO 超长")
+                return {"mode": "mock", "accepted": True, "mawb": payload["mawb"],
+                        "hawb": payload["hawb"]}
+            server._company_submit = flaky
+            client = _login_as("马殿齐", "rv-123456", "reviewer")
+            t1 = _clean_ticket(stem="GOOD001", hawb="GOOD001")
+            t1["air_reviewed"]["HAWB_NO"] = "GOOD001"
+            t2 = _clean_ticket(stem="BAD001", hawb="BAD001")
+            t2["air_reviewed"]["HAWB_NO"] = "BAD001"
+            r = client.post("/submit", json={"tickets": [t1, t2]})
+            assert r.status_code == 502, f"有一张没发出去要报失败码：{r.status_code} {r.text[:120]}"
+            d = r.json()["detail"]
+            by = {x["stem"]: x for x in d["results"]}
+            assert by["GOOD001"]["ok"] is True, f"成功的那张要如实回报：{by}"
+            assert by["BAD001"]["ok"] is False and "超长" in by["BAD001"]["error"], by
+            led = store.ledger()
+            assert "GOOD001" in led and "BAD001" not in led, \
+                f"台账只该记真发出去的：{sorted(led)}"
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
