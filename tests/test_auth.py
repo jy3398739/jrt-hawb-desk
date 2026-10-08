@@ -337,3 +337,20 @@ def test_desk_has_login_gate_and_role_scoped_controls():
     assert "rv.readOnly = true" in body, "复核人没锁成登录身份，提交留痕可被冒名"
     assert 'id="fKey"' not in html, "接口密钥输入框已随 HTTP_API_KEY 一并删除"
     assert "apiKey" not in html and "X-API-Key" not in html, "前端还留着 X-API-Key 送密钥的路径"
+
+
+def test_no_doc_names_a_role_guard_that_does_not_exist():
+    """文档里出现 `require_xxx` 就必须真有其人。auth.py 的文件头和《IT对接说明》都还写着
+    require_inputter（"制单员 403"），而这个依赖 2026-09-22 就连根删了：/company/mawb 认的是
+    require_web，制单员照样能用——test_company_search.py 里
+    test_company_mawb_reviewer_and_inputter_both_allowed 钉的就是这件事。
+    描述一道不存在的门比不写更坏：接手的人会以为它挡着。"""
+    root = Path(__file__).resolve().parent.parent
+    guards = {n for n in dir(server) if n.startswith("require_")}
+    assert guards, "server 里一个 require_* 都没有，这条测试本身就没意义了"
+    for rel in ("auth.py", "docs/IT对接说明.md", "docs/技术留档.md", "README.md"):
+        p = root / rel
+        if not p.is_file():
+            continue
+        for name in set(re.findall(r"\brequire_[a-z_]+\b", p.read_text(encoding="utf-8"))):
+            assert name in guards, f"{rel} 写了不存在的守卫 {name}（现只有 {sorted(guards)}）"

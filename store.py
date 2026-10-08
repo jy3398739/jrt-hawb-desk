@@ -235,8 +235,15 @@ def number_index() -> dict:
 
 
 def lookup_stem(mawb: str, hawb: str):
-    """录入员检索用：给主单号+分单号 → 本机已归档原件的 stem（打不开原件时返回 None）。"""
-    return (number_index().get(number_key(mawb, hawb)) or {}).get("stem")
+    """录入员检索用：给主单号+分单号 → 本机**点得开**原件的 stem，打不开一律返回 None。
+
+    光在台账里有一条记录 ≠ 原件还在这台机器上：归档可能被清、票也可能是在别的机器解析后
+    在这里提交的。带着这种 stem 去渲染「查看原件」，点开只剩一坨裸 JSON 404，录入员对不了
+    票面还会以为系统坏了——所以这里就地把"有没有原件"查实，让 stem 这一个字段说一件事。"""
+    stem = (number_index().get(number_key(mawb, hawb)) or {}).get("stem")
+    if not stem:
+        return None
+    return stem if (config.ARCHIVE_DIR / str(stem)).is_dir() else None
 
 
 def submitted_by_mawb(mawb: str) -> list:

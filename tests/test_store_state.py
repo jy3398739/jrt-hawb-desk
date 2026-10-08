@@ -55,3 +55,30 @@ def test_already_done_states():
             assert store.already_done(src) is False, "manifest 读不动时要重跑，不能崩"
         finally:
             config.ARCHIVE_DIR, config.OUTPUT_RAW_DIR = old
+
+
+def test_lookup_stem_requires_archive_on_disk():
+    """台账里有这条 ≠ 原件还在本机。归档目录被清掉（或这张票本来就是在别的机器解析的）之后
+    还回 stem，前端就会给一个点开只剩裸 JSON 404 的「查看原件」链接——录入员对不了票面，
+    还以为系统坏了。查无原件必须回 None，让行上老实显示「本机无归档」。"""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        old_ledger = config.SUBMIT_LEDGER
+        config.SUBMIT_LEDGER = tmp / "submitted.json"
+        old = _setup(tmp)
+        try:
+            store.mark_submitted("CLA26090022", "235-96146363", "CLA26090022", "马殿齐", {"mode": "mock"})
+            assert store.lookup_stem("235-96146363", "CLA26090022") is None, \
+                '台账有记录但归档目录不存在，居然还回 stem'
+
+            (config.ARCHIVE_DIR / "CLA26090022").mkdir(parents=True)
+            assert store.lookup_stem("23596146363", "cla26090022") == "CLA26090022", \
+                "原件在机器上就该回 stem（号写法差异归一后照样命中）"
+
+            (config.ARCHIVE_DIR / "CLA26090022").rmdir()
+            (config.ARCHIVE_DIR / "CLA26090022").write_text("不是目录", encoding="utf-8")
+            assert store.lookup_stem("235-96146363", "CLA26090022") is None, \
+                "归档名字被一个文件占了位，不能当成原件目录"
+        finally:
+            config.SUBMIT_LEDGER = old_ledger
+            config.ARCHIVE_DIR, config.OUTPUT_RAW_DIR = old

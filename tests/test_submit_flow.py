@@ -34,8 +34,11 @@ def test_norm_no_and_composite_key():
 
 def test_mark_submitted_writes_ledger_and_index_resolves_stem():
     old_ledger = config.SUBMIT_LEDGER
+    old_arc = config.ARCHIVE_DIR
     tmp = Path(tempfile.mkdtemp(prefix="hawb_ledger_"))
     config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.ARCHIVE_DIR = tmp / "archive"          # stem 现在意味着「原件在本机点得开」
+    (config.ARCHIVE_DIR / "CLA26090022").mkdir(parents=True)
     try:
         assert store.ledger() == {}
         store.mark_submitted("CLA26090022", "235-96146363", "CLA26090022", "马殿齐", {"mode": "mock"})
@@ -49,6 +52,7 @@ def test_mark_submitted_writes_ledger_and_index_resolves_stem():
         assert store.lookup_stem("000-00000000", "NOPE") is None
     finally:
         config.SUBMIT_LEDGER = old_ledger
+        config.ARCHIVE_DIR = old_arc
         shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -94,8 +98,11 @@ def test_submit_requires_login():
 
 def test_submit_clean_writes_ledger_mock_receipt():
     old_ledger = config.SUBMIT_LEDGER
+    old_arc = config.ARCHIVE_DIR
     tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
     config.SUBMIT_LEDGER = tmp / "submitted.json"
+    config.ARCHIVE_DIR = tmp / "archive"
+    (config.ARCHIVE_DIR / "CLA26090022").mkdir(parents=True)   # 提交过的票，原件就在归档里
     old_users = auth.USERS_FILE
     try:
         client = _logged_client(tmp)
@@ -108,6 +115,7 @@ def test_submit_clean_writes_ledger_mock_receipt():
     finally:
         auth.USERS_FILE = old_users
         config.SUBMIT_LEDGER = old_ledger
+        config.ARCHIVE_DIR = old_arc
         shutil.rmtree(tmp, ignore_errors=True)
 
 

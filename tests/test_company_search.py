@@ -18,15 +18,19 @@ import store
 
 
 def _isolate(tmp: Path):
-    """把账号表与提交台账指到临时目录，返回旧值供恢复。"""
-    old_users, old_ledger = auth.USERS_FILE, config.SUBMIT_LEDGER
+    """把账号表、提交台账**和归档目录**一起指到临时目录，返回旧值供恢复。
+    归档这一样是新加的：stem 现在的含义是「原件在本机点得开」（`store.lookup_stem` 会查目录），
+    不隔离的话这些检索测试读的是这台机器的真 output/archive——换一台机器（或在 VM 上跑回归）
+    结果就不一样，和上一轮 .env 被回归改写是同一类缺陷。"""
+    old = (auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR)
     auth.USERS_FILE = tmp / "users.json"
     config.SUBMIT_LEDGER = tmp / "submitted.json"
-    return old_users, old_ledger
+    config.ARCHIVE_DIR = tmp / "archive"
+    return old
 
 
-def _restore(old_users, old_ledger, tmp):
-    auth.USERS_FILE, config.SUBMIT_LEDGER = old_users, old_ledger
+def _restore(old, tmp):
+    auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR = old
     shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -37,7 +41,7 @@ def _login(client, name, password):
 
 def test_seed_has_three_inputters_without_password():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         users = auth.seed_data()["users"]
         for n in auth.INPUTTERS:
@@ -45,12 +49,12 @@ def test_seed_has_three_inputters_without_password():
             assert not users[n]["pw"], "录入员种子口令应为空，待管理员下发"
         assert set(auth.INPUTTERS) == {"刘明", "郭健康", "郭旭"}
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_admin_can_issue_password_for_inputter():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         auth.ensure_seed()
         u, err = auth.set_password("刘明", "pw-123456", "inputter")
@@ -59,12 +63,12 @@ def test_admin_can_issue_password_for_inputter():
         assert r.status_code == 200, "下发口令后录入员应能登录"
         assert r.json()["user"]["role"] == "inputter"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_submitted_by_mawb_filters_and_normalizes():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         store.mark_submitted("CLA1", "235-96146363", "CLA001", "马殿齐", {"mode": "mock"})
         store.mark_submitted("CLA2", "235 96146363", "CLA002", "宛平", {"mode": "mock"})   # 同主单，写法不同
@@ -74,14 +78,15 @@ def test_submitted_by_mawb_filters_and_normalizes():
         assert store.submitted_by_mawb("") == [], "空主单号不返回任何票"
         assert store.submitted_by_mawb("999-00000000") == []
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_company_api_mock_returns_orders_with_stem():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         store.mark_submitted("CLA1", "235-96146363", "CLA001", "马殿齐", {"mode": "mock"})
+        (config.ARCHIVE_DIR / "CLA1").mkdir(parents=True)     # 原件真在机器上
         j = company_api.search_mawb("235-96146363")
         assert j["mode"] == "mock" and j["mawb"] == "235-96146363"
         assert j["mawb_order"] == {}, "主单业务字段留空壳，等公司真接口"
@@ -90,7 +95,43 @@ def test_company_api_mock_returns_orders_with_stem():
         o = j["hawb_orders"][0]
         assert o["hawb"] == "CLA001" and o["stem"] == "CLA1", "分单带上本机原件 stem 供 /source 打开"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
+
+
+def test_search_stems_mean_the_original_is_actually_on_disk():
+    """两种检索模式的 stem 必须是同一个意思：「本机有原件、点得开」。
+    mock 那条从前直接抄台账里的 stem（`company_api.py:140-144`），live 那条走
+    `lookup_stem`——归档被清掉时 mock 还给 stem，前端就渲染出一个点开只剩裸 JSON 404 的
+    「查看原件」，而 live 同样这张票却老实说「本机无归档」。同一张票两种模式两种说法，
+    录入员没法信这个界面。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
+    old = _isolate(tmp)
+    old_live = (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+                config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    real_post = company_api._j9_post
+    try:
+        store.mark_submitted("CLAN", "888-88888888", "NEW001", "马殿齐", {"mode": "mock"})
+        assert company_api.search_mawb("888-88888888")["hawb_orders"][0]["stem"] is None, \
+            "归档不在本机，mock 分支还从台账抄 stem"
+
+        company_api._j9_post = lambda path, body, key: {
+            "code": 0, "data": [] if path.endswith("/mawb/") else
+            [{"HAWB_NO": "NEW001", "MAWB_NO": "888-88888888", "SEND_STATUS": 0}]}
+        config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+        config.COMPANY_MAWB_KEY = config.COMPANY_HAWB_KEY = "k"
+        assert company_api.search_mawb("888-88888888")["hawb_orders"][0]["stem"] is None, \
+            "live 分支同样不能给开不了的 stem"
+
+        (config.ARCHIVE_DIR / "CLAN").mkdir(parents=True)
+        for mode in ("mock", "live"):
+            config.COMPANY_API_MODE = mode
+            o = company_api.search_mawb("888-88888888")["hawb_orders"][0]
+            assert o["stem"] == "CLAN", f"原件在机器上了，{mode} 分支就该能对上 stem：{o}"
+    finally:
+        company_api._j9_post = real_post
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old_live
+        _restore(old, tmp)
 
 
 def _fn(html: str, name: str) -> str:
@@ -181,8 +222,8 @@ def test_live_rows_carry_our_own_submit_record():
     """live 检索的分单行来自 j9，没有"谁提交/何时提交"这两栏；不 join 本机台账的话，
     刚提交过的票在界面上看着像从没动过（用户就是被这个问住的）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
-    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    old = _isolate(tmp)
+    old_live = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
     real_post = company_api._j9_post
     try:
         store.mark_submitted("CLA9", "999-95764373", "VCE4373", "马殿齐", {"mode": "live"})
@@ -198,30 +239,31 @@ def test_live_rows_carry_our_own_submit_record():
     finally:
         company_api._j9_post = real_post
         (config.COMPANY_API_MODE, config.COMPANY_API_URL,
-         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old
-        _restore(ou, ol, tmp)
+         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old_live
+        _restore(old, tmp)
 
 
 def test_company_mawb_requires_login():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         auth.ensure_seed()
         r = TestClient(server.app).get("/company/mawb", params={"mawb": "235-96146363"})
         assert r.status_code == 401, "检索要登录会话"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_company_mawb_reviewer_and_inputter_both_allowed():
     """2026-09-26 合并：主单检索不再分角色——制单员/录入员/管理员登录即用（一个工作台）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         auth.ensure_seed()
         auth.set_password("马殿齐", "rv-123456", "reviewer")
         auth.set_password("郭健康", "in-123456", "inputter")
         store.mark_submitted("CLA1", "235-96146363", "CLA001", "马殿齐", {"mode": "mock"})
+        (config.ARCHIVE_DIR / "CLA1").mkdir(parents=True)      # 原件在本机，行上的 stem 才点得开
 
         rv = TestClient(server.app)
         _login(rv, "马殿齐", "rv-123456")
@@ -237,12 +279,12 @@ def test_company_mawb_reviewer_and_inputter_both_allowed():
         empty = inp.get("/company/mawb", params={"mawb": "  - "})
         assert empty.status_code == 400, "空主单号应 400"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_company_mawb_admin_allowed():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         auth.ensure_seed()
         c = TestClient(server.app)
@@ -251,21 +293,21 @@ def test_company_mawb_admin_allowed():
         assert r.status_code == 200, "管理员可代为排查，允许检索"
         assert r.json()["mode"] == "mock"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_inputter_route_redirects_to_merged_desk():
     """2026-09-26 合并：录入员功能进了制单台，/inputter 不再单独成页——老书签/外链一律 302 回主页，
     避免出现两份会各自漂移的检索界面。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         auth.ensure_seed()
         r = TestClient(server.app, follow_redirects=False).get("/inputter")
         assert r.status_code in (302, 307), f"/inputter 应重定向回制单台，实际 {r.status_code}"
         assert r.headers["location"] in ("/", "./", ""), r.headers.get("location")
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 # === 主单原件口子（/mawb/source）：不依赖公司接口，先把"录入员能打开主单原件对票面"跑通 ===
@@ -305,7 +347,7 @@ def test_mawb_source_dir_normalizes_and_blocks_traversal():
 
 def test_mawb_source_route_guards_roles_and_serves_pdf():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_msrc_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     old_src, old_prev = _use_mawb_source(tmp), config.PREVIEW_DIR
     config.PREVIEW_DIR = tmp / "preview"
     try:
@@ -330,7 +372,7 @@ def test_mawb_source_route_guards_roles_and_serves_pdf():
         assert company_api.search_mawb("176-22222222")["source_available"] is False
     finally:
         config.PREVIEW_DIR, config.MAWB_SOURCE_DIR = old_prev, old_src
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)
 
 
 def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
@@ -387,10 +429,10 @@ def test_mock_rows_also_carry_submitted_here():
     """mock 的行本来就来自本机台账，submitted_here 必须给 True；不给的话前端那条
     「不在本台提交」会在 mock 下说谎，两种模式的行形状也得一致（前端只写一套判断）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_cs_"))
-    ou, ol = _isolate(tmp)
+    old = _isolate(tmp)
     try:
         store.mark_submitted("CLAM", "999-95764373", "VCE4373", "马殿齐", {"mode": "mock"})
         o = company_api.search_mawb("999-95764373")["hawb_orders"][0]
         assert o["submitted_here"] is True, f"mock 行该标成本台已提交: {o}"
     finally:
-        _restore(ou, ol, tmp)
+        _restore(old, tmp)

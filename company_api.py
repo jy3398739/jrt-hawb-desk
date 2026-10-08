@@ -137,8 +137,10 @@ def search_mawb(mawb: str) -> dict:
         if config.COMPANY_API_MODE != "mock":
             raise CompanyNotConfigured(
                 f"COMPANY_API_MODE={config.COMPANY_API_MODE!r}：只能是 mock 或 live。")
+        # stem 一律现查（和 live 分支同一个口径）：台账里那条名字可能已经点不开了。
         orders = [{"hawb": e.get("hawb", ""), "mawb": e.get("mawb", ""),
-                   "stem": e.get("stem"), "reviewer": e.get("reviewer", ""),
+                   "stem": store.lookup_stem(e.get("mawb", ""), e.get("hawb", "")),
+                   "reviewer": e.get("reviewer", ""),
                    "submitted_at": e.get("submitted_at", ""),
                    "submitted_here": True}
                   for e in store.submitted_by_mawb(mawb)]
