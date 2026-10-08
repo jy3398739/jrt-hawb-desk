@@ -34,7 +34,10 @@ def process_file(path, do_transcript: bool = True) -> dict:
     else:
         raise ValueError(f"不支持的文件类型: {path.suffix}")
     tr = transcribe_l1(src) if do_transcript else None
+    # 就在调用前一刻取模型名：管理员能在审核台热切模型，等建质检记录时再去读 config，
+    # 一张解析了十分钟的票会被记到切换后的那个模型头上，按模型分账的统计就全错了。
+    used = {"model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE}
     raw = vlm_extract.extract_one(src, transcript=tr)
     air = to_air.to_air(raw)
     channel = "excel" if ext in config.XLS_EXTS else "vlm"
-    return {"raw": raw, "air": air, "channel": channel, "transcript": tr, "src": str(src)}
+    return {"raw": raw, "air": air, "channel": channel, "transcript": tr, "src": str(src), **used}

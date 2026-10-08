@@ -10,15 +10,23 @@ from validator import validate_raw, validate_air
 from fidelity import verify_fidelity
 
 
-def build_qc(path: Path, r: dict) -> dict:
+def build_qc(path: Path, r: dict, meta: dict | None = None) -> dict:
     """把散在 validator/fidelity 里的红旗收成一条可交付的质检记录。
-    红旗只打在 JSON 里没人看，必须跟着 Excel/数据库走，否则等于没检。"""
+    红旗只打在 JSON 里没人看，必须跟着 Excel/数据库走，否则等于没检。
+
+    meta 带上传人（来自登录会话）；批处理/监控没有会话，那两样记空但不能因此写不出记录。
+    model/model_choice 是**解析那一刻**的模型（由 pipeline 带回来），不是建记录时现读 config：
+    审核台能在解析中途热切模型，现读会把这张票记到别的模型头上。"""
     flags = list(r["warns"]) + [f"保真 {w}" for w in (r["fidelity"] or {}).get("warns", [])]
     if r["error"]:
         flags.insert(0, f"处理失败 {r['error']}")
     fid = r["fidelity"]
+    meta = meta or {}
     return {"source_name": path.name, "md5": (r["archive"] or {}).get("md5", ""),
             "channel": r["channel"], "elapsed": r["elapsed"],
+            "uploader": str(meta.get("uploader") or ""),
+            "uploader_role": str(meta.get("uploader_role") or ""),
+            "model": r.get("model") or "", "model_choice": r.get("model_choice") or "",
             "processed_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "needs_review": bool(flags), "flags": flags,
             "fidelity": ({"checked": fid["checked"], "passed": fid["passed"],
@@ -40,19 +48,21 @@ def recompute_flags(raw: dict | None, air: dict, transcript: dict | None = None)
     return warns
 
 
-def handle_file(path, save: bool = True) -> dict:
-    """返回 {stem, channel, elapsed, raw, air, transcript, warns, fidelity, archive, qc, error}。"""
+def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
+    """返回 {stem, channel, elapsed, raw, air, transcript, warns, fidelity, archive, qc, error}。
+    meta={"uploader","uploader_role"} 是给质检记录留痕用的（谁传的这张票）。"""
     path = Path(path)
     t0 = time.time()
     r = {"stem": path.stem, "channel": "", "elapsed": 0.0, "raw": None, "air": None,
          "transcript": None, "warns": [], "fidelity": None, "archive": None,
-         "qc": None, "error": ""}
+         "model": "", "model_choice": "", "qc": None, "error": ""}
     try:
         if save:
             r["archive"] = store.archive_original(path)          # L0
         res = process_file(path)                                 # L1+L2+L3
         r["raw"], r["air"], r["channel"], r["transcript"] = (
             res["raw"], res["air"], res["channel"], res["transcript"])
+        r["model"], r["model_choice"] = res.get("model") or "", res.get("model_choice") or ""
         src = res.get("src")
         if save and src and Path(src) != path:
             store.save_preview(path.stem, src)      # 电子单转出的 PDF：审核台回看票面靠它
@@ -68,7 +78,7 @@ def handle_file(path, save: bool = True) -> dict:
         r["error"] = f"{type(e).__name__}: {e}"
     finally:
         r["elapsed"] = round(time.time() - t0, 1)
-        r["qc"] = build_qc(path, r)
+        r["qc"] = build_qc(path, r, meta)
         if save:
             if r["error"]:
                 store.save_qc(path.stem, r["qc"])     # 失败的票更要留痕，别让它在 output 里隐身

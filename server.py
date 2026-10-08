@@ -489,14 +489,16 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
 DESK_QUEUE = desk_queue.DeskQueue(slots=config.DESK_CONCURRENCY, max_pending=config.DESK_QUEUE_MAX)
 
 
-def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str) -> dict:
+def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str, role: str) -> dict:
     """队列 worker 里跑的那一段：解析 → 重算汇总 → 清临时目录。返回的就是从前 /extract 的响应体，
     前端因此只多了"轮询 /job"这一步。
 
-    一律 save=True：这张票只有落了盘，别人才检索得到、才打得开原件（需求一的根）。"""
+    一律 save=True：这张票只有落了盘，别人才检索得到、才打得开原件（需求一的根）。
+    who/role 取登录会话，随质检记录落盘——不然"这张票谁传的"只活在日志和内存里。"""
+    meta = {"uploader": who, "uploader_role": role}
     try:
         try:
-            r = handle_file(path, True)
+            r = handle_file(path, True, meta)
             if not r["error"]:
                 store.rebuild_summary()
         except (Exception, SystemExit) as e:
@@ -530,6 +532,7 @@ async def extract(file: UploadFile = File(...), user: dict = Depends(current_use
     四层结果一个都不写、上传的原件当场删掉，结果就是这张票在服务器上根本不存在——
     录入员检索主单查不到同事刚传的票（需求一）。现在一律落盘，参数不再接受，带了也忽略。"""
     user_name = str(user.get("name") or "?")
+    user_role = str(user.get("role") or "")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in config.ALL_EXTS:
         raise HTTPException(400, f"不支持的文件类型 {suffix}，支持 {sorted(config.ALL_EXTS)}")
@@ -540,7 +543,8 @@ async def extract(file: UploadFile = File(...), user: dict = Depends(current_use
     handed_off = False
     try:
         await _save_upload(file, path)
-        jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, file.filename, user_name),
+        jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, file.filename,
+                                                      user_name, user_role),
                                 who=user_name, name=file.filename or "")
         handed_off = True            # 临时目录从这一刻归 worker 清
     except desk_queue.QueueFull as e:

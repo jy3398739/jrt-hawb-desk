@@ -31,8 +31,9 @@ def _stubbed():
     case = json.loads(FIX.read_text(encoding="utf-8"))
     real_hf, real_store = server.handle_file, server.store
 
-    def fake_handle_file(path, save=True):
-        calls.append({"path": Path(path), "save": save, "exists": Path(path).exists()})
+    def fake_handle_file(path, save=True, meta=None):
+        calls.append({"path": Path(path), "save": save, "meta": meta,
+                      "exists": Path(path).exists()})
         return {"stem": Path(path).stem, "channel": "vlm", "elapsed": 0.1,
                 "raw": case["raw"], "air": {"MAWB_NO": "235-96146363"},
                 "transcript": {"lines": [{"i": 1, "text": "MAWB NO. 999-0686 5456", "bbox": [0, 0, 100, 10]},
@@ -477,6 +478,22 @@ def test_uploading_a_ticket_always_persists_it():
             used = [c for c in calls if "path" in c][-1]
             assert used["save"] is True, f"{tag} 上传居然没落盘，别人就检索不到这张票"
             assert any(c.get("rebuild") for c in calls), f"{tag} 落盘后没重建汇总"
+
+
+def test_upload_records_the_person_who_uploaded_it():
+    """登录身份要一路传到落盘那一步。
+
+    从前 `who` 只进了两行日志文本和内存里的作业表（`server.py` 的 LOG.info / DeskQueue.submit），
+    进程重启就查无此人；而提交台账记的是**复核人**，不是上传人。需求三要按人分账
+    （制单员改了几张、录入员改了几张），第一步就得先把"这张票是谁传上来的"写进 qc。
+    身份取会话，不信前端传来的名字——和复核人同一个口径。"""
+    client = TestClient(server.app)
+    with _stubbed() as calls:
+        _login_admin(client)
+        assert _post(client).status_code == 200
+        used = [c for c in calls if "path" in c][-1]
+        assert used["meta"]["uploader"] == "admin", f"上传人没传到解析这一步：{used['meta']}"
+        assert used["meta"]["uploader_role"] == "admin", used["meta"]
 
 
 def test_desk_stops_asking_whether_to_keep_the_ticket():

@@ -33,7 +33,7 @@ class _FakeStore:
         self.calls.append(("PREVIEW", stem))
 
 
-def _run(raw, transcript, *, raises=None, save=True, src=None):
+def _run(raw, transcript, *, raises=None, save=True, src=None, meta=None):
     """替换 jobs 的依赖跑一遍 handle_file，返回 (结果, 落盘调用记录)。src 模拟电子单转出的 PDF。"""
     fs = _FakeStore()
     real_store, real_pf = jobs.store, jobs.process_file
@@ -41,16 +41,41 @@ def _run(raw, transcript, *, raises=None, save=True, src=None):
     def fake_process_file(path):
         if raises:
             raise raises
-        out = {"raw": raw, "air": to_air.to_air(raw), "channel": "vlm", "transcript": transcript}
+        out = {"raw": raw, "air": to_air.to_air(raw), "channel": "vlm", "transcript": transcript,
+               "model": "qwen3.8-flash", "model_choice": "qwen38-flash-bailian"}
         if src is not None:
             out["src"] = src
         return out
 
     jobs.store, jobs.process_file = fs, fake_process_file
     try:
-        return jobs.handle_file("某分单 TAO1234567.pdf", save=save), fs.calls
+        return jobs.handle_file("某分单 TAO1234567.pdf", save=save, meta=meta), fs.calls
     finally:
         jobs.store, jobs.process_file = real_store, real_pf
+
+
+def test_qc_carries_the_uploader_and_the_model_that_read_the_ticket():
+    """谁传的、哪个模型读的——这两件事只在一行日志文本里出现过（`server.py` 的 LOG.info）和
+    内存作业表里，进程一重启就没了。需求三要算"大模型解析正确率"，缺这两样就答不了：
+    同一个字段错，是模型读错的、还是制单员改的？换了模型有没有变好？
+
+    所以 qc 必须落下 uploader / uploader_role（来自登录会话）与 model / model_choice
+    （来自**真正调用模型那一刻**的 pipeline 结果，不是建记录时才去读 config——
+    管理员能在解析中途热切模型，那时才读会把这张票记到别的模型头上）。
+    批处理/监控没有会话：meta 不传时上传人记空，但模型照样记。
+    """
+    case = json.loads(FIX.read_text(encoding="utf-8"))
+    r, _ = _run(dict(case["raw"]), case["transcript"],
+                meta={"uploader": "马殿齐", "uploader_role": "reviewer"})
+    qc = r["qc"]
+    assert qc["uploader"] == "马殿齐" and qc["uploader_role"] == "reviewer", qc
+    assert qc["model"] == "qwen3.8-flash", "模型名没进 qc：横评还得手工跑脚本"
+    assert qc["model_choice"] == "qwen38-flash-bailian", "预设键没记：认得出模型 id 认不出是哪条渠道"
+
+    r2, calls2 = _run(dict(case["raw"]), case["transcript"])      # 命令行/监控那条路：没有会话
+    assert r2["error"] == "" and r2["qc"]["uploader"] == "", "批处理不该因为没会话就写坏 qc"
+    assert r2["qc"]["model"] == "qwen3.8-flash", "批处理解析的票同样要能按模型分账"
+    assert any(c[0] == "QC" for c in calls2), "meta 为空时连质检记录都不写了"
 
 
 def test_all_qc_layers_are_wired():
