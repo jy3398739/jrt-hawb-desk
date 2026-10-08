@@ -22,6 +22,7 @@
   <span class="seg" role="tablist" aria-label="视图切换">
     <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
     <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日台账</button>
+    <button class="btn sm" id="viewStats" type="button" role="tab" aria-selected="false">统计</button>
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
@@ -138,6 +139,20 @@
     <button class="btn sm" id="dayGo" type="button">刷新</button>
     <span class="n" id="dayCnt"></span></div>
   <div id="dayBox"></div>
+</section>
+
+<section class="stack" id="statsCard" hidden>
+  <div class="t">解析正确率<span class="sp"></span>
+    <label class="f">起<input id="stFrom" type="date" aria-label="统计起始日"></label>
+    <label class="f">止<input id="stTo" type="date" aria-label="统计截止日"></label>
+    <label class="f">分组<select id="stGroup" aria-label="分组轴">
+      <option value="">不分组</option><option value="model">按模型</option>
+      <option value="role">按角色</option><option value="user">按上传人</option>
+      <option value="field">按列</option></select></label>
+    <button class="btn sm" id="stGo" type="button">刷新</button>
+    <button class="btn sm" id="stCsv" type="button">导出 Excel</button>
+    <span class="n" id="stCnt"></span></div>
+  <div id="stBox"></div>
 </section>
 
 <div id="toasts" aria-live="polite"></div>

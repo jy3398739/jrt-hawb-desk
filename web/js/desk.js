@@ -1340,7 +1340,7 @@ function applyRole(){
   $("#gate").hidden = !!ME;                 // 已登录：收起登录遮罩
   // 遮罩只挡视觉，不挡键盘焦点与点击穿透前的探索：未登录时把背后整片标成 inert，
   // 这样 Tab 进不去、点也点不动，不会让人以为"按钮坏了"。
-  [document.querySelector(".hdr"), $("#wrap"), $("#mstHawbCard"), $("#dayCard")].forEach(el => {
+  [document.querySelector(".hdr"), $("#wrap"), $("#mstHawbCard"), $("#dayCard"), $("#statsCard")].forEach(el => {
     if (el) el.inert = !ME;
   });
   $("#whoWrap").hidden = !ME;
@@ -1719,26 +1719,30 @@ $("#mstResult").addEventListener("click", async e => {
     return;
   }
 });
-/* ── 两个视图（§3.3）：核对工作台 / 今日台账，同一页互切，票据与草稿都不重载 ─────
+/* ── 三个视图（§3.3）：核对工作台 / 今日台账 / 统计，同一页互切，票据与草稿都不重载 ─────
    今日台账读 /day：那一天这台机器经手过哪些票、谁提交的、还有几张没回公司。
-   公司的发送状态不在这张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
+   统计读 /stats：模型那一版与人最后定下的那一版逐列比（数只在 stats.py 算一处）。
+   公司的发送状态不在这两张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
 const VIEW = {cur: "desk", rows: [], date: ""};
+const ST = {rows: [], summary: {}};
 let MST_CARD_ON = false;
 function syncCards(){
-  const desk = VIEW.cur === "desk";
-  $("#wrap").hidden = !desk;
-  $("#dayCard").hidden = desk;
-  $("#mstHawbCard").hidden = desk || !MST_CARD_ON;
+  const v = VIEW.cur;
+  $("#wrap").hidden = v !== "desk";
+  $("#dayCard").hidden = v !== "day";
+  $("#statsCard").hidden = v !== "stats";
+  $("#mstHawbCard").hidden = v !== "desk" || !MST_CARD_ON;
 }
 function setView(v){
-  VIEW.cur = v === "day" ? "day" : "desk";
-  const desk = VIEW.cur === "desk";
-  $("#viewDesk").classList.toggle("on", desk);
-  $("#viewDay").classList.toggle("on", !desk);
-  $("#viewDesk").setAttribute("aria-selected", String(desk));
-  $("#viewDay").setAttribute("aria-selected", String(!desk));
+  VIEW.cur = (v === "day" || v === "stats") ? v : "desk";
+  ["desk", "day", "stats"].forEach(k => {
+    const b = $("#view" + k.charAt(0).toUpperCase() + k.slice(1));
+    b.classList.toggle("on", VIEW.cur === k);
+    b.setAttribute("aria-selected", String(VIEW.cur === k));
+  });
   syncCards();
-  if (!desk) loadDay();
+  if (VIEW.cur === "day") loadDay();
+  if (VIEW.cur === "stats") loadStats();
 }
 const todayStr = () => {
   const n = new Date(), p = x => String(x).padStart(2, "0");
@@ -1787,6 +1791,82 @@ function renderDay(){
       <tbody>${rows}</tbody></table>
       <p class="hint hintp">「公司发送状态」要按主单去公司系统查（限流 10 次/秒）：点顶栏「主单检索」查那张主单下的全部票。</p>`;
 }
+/* 统计页：数全部来自 /stats 的 summary（Python 一处算），这里只排版与换算百分号。
+   为什么不让前端也算一遍：同一套算术写两遍迟早给出两个百分比，而这些数要拿去做决定
+   ——今日台账那页就是为这件事专门留了一条用例。 */
+function pct(v){ return v === null || v === undefined ? "—" : (v * 100).toFixed(1) + "%"; }
+function statsQS(){
+  /* 只拼查询串，URL 前缀留在调用点上写死带 BASE —— 页面挂在 /hawb/ 下，
+     test_server_http 那条守卫盯的就是调用点第一个词不是 BASE 的写法，别绕开它。 */
+  const q = [];
+  if ($("#stFrom").value) q.push("from=" + encodeURIComponent($("#stFrom").value));
+  if ($("#stTo").value) q.push("to=" + encodeURIComponent($("#stTo").value));
+  if ($("#stGroup").value) q.push("group_by=" + encodeURIComponent($("#stGroup").value));
+  return q.length ? "?" + q.join("&") : "";
+}
+async function loadStats(){
+  const box = $("#stBox");
+  box.innerHTML = '<div class="empty">正在比模型那一版与人定下的那一版…</div>';
+  try{
+    const r = await fetch(BASE + "/stats" + statsQS());
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    ST.rows = j.rows || []; ST.summary = j.summary || {};
+    renderStats();
+  }catch(e){
+    box.innerHTML = `<div class="empty empty-err">读统计失败：${esc(e.message || e)}</div>`;
+  }
+}
+function renderStats(){
+  const s = ST.summary;
+  $("#stCnt").textContent = `可算 ${s.tickets || 0} 张 · 可比 ${s.fields_comparable || 0} 列`
+    + (s.legacy ? ` · 历史无逐字段留痕 ${s.legacy} 张（不进分母）` : "");
+  const head = [["逐字段准确率（模型本身读得准不准）", pct(s.acc_field)],
+                ["复核后准确率（人还剩多少活；能不能对接看这个）", pct(s.acc_after_review)],
+                ["一次通过率（一张没改的票占比）", pct(s.clean_rate)],
+                ["制单员改的列", s.edits_doc || 0],
+                ["录入员改的列", s.edits_inp || 0],
+                ["未经录入员复核就发出", (s.unreviewed || 0) + " 张"]];
+  let html = '<table class="list compact"><thead><tr><th>指标</th><th class="num">值</th></tr></thead><tbody>'
+    + head.map(h => `<tr><td>${esc(h[0])}</td><td class="num">${esc(String(h[1]))}</td></tr>`).join("")
+    + "</tbody></table>";
+  if (!s.tickets){
+    html += '<div class="empty">窗口内没有可算的票：点过「暂存」或「提交」之后才有逐字段留痕。'
+      + '<span class="sub">本功能上线前的台账只存了字段名与哈希，比不出值，已计入上面「历史无逐字段留痕」。</span></div>';
+  }
+  if ((s.by_field || []).length){
+    html += '<div class="t2">哪一列最常改（该修提示词还是码表，看这里）</div>'
+      + '<table class="list compact"><thead><tr><th>列</th><th class="num">被改次数</th><th class="num">票数</th></tr></thead><tbody>'
+      + s.by_field.slice(0, 12).map(e => `<tr><td>${esc(e.field)}</td>`
+        + `<td class="num">${e.edits}</td><td class="num">${e.tickets}</td></tr>`).join("")
+      + "</tbody></table>";
+  }
+  if ((s.groups || []).length){
+    const ks = Object.keys(s.groups[0]);
+    html += '<div class="t2">分组看</div><table class="list compact"><thead><tr>'
+      + ks.map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>"
+      + s.groups.map(g => "<tr>" + ks.map(c => `<td>${esc(String(g[c]))}</td>`).join("") + "</tr>").join("")
+      + "</tbody></table>";
+  }
+  if (ST.rows.length){
+    html += '<div class="t2">逐张</div><table class="list compact"><thead><tr>'
+      + '<th>票名</th><th>模型</th><th>上传人</th><th>暂存人</th><th class="num">可比</th>'
+      + '<th class="num">改动</th><th>制单员改的</th><th>录入员改的</th></tr></thead><tbody>'
+      + ST.rows.map(r => `<tr class="${r.legacy ? "hit" : ""}">
+        <td>${esc(r.stem)}</td><td>${esc(r.model || "—")}</td>
+        <td>${esc((r.uploader || "—") + (r.uploader_role ? "（" + L.roleCn(r.uploader_role) + "）" : ""))}</td>
+        <td>${esc(r.stager || "—")}</td>
+        <td class="num">${r.legacy ? "—" : r.comparable}</td>
+        <td class="num">${r.legacy ? "无留痕" : r.total}</td>
+        <td>${esc((r.doc || []).join("、") || "—")}</td>
+        <td>${esc((r.inp || []).join("、") || "—")}</td></tr>`).join("") + "</tbody></table>";
+  }
+  html += '<p class="hint hintp">两个数不能混：<b>逐字段准确率</b>问模型读得准不准；'
+    + '<b>复核后准确率</b>问录入员还剩多少活——能不能把提取结果直接喂给平台，看后者。'
+    + '没暂存记录就直发的票，改动全记在制单员档（那些值确实是核对台上的人改的），'
+    + '「未经录入员复核」那一列是它的对照组。</p>';
+  $("#stBox").innerHTML = html;
+}
 $("#viewDesk").addEventListener("click", () => setView("desk"));
 $("#rail").addEventListener("click", e => {
   if (e.target.closest("#railExpand")){ RAIL.open = !RAIL.open; renderRail(); return; }
@@ -1798,6 +1878,10 @@ $("#rail").addEventListener("click", e => {
   render();
 });
 $("#viewDay").addEventListener("click", () => setView("day"));
+$("#viewStats").addEventListener("click", () => setView("stats"));
+$("#stGo").addEventListener("click", loadStats);
+$("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });
+["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));
 $("#dayGo").addEventListener("click", loadDay);
 $("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(); });
 $("#dayBox").addEventListener("click", e => {

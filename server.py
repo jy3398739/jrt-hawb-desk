@@ -31,6 +31,7 @@
 """
 import argparse, hashlib, json, logging, re, shutil, tempfile, time
 from pathlib import Path
+from urllib.parse import quote
 
 import uvicorn
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
@@ -44,6 +45,7 @@ import config
 import desk_queue
 import jobs
 import master_pipeline
+import stats
 import store
 import xlsx2pdf
 from jobs import handle_file
@@ -688,6 +690,40 @@ def tickets(date: str = "", state: str = "", mawb: str = "", _: None = Depends(r
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
     rows = store.ticket_rows(date=date or None, state=state or None, mawb=mawb or None)
     return {"ok": True, "rows": rows}
+
+
+@app.get("/stats")
+def stats_report(date_from: str = Query("", alias="from", description="含端点的起始日 yyyy-mm-dd"),
+                 date_to: str = Query("", alias="to", description="含端点的截止日 yyyy-mm-dd"),
+                 group_by: str = "", _: dict = Depends(require_web)):
+    """解析正确率（需求三）：模型那一版与人最后定下的那一版逐列比。
+
+    算术只有 `stats.py` 一处——页面、导出、以后任何读数都从这里出，同一套算术写两遍迟早给出
+    两个百分比。`acc_field` 是"模型本身准不准"，`acc_after_review` 才是"人还剩多少活"
+    （判断能不能直接对接平台看后者）；历史没留值的台账进 `legacy`，不进分母。"""
+    if group_by and group_by not in stats.GROUPS:
+        raise HTTPException(400, "group_by 只能是 " + "、".join(stats.GROUPS))
+    for d in (date_from, date_to):
+        if d and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            raise HTTPException(400, f"日期要写成 2026-09-30 这种四位日期：{d!r}")
+    rows = stats.collect(date_from, date_to)
+    return {"ok": True, "window": {"from": date_from, "to": date_to},
+            "summary": stats.summary(rows, group_by or None), "rows": rows}
+
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@app.get("/stats/export")
+def stats_export(date_from: str = Query("", alias="from"), date_to: str = Query("", alias="to"),
+                 _: dict = Depends(require_web)):
+    """把同一份统计导成 Excel（口径 / 每张票 / 逐列 三张表），与页面严格同源。"""
+    rows = stats.collect(date_from, date_to)
+    data = stats.export_bytes(rows, stats.summary(rows))
+    name = "解析正确率_" + (date_from or "全部") + ("_" + date_to if date_to else "") + ".xlsx"
+    return Response(content=data, media_type=_XLSX_MIME,
+                    headers={"Content-Disposition": 'attachment; filename="stats.xlsx"; '
+                             'filename*=UTF-8\'\'' + quote(name)})
 
 
 def _archive_dir(stem: str):
