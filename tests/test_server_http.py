@@ -1140,3 +1140,14 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
         "渲染后没给文本框量高：打开时还是一行"
     wire = re.search(r"if \(inp\.tagName === \"TEXTAREA\"\)(.*?)\n", html)
     assert wire and "autoGrow(inp)" in wire.group(1), "边打字没跟着长高"
+
+
+def test_the_word_for_stage_means_only_the_server_tier():
+    """「暂存」现在只有一个意思：存到服务器上给同事看（需求二那一档）。
+
+    本机 localStorage 那块从前叫「本地暂存」，两个含义共用一个词——人会以为点它就已经交上去了，
+    而没上服务器的那张票同事根本查不到（这正是需求一要消灭的现象）。所以那块改口叫「本机未保存的编辑」。
+    """
+    for rel in ("index.html", "js/desk.js"):
+        t = web_src.part(rel)
+        assert "本地暂存" not in t, f"{rel} 还在用「本地暂存」称呼本机草稿：和服务器那一档混名"

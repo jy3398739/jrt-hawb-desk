@@ -236,7 +236,9 @@ function effectiveFlags(t){
   });
 }
 
-/* ── 本地暂存（防刷新丢编辑；接口未就绪时也是提交兜底） ────────────────── */
+/* ── 本机未保存的编辑（防刷新丢编辑；接口未就绪时也是提交兜底） ──────────────
+   改名是因为「暂存」现在单指服务器那一档：同名会让制单员以为点了就交上去了，
+   而没上服务器的票同事查不到。这块存的只是这台浏览器里的编辑。 */
 function drafts(){ try { return JSON.parse(localStorage.getItem(LS.draft) || "{}"); } catch (e) { return {}; } }
 function saveDraft(t){
   if (!t.stem) return;
@@ -574,7 +576,7 @@ function fieldValCandidates(t, k){
   }
   return out;
 }
-/* 转录来源：本次会话提取的用响应里的 t.ll；本地暂存载入的从服务端 /layout 取（要归档过才有）。
+/* 转录来源：本次会话提取的用响应里的 t.ll；本机草稿载入的从服务端 /layout 取（要归档过才有）。
    在途 Promise 挂在票上共享：连点两个字段时第二个别再发一遍请求、也不会误判"无转录"。 */
 async function layoutFor(t){
   const usable = ll => { const ls = (ll && ll.lines) || []; return ls.some(l => l.bbox) ? ls : null; };
@@ -892,7 +894,7 @@ async function submitTicket(t, ackNoReview){
   if (pending){
     t.state = "done"; t.submitted = {mode:"pending", at:null, body:body};
     saveDraft(t); render();
-    toast("提交接口尚未开通（" + SUBMIT_URL + "）：结果已在本地暂存，可导出 JSON 兜底", "bad");
+    toast("提交接口尚未开通（" + SUBMIT_URL + "）：结果只留在这台浏览器里，可导出 JSON 兜底", "bad");
     return;
   }
   t.state = "done"; t.submitted = {mode:"server", at:nowTxt()};
@@ -1155,7 +1157,7 @@ function renderMain(){
       <span class="dot ${c}" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
-          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本地暂存载入" : "")}${label ? " · " + label : ""}
+          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机草稿载入" : "")}${label ? " · " + label : ""}
           · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
     <div class="todo">
@@ -1326,15 +1328,15 @@ $("#drafts").addEventListener("click", e => {
   const row = e.target.closest("[data-load]");
   if (!row) return;
   const t = loadDraft(row.dataset.load);
-  if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本地暂存：" + t.stem, "ok"); }
+  if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本机草稿：" + t.stem, "ok"); }
 });
 /* 「清空」在卡片标题栏里，不在 #drafts 列表内——挂在列表上的委托收不到它的点击（曾因此点了没反应） */
 $("#clearDrafts").addEventListener("click", () => {
   const n = Object.keys(drafts()).length;
-  if (!n){ toast("本地暂存本来就是空的", "bad"); return; }
+  if (!n){ toast("本机没有未保存的编辑", "bad"); return; }
   if (!confirm(`清空本机浏览器里的 ${n} 条暂存记录？（已落盘的 JSON 结果不受影响）`)) return;
   localStorage.removeItem(LS.draft); renderDrafts();
-  toast(`已清空本地暂存 ${n} 条`, "ok");
+  toast(`已清空本机草稿 ${n} 条`, "ok");
 });
 /* ── 登录 / 角色 / 账号管理 ─────────────────────────────────────────── */
 function acctErr(msg, clear){ const el = $("#acctErr"); if (clear){ el.hidden = true; return; } el.textContent = msg; el.hidden = false; }
@@ -1560,7 +1562,7 @@ async function openHouse(stem){
     toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + from + "）", "ok");
     if (mg.conflicts.length){
       toast("注意：" + mg.conflicts.join("、") + " 你这台机器上的改动和服务器上的暂存不一致，" +
-            "已按服务器版本显示；你那份没删，还在下面的「本地暂存」里", "warn");
+            "已按服务器版本显示；你那份没删，还在下面的「本机未保存的编辑」里", "warn");
     }
   }catch(e){ toast("打开这张分单失败：" + (e.message || e), "bad"); }
 }
