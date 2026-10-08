@@ -1,6 +1,11 @@
-# 密钥与本地产物，一律不入库（.env 里是魔搭 token，外发即泄漏）
+# 密钥与本地产物，一律不入库（.env 里是各家模型 token 与口令哈希，外发即泄漏）
 .env
 users.json
+# 改配置前"顺手 cp 一份"的备份同样带真密钥，而它比 .env 更容易被 git add -A 一把带走
+# （2026-10-08 差点发生）。.env.example 是模板、要入库，所以用 ! 放回来。
+.env.*
+users.json.*
+!.env.example
 *.local
 
 # 本机/服务器各自的独立环境：写了 .gitignore 才有意义——sync.sh 用 git status 判"工作区脏不脏"，

@@ -14,11 +14,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 # 绝不该进部署包/仓库的东西：密钥、口令库、每次跑批重建的输出，和本机/服务器各自的 venv
+# 最后两条是"改配置前顺手 cp 一份"的备份：里面全是真密钥，而这类文件天生比 .env 更容易被
+# git add -A 一把带走（2026-10-08 就差点发生一次）。
 MUST_BLOCK = (".env", "users.json", "output/air/any.json", "input/any.pdf",
-              ".venv/Scripts/python.exe", "__pycache__/config.pyc")
+              ".venv/Scripts/python.exe", "__pycache__/config.pyc",
+              ".env.bak-20261008-131937", "users.json.bak-deadkeys")
 # 必须能被 sync.sh 的 git ls-files 取到，挡了就等于"部署成功但线上缺文件"
+# .env.example 是模板（要入库），规则写成 .env.* 时必须靠 ! 把它放回来——它也在这一条里核。
 MUST_NOT_BLOCK = ("config.py", "server.py", "web/js/desk.js", "deploy/sync.sh",
-                  "requirements-server.lock.txt")
+                  "requirements-server.lock.txt", ".env.example")
 
 
 def _git_text():
@@ -45,7 +49,15 @@ def _mentioned_in_gitignore(rel: str) -> bool:
     """退化判定：只看第一段有没有作为一行规则出现（'.env' 或 'output/' 这类）。"""
     head = rel.split("/", 1)[0]
     pats = _patterns()
-    return head in pats or (head + "/") in pats
+    if head in pats or (head + "/") in pats:
+        return True
+    # 密钥文件的备份/临时副本（.env.bak-xxx、users.json.bak）：规则写的是 .env.* 这种通配，
+    # 这里只认这一个用得到的小形状——.env.example 是模板，跟 git 一样把它放回来。
+    # 其余通配语义一律交给 git 判（有 .git 时走的就是那条路）。
+    for fam in (".env.", "users.json."):
+        if head.startswith(fam) and head != ".env.example":
+            return fam + "*" in pats
+    return False
 
 
 def _blocked(rel: str) -> bool:
