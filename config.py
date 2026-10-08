@@ -93,30 +93,14 @@ MODEL_PRESETS = {
                              "key_hint": "公司百炼专属实例（MaaS）token，sk-ws- 开头，向管理员索取；"
                                          "它只认这一个实例地址，与公共百炼 key 不通用",
                              "extra_body": {"enable_thinking": False}},
-    # 小米 MiMo API（https://api.xiaomimimo.com/v1，密钥在 https://platform.xiaomimimo.com/#/console/api-keys 申请，付费）。
-    # 2026-09-24 接入前四项实测：① id 大小写敏感——文档示例里的 MiMo-V2.6-Flash 写法回 400 Unsupported model，
-    # 清单（GET /models）给的是全小写 mimo-v2.6-flash，故钉小写；② 真读图（420x220 测试票面三行照出）；
-    # ③ 默认开思考且很贵——同 5 票开思考 49.6s/票（单票最高 101s、9487 输出 token 里 8850 是 reasoning）
-    #    vs 关思考 7.5s/票，字段质量没有差别，所以预设直接把思考关掉；
-    # ④ 关思考只认 {"thinking":{"type":"disabled"}}（或 reasoning_effort:"none"），
-    #    官方文档那种 enable_thinking:false 的写法实测无效——照样烧 reasoning token。
-    "mimo-v2.6-flash": {"model": "mimo-v2.6-flash", "vision": True, "max_tokens": 32768,
-                        "label": "MiMo-V2.6-Flash · 小米MiMo · 视觉（已关思考）",
-                        "base_url": "https://api.xiaomimimo.com/v1",
-                        "api_key_env": "MIMO_API_KEY",
-                        "key_hint": "https://platform.xiaomimimo.com/#/console/api-keys（该渠道按 token 计费，账户余额为 0 时所有调用回 402）",
-                        "extra_body": {"thinking": {"type": "disabled"}}},
-    # 火山方舟 Doubao-Seed-2.1-Lite（2026-09-24 接入，用户给测试密钥）。三条实测事实：
-    # ① 密钥可直接用模型名调用（不需要建 ep- 接入点）；无日期的 "doubao-seed-2-1-lite" 报 404，
-    #    必须带版本后缀 -260915，所以这里钉死带日期的 id；② 真读图（420x120 小图两行字照抄无误）；
-    #    ③ 是思考型：那发 85 个输出 token 里 57 个是 reasoning，故与 Intern-S2 同待给 max_tokens 下限。
-    # 它仍然没有关思考版那么快：开思考 97~124s/票，实测只能当"第二只眼睛"（用户 2026-09-24 未接该流程）。
-    # 排在末位是因为用户 2026-09-24 点名的顺序是 S2 → qwen3.8-flash → 小米，没提它——不删除，只挪到最后。
-    "doubao-seed-2-1-lite": {"model": "doubao-seed-2-1-lite-260915", "vision": True, "max_tokens": 32768,
-                             "label": "Doubao-Seed-2.1-Lite · 火山方舟 · 视觉",
-                             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-                             "api_key_env": "ARK_API_KEY",
-                             "key_hint": "方舟控制台 https://console.volcengine.com/ark（API Key 与模型开通在同一账号下）"},
+    # 2026-10-08 用户定案删除另两条商业渠道，理由都是"没换来实际收益"：
+    #   · 小米 MiMo-V2.6-Flash（api.xiaomimimo.com）——与 S2 平级（20 票中位 7.2 vs 8.1s、保真同为 99.3%、
+    #     红旗同为 12 条），但 p90 45-70s 有长尾，且 HAWB_NO 出现过一次静默错填（红旗没抓）；
+    #   · 火山方舟 Doubao-Seed-2.1-Lite（ark.cn-beijing.volces.com）——开思考 97~124s/票，只能当
+    #     "第二只眼睛"，而那条流程用户当时就没接。
+    # 两家的实测结论、id 大小写与关思考写法的差异都留在 git 历史与 docs/技术留档.md，
+    # 要重新接任何一家：`resolve_model` 对未知键原样透传，先在 .env 写模型 id 就能用，
+    # 但那样拿不到预设的 base_url/api_key_env/extra_body，正式接仍需回到这张表。
 }
 DEFAULT_MODEL_KEY = "intern-s2-official"
 

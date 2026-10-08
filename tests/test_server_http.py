@@ -833,35 +833,39 @@ def test_master_chain_model_is_visible_and_switchable_separately():
     old_env_file, old_state = config.ENV_FILE, config.MASTER_VLM_MODEL
     old_hawb = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION)
     config.ENV_FILE = tmp / ".env"
-    config.MASTER_VLM_MODEL = "qwen38-flash-bailian"   # 回归入口把它钉成空（=跟分单同渠道），这里显式设
+    # 两条链一开始都指 S2，然后把**主单**切到 qwen：这样"切主单却把分单也换了"一定会露出来
+    # （两边解析出的 model 不同）。渠道删到只剩两个以后，用同一个键当开关是测不出串台的。
+    config.MASTER_VLM_MODEL = "intern-s2-official"     # 回归入口把它钉成空（=跟分单同渠道），这里显式设
     config.ENV_FILE.write_text("INTERNLM_API_KEY=sk-x\nQWEN_API_KEY=sk-y\n"
-                               "VLM_MODEL=intern-s2-official\nMASTER_VLM_MODEL=qwen38-flash-bailian\n",
+                               "VLM_MODEL=intern-s2-official\nMASTER_VLM_MODEL=intern-s2-official\n",
                                encoding="utf-8")
     # 密钥状态读的是进程环境（config 里 os.getenv），写临时 .env 并不会改变它——
-    # 以前这条断言其实是靠"开发机真 .env 里配了这把 key"才过的，换 key 的当天就会假失败。
+    # 以前这条断言其实是靠"开发机真 .env 里配了这两把 key"才过的，换 key 的当天就会假失败。
     # 显式设再还原，让它在任何机器上都是真的在测"配了就该报 True"。
-    old_key = os.environ.get("QWEN_API_KEY")
+    old_keys = {k: os.environ.get(k) for k in ("INTERNLM_API_KEY", "QWEN_API_KEY")}
     os.environ["QWEN_API_KEY"] = "sk-y-test-only"
+    os.environ["INTERNLM_API_KEY"] = "sk-x-test-only"
     try:
         with _stubbed():
             _login_admin(client)
             j = client.get("/models").json()
-            assert j["master"]["model"] == "qwen3.8-flash", "/models 没报主单链在用什么模型"
+            assert j["master"]["model"] == "intern-s2-preview", "/models 没报主单链在用什么模型"
             assert j["master"]["key_configured"] is True, "主单链密钥状态没报出来"
-            r = client.post("/model", json={"model": "mimo-v2.6-flash", "chain": "master"})
+            r = client.post("/model", json={"model": "qwen38-flash-bailian", "chain": "master"})
             assert r.status_code == 200 and r.json()["ok"], r.text
-            assert config.MASTER_VLM_MODEL == "mimo-v2.6-flash", "主单链选择没生效"
+            assert config.MASTER_VLM_MODEL == "qwen38-flash-bailian", "主单链选择没生效"
             assert config.VLM_MODEL == old_hawb[1], "切主单模型把分单模型一起换了"
             text = config.ENV_FILE.read_text(encoding="utf-8")
-            assert "MASTER_VLM_MODEL=mimo-v2.6-flash" in text and "VLM_MODEL=intern-s2-official" in text, text
-            assert client.get("/health").json()["master_model"] == "mimo-v2.6-flash", "健康检查没跟上主单链新模型"
+            assert "MASTER_VLM_MODEL=qwen38-flash-bailian" in text and "VLM_MODEL=intern-s2-official" in text, text
+            assert client.get("/health").json()["master_model"] == "qwen3.8-flash", "健康检查没跟上主单链新模型"
             assert client.post("/model", json={"model": "intern-s2-official", "chain": "nope"}).status_code == 400, \
                 "乱填 chain 居然放行了"
     finally:
-        if old_key is None:
-            os.environ.pop("QWEN_API_KEY", None)
-        else:
-            os.environ["QWEN_API_KEY"] = old_key
+        for k, v in old_keys.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         config.ENV_FILE, config.MASTER_VLM_MODEL = old_env_file, old_state
         config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION = old_hawb
         shutil.rmtree(tmp, ignore_errors=True)

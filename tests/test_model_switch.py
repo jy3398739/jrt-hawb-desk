@@ -80,20 +80,19 @@ def test_every_preset_carries_model_vision_and_label():
         else:
             assert p["model"].count("/") == 1, f"{key} 的魔搭模型 id 应是 org/模型 两段: {p['model']}"
     # 契约：2026-09-21 用户定案删除魔搭三预设（intern-s2/qwen-flash/deepseek）与北龙（blsc-s2），
-    # 只留官方书生API 一个；2026-09-24 起按用户要求加回第二个渠道（火山方舟 Doubao-Seed-2.1-Lite，
-    # 接线前实测：模型名可直调且必须带版本后缀、小图两行字照抄正确=真读图、输出含 reasoning token）。
+    # 只留官方书生API 一个；2026-09-24 起按用户要求加回商业渠道（火山方舟 Doubao、百炼 qwen、小米 MiMo）。
     # 剔除原因见 config 注释：纯文本模型收图不报错直接照编；北龙配额未开通（400）；
     # GLM-4V-Flash max_tokens 上限 1024 且难票上对调 MAWB/HAWB + 凭空编签发日期。
     # 纯文本链路机制仍保留：原始 id + VLM_VISION=0。预设表要变动请连同这条一起改。
     # 2026-09-24 顺序 = 用户点名顺序：默认 S2，其后 qwen3.8-flash、小米 MiMo；未被点名的方舟留末位。
-    assert list(config.MODEL_PRESETS) == ["intern-s2-official", "qwen38-flash-bailian",
-                                          "mimo-v2.6-flash", "doubao-seed-2-1-lite"], "预设键或顺序变了"
+    # 2026-10-08 用户"把小米和火山的删掉吧"：MiMo 与 S2 平级但 p90 45-70s 长尾、还漏过 HAWB_NO（静默），
+    # 方舟开思考 97-124s/票只能当第二只眼睛——两条都没换来实际收益，表上只留"免费官方 S2 + 公司 qwen"。
+    assert list(config.MODEL_PRESETS) == ["intern-s2-official", "qwen38-flash-bailian"], \
+        "预设键或顺序变了"
     assert all(p["vision"] for p in config.MODEL_PRESETS.values()), "预设里不该再有纯文本模型"
     assert config.resolve_model("intern-s2-official")["model"] == "intern-s2-preview"
-    assert config.resolve_model("doubao-seed-2-1-lite")["model"] == "doubao-seed-2-1-lite-260915", \
-        "方舟不带版本后缀的模型名会 404，预设必须钉死带日期的 id"
-    assert config.MODEL_PRESETS["doubao-seed-2-1-lite"]["max_tokens"] >= 32768, \
-        "它是思考型（实测 85 输出 token 里 57 个是 reasoning），没有下限就会整票空返回"
+    assert config.resolve_model("mimo-v2.6-flash")["model"] == "mimo-v2.6-flash", \
+        "删掉的渠道要还能当自定义 id 用（resolve_model 对未知键原样透传），否则老 .env 值一升级就崩"
     assert config.resolve_model("INTERN-S2-OFFICIAL")["vision"] is True, "预设键要大小写不敏感"
     assert config.resolve_model("")["model"] == config.MODEL_PRESETS[config.DEFAULT_MODEL_KEY]["model"]
 
@@ -229,21 +228,15 @@ def test_vision_path_still_sends_the_image():
         assert blocks[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
-def test_mimo_preset_pins_id_and_carries_thinking_off():
-    """小米 MiMo-V2.6-Flash 接入前三项实测（2026-09-24）：
-    ① 模型 id 大小写敏感——`MiMo-V2.6-Flash` 回 400 Unsupported model，只有全小写能用；
-    ② 默认开思考：同 5 票 49.6s/票 vs 关思考 7.5s/票，质量没提升 ⇒ 预设该带上关思考；
-    ③ 官方文档写的 enable_thinking:false 实测无效（照样烧 reasoning token），
-       能归零的是 extra_body 里的 thinking.type=disabled ⇒ 参数得随预设一起发出去。"""
+def test_preset_without_extra_body_sends_nothing_extra():
+    """没声明 extra_body 的预设，请求里不该凭空多出参数。
+    （2026-09-24 这条原本是 MiMo 用例的尾巴——它测的是"透传机制别漏发也别多发"，
+    与哪个渠道无关，所以渠道删了这条要留着。MiMo 当年那三项实测记录在 git 与决策文档里。）"""
     with _ModelState():
-        config.set_model("mimo-v2.6-flash")
-        assert config.VLM_MODEL == "mimo-v2.6-flash", "预设必须钉全小写 id，大写会 400"
-        assert config.MODEL_VISION is True, "它真读图（420x220 测试票面三行照出来）"
-        assert config.vlm_base_url() == "https://api.xiaomimimo.com/v1"
-        assert config.model_extra_body() == {"thinking": {"type": "disabled"}}, \
-            "预设没声明关思考参数——不带的(default)话 MiMo 会跑 49.6s/票那一档"
         config.set_model("intern-s2-official")
         assert config.model_extra_body() == {}, "没声明该参数的预设，请求里不该凭空多出东西"
+        config.set_model("qwen38-flash-bailian")
+        assert config.model_extra_body() == {"enable_thinking": False}, "声明了的要原样带过去"
 
 
 def test_qwen_preset_pins_id_and_carries_thinking_off():
@@ -288,7 +281,7 @@ def test_preset_extra_body_reaches_every_model_call():
         png = Path(d) / "t.png"
         Image.new("RGB", (40, 40), "white").save(png)
         with _ModelState():
-            config.set_model("mimo-v2.6-flash")
+            config.set_model("qwen38-flash-bailian")
             fake, old = _with_fake_client("{}")
             try:
                 vlm_extract.extract_one(png, transcript=None)
@@ -296,14 +289,14 @@ def test_preset_extra_body_reaches_every_model_call():
                 _restore_client(old)
         assert fake.calls, "没发起请求"
         eb = fake.calls[0].get("extra_body")
-        assert eb == {"thinking": {"type": "disabled"}}, f"extra_body 没随 L2 请求发出: {eb!r}"
+        assert eb == {"enable_thinking": False}, f"extra_body 没随 L2 请求发出: {eb!r}"
 
         # L1 转录（扫描件）是另一个入口、另一个客户端缓存，漏接就等于扫描件仍跑慢 6 倍那一档
         tfake = _FakeClient('{"lines":[]}')
         told = (transcribe._client, transcribe._client_channel)
         try:
             with _ModelState():
-                config.set_model("mimo-v2.6-flash")
+                config.set_model("qwen38-flash-bailian")
                 # 渠道要在切完模型之后再钉：不然 _get_client 认为渠道变了，会去构造真客户端要密钥
                 transcribe._client = tfake
                 transcribe._client_channel = config.vlm_base_url()
@@ -311,7 +304,7 @@ def test_preset_extra_body_reaches_every_model_call():
         finally:
             transcribe._client, transcribe._client_channel = told
         teb = (tfake.calls[0] or {}).get("extra_body")
-        assert teb == {"thinking": {"type": "disabled"}}, f"extra_body 没随 L1 转录请求发出: {teb!r}"
+        assert teb == {"enable_thinking": False}, f"extra_body 没随 L1 转录请求发出: {teb!r}"
 
         # 审核台的"问模型"是第三个入口（每次现构造客户端），漏接就表现为提取快、问答慢
         import ask_vision
@@ -326,16 +319,16 @@ def test_preset_extra_body_reaches_every_model_call():
         ask_vision.OpenAI = lambda **kw: SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=_spy)))
         # 这个入口每次现构造客户端，构造参数里就要读密钥（假客户端拦不住）——给个假值
-        os.environ["MIMO_API_KEY"] = "sk-fake"
+        os.environ["QWEN_API_KEY"] = "sk-fake"
         try:
             with _ModelState():
-                config.set_model("mimo-v2.6-flash")
+                config.set_model("qwen38-flash-bailian")
                 ask_vision.ask(png, "这票主单号是多少？")
         finally:
             ask_vision.OpenAI = real_openai
-            os.environ.pop("MIMO_API_KEY", None)
+            os.environ.pop("QWEN_API_KEY", None)
         aeb = (seen[0] if seen else {}).get("extra_body")
-        assert aeb == {"thinking": {"type": "disabled"}}, f"extra_body 没随问模型请求发出: {aeb!r}"
+        assert aeb == {"enable_thinking": False}, f"extra_body 没随问模型请求发出: {aeb!r}"
 
 
 def test_scan_transcription_refuses_without_vision():
@@ -413,9 +406,9 @@ def test_persist_model_choice_can_target_the_master_line():
         old = config.ENV_FILE
         config.ENV_FILE = env
         try:
-            config.persist_model_choice("mimo-v2.6-flash", "MASTER_VLM_MODEL")
+            config.persist_model_choice("qwen38-flash-bailian", "MASTER_VLM_MODEL")
             lines = env.read_text(encoding="utf-8").splitlines()
-            assert "MASTER_VLM_MODEL=mimo-v2.6-flash" in lines
+            assert "MASTER_VLM_MODEL=qwen38-flash-bailian" in lines
             assert "VLM_MODEL=intern-s2-official" in lines, "分单那行不该被动"
             assert sum(1 for l in lines if l.startswith("MASTER_VLM_MODEL=")) == 1, "要就地替换不是再追加一行"
         finally:
