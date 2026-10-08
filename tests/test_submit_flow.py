@@ -3,7 +3,9 @@
 不产生任何外部调用：_company_submit 本就是 mock，测试也不碰网络。
 覆盖：单号归一化 / 台账原子写 / 索引派生 / /submit 门禁（缺号 401→登录、缺号 400、干净进台账）/ 前端提交门存在。
 """
+import contextlib
 import json
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -20,8 +22,51 @@ WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 
 def _clean_ticket(stem="CLA26090022", mawb="235-96146363", hawb="CLA26090022"):
+    # acked_no_review：这张票没有被录入员复核过的暂存记录，发送要带这一次确认（见
+    # test_sending_work_nobody_reviewed_needs_its_own_ack）。放进夹具是为了让其它用例
+    # 只管自己那件事，但"必须显式带"这条由那条用例单独钉。
     return {"stem": stem, "filename": stem + ".pdf", "reviewer": "马殿齐",
+            "acked_no_review": True,
             "air_reviewed": {"MAWB_NO": mawb, "HAWB_NO": hawb, "SHIPPET": ""}}
+
+
+@contextlib.contextmanager
+def _desk_dirs(tmp: Path, air: dict | None = None, qc_extra: dict | None = None):
+    """把提交/暂存这条链路会读写的目录全指到临时目录，并备好这张票的 L3 与质检。
+
+    一个都不能漏指：少指 OUTPUT_RAW_DIR 那次，用例往运维机的真 output/raw 落了一份假 L2，
+    本机因为残留同名文件查不出来，是部署时的回归闸门在干净机器上才抓到的。
+    """
+    stem = "CLA26090022"
+    old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
+           config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR,
+           config.TRANSCRIPT_DIR, config.SUBMIT_GUARD_DIR, auth.USERS_FILE)
+    try:
+        config.SUBMIT_LEDGER, config.ARCHIVE_DIR = tmp / "submitted.json", tmp / "archive"
+        config.STAGED_DIR, config.SUBMIT_GUARD_DIR = tmp / "staged", tmp / "submit_guard"
+        config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR = tmp / "air", tmp / "raw"
+        config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR = tmp / "qc", tmp / "transcript"
+        auth.USERS_FILE = tmp / "users.json"
+        for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+                  config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
+                  config.SUBMIT_GUARD_DIR):
+            p.mkdir(parents=True)
+        (config.ARCHIVE_DIR / stem).mkdir()
+        a = {"MAWB_NO": "235-96146363", "HAWB_NO": stem, "DEST_NAME": "LAX"}
+        if air is not None:
+            a = air
+        (config.OUTPUT_AIR_DIR / f"{stem}.json").write_text(
+            json.dumps(a, ensure_ascii=False), encoding="utf-8")
+        qc = {"source_name": stem + ".pdf", "channel": "vlm", "model": "qwen3.8-flash",
+              "model_choice": "qwen38-flash-bailian", "processed_at": "2026-10-08T09:00:00",
+              "flags": [], "error": ""}
+        qc.update(qc_extra or {})
+        store.save_qc(stem, qc)
+        yield
+    finally:
+        (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+         config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
+         config.SUBMIT_GUARD_DIR, auth.USERS_FILE) = old
 
 
 def test_norm_no_and_composite_key():
@@ -78,6 +123,18 @@ def _logged_client(tmp_users: Path):
     client = TestClient(server.app)
     r = client.post("/login", json={"name": "admin", "password": "admin123"})
     assert r.status_code == 200, f"默认管理员登录失败：{r.status_code} {r.text}"
+    return client
+
+
+def _login_as(name: str, pw: str, role: str):
+    """临时账号表里建一个指定角色的账号并登录，返回带会话的客户端。
+    身份只从这里来：提交/暂存的署名必须取会话，不认请求里写的名字。"""
+    auth.ensure_seed()
+    u, err = auth.set_password(name, pw, role)
+    assert err is None, f"{name}({role}) 建账号失败：{err}"
+    client = TestClient(server.app)
+    r = client.post("/login", json={"name": name, "password": pw})
+    assert r.status_code == 200, f"{name} 登录失败：{r.status_code} {r.text[:120]}"
     return client
 
 
@@ -437,32 +494,89 @@ def test_submit_without_a_stage_still_records_the_sent_values():
     """没暂存过也要记下发了什么：暂存是可选的一档，不是提交的前置条件。
     这时 stager 为空，统计就按"模型值→提交值"算总改动，别把没暂存当成没改动。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_sent_"))
-    old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
-           config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR, auth.USERS_FILE)
     try:
-        config.SUBMIT_LEDGER = tmp / "submitted.json"
-        config.ARCHIVE_DIR = tmp / "archive"
-        config.STAGED_DIR = tmp / "staged"
-        config.OUTPUT_AIR_DIR = tmp / "air"
-        config.OUTPUT_RAW_DIR = tmp / "raw"
-        config.TRANSCRIPT_DIR = tmp / "transcript"
-        auth.USERS_FILE = tmp / "users.json"
-        for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
-                  config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR):
-            p.mkdir(parents=True)
-        (config.ARCHIVE_DIR / "CLA26090022").mkdir()
-        client = _logged_client(tmp)
-        tk = _clean_ticket()
-        tk["air_reviewed"]["DEST_NAME"] = "AMS"
-        assert client.post("/submit", json={"tickets": [tk]}).status_code == 200
-        e = store.ledger()["CLA26090022"]
-        assert e["air_sent"]["DEST_NAME"] == "AMS", e
-        assert e["stager"] == "" and e["staged_at"] == "", e
-        assert store.load_staged("CLA26090022") is None, "提交不该顺手造一份暂存记录"
+        with _desk_dirs(tmp):
+            client = _login_as("马殿齐", "rv-123456", "reviewer")
+            tk = _clean_ticket()
+            tk["air_reviewed"]["DEST_NAME"] = "AMS"
+            assert client.post("/submit", json={"tickets": [tk]}).status_code == 200
+            e = store.ledger()["CLA26090022"]
+            assert e["air_sent"]["DEST_NAME"] == "AMS", e
+            assert e["stager"] == "" and e["staged_at"] == "", e
+            assert store.load_staged("CLA26090022") is None, "提交不该顺手造一份暂存记录"
     finally:
-        (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
-         config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR, auth.USERS_FILE) = old
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_sending_work_nobody_reviewed_needs_its_own_ack_and_leaves_a_trace():
+    """用户定案（四条里的第三条）：制单员仍可直发，但"没经录入员复核"要多点一次确认，并留痕。
+
+    留痕不是为了拦人，是为了以后能回答"跳过复核直接发的那批票错得多不多"。
+    没有这一档，需求三会把"没复核就发的"和"复核过才发的"混在一起算——那正是
+    判断"能不能直接对接平台数据"最需要的对照。
+    门是服务端算的：暂存记录里没有 inputter 的角色事件，就必须带 `acked_no_review`。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_ack_"))
+    try:
+        with _desk_dirs(tmp):
+            rv = _login_as("马殿齐", "rv-123456", "reviewer")
+            tk = _clean_ticket()
+            tk["air_reviewed"]["DEST_NAME"] = "ORD"
+            assert rv.post("/stage", json={"tickets": [tk]}).status_code == 200
+
+            no_ack = dict(tk)
+            no_ack.pop("acked_no_review")
+            r = rv.post("/submit", json={"tickets": [no_ack]})
+            assert r.status_code == 400, f"没人复核过的票居然直接发出去了：{r.status_code} {r.text[:150]}"
+            d = r.json()["detail"]
+            assert d.get("ack") == "no_inputter_review", f"没告诉前端要点哪一种确认：{d}"
+            assert "录入员" in d["message"] and "复核" in d["message"], d
+            assert "CLA26090022" not in store.ledger(), "被拒的提交不许进台账"
+
+            r2 = rv.post("/submit", json={"tickets": [tk]})     # tk 带 acked_no_review
+            assert r2.status_code == 200, r2.text
+            assert store.ledger()["CLA26090022"]["no_inputter_review"] is True, store.ledger()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_ticket_the_inputter_reviewed_sends_without_the_extra_ack():
+    """录入员核对（暂存）过的票，直发不再要那次确认；台账也就不该留"未经复核"的记号。
+
+    这一条是上一条的另一半：确认只欠在"没人复核过"上，不能变成每次提交都点一下的橡皮章——
+    点多一次的确认人和不点一样，留着它就没有信息量了。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_ack_"))
+    try:
+        with _desk_dirs(tmp):
+            rv = _login_as("马殿齐", "rv-123456", "reviewer")
+            tk = _clean_ticket()
+            tk["air_reviewed"]["DEST_NAME"] = "ORD"
+            assert rv.post("/stage", json={"tickets": [tk]}).status_code == 200
+            inp = _login_as("刘明", "in-123456", "inputter")
+            assert inp.post("/stage", json={"tickets": [tk]}).status_code == 200
+
+            no_ack = dict(tk)
+            no_ack.pop("acked_no_review")
+            r = inp.post("/submit", json={"tickets": [no_ack]})
+            assert r.status_code == 200, f"录入员自己核对过并暂存过的票，不该再要确认：{r.text[:150]}"
+            assert store.ledger()["CLA26090022"]["no_inputter_review"] is False, store.ledger()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_desk_asks_before_sending_unreviewed_work():
+    """前端拿到那条 400 要问人，不能自己替他确认，也不能把这句话吞成"HTTP 400"。
+
+    自动带上 acked_no_review 等于这道门形同虚设；而只回一句 HTTP 400，制单员不知道
+    要点什么，最后只会骂系统坏了。"""
+    js = web_src.desk()
+    assert "no_inputter_review" in js, "没接服务端那条「未经录入员复核」的确认要求"
+    i = js.index("async function submitTicket(")
+    body = js[i:js.index("\n}", i)]
+    assert "confirm(" in body, "要用一次明确的确认（本台删草稿、删账号也是走 confirm）"
+    # ack 只能是"人确认过之后"才带上的：写成无条件就等于这道门由前端替他过了
+    assert re.search(r"if\s*\(\s*ackNoReview\s*\)\s*p\.acked_no_review\s*=\s*true", body), \
+        "acked_no_review 必须只在确认之后带上，不能默认发出去"
 
 
 def test_desk_has_a_stage_button_that_cannot_reach_the_company():

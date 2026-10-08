@@ -188,13 +188,16 @@ def _write_ledger(data: dict, path=None) -> None:
 def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
                    acked_flags: list = None, edited_fields: list = None,
                    sent_fingerprint: str = "", company_action: str = "",
-                   air_sent: dict = None, stager: str = "", staged_at: str = "") -> dict:
+                   air_sent: dict = None, stager: str = "", staged_at: str = "",
+                   no_inputter_review: bool = False) -> dict:
     """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。
     acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。
     sent_fingerprint / company_action / before：这次到底发了什么、公司怎么回的、发之前库里是什么——
     出事时要能回答"这列的 NULL 是谁写进去的"（j9 整表写回，没带的列就是 NULL）。
     air_sent：这次真发给公司的那份全量值。光有哈希对不回内容，重算一次又会被"人已经改了"污染；
-    stager/staged_at：发之前是谁暂存（核对）过的——按人算修改量与"未经录入员复核"都读它。"""
+    stager/staged_at：发之前是谁暂存（核对）过的——按人算修改量与"未经录入员复核"都读它。
+    no_inputter_review：这批里没有录入员复核过的暂存记录、制单员点了确认就直发的记号。
+    它必须逐条留在台账里：以后问"跳过复核直接发的那批错得多不多"，分母就在这儿。"""
     with _LEDGER_LOCK:
         data = _load_ledger()
         entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
@@ -206,6 +209,7 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
                  "company_action": company_action or "",
                  "air_sent": air_sent if isinstance(air_sent, dict) else {},
                  "stager": str(stager or ""), "staged_at": str(staged_at or ""),
+                 "no_inputter_review": bool(no_inputter_review),
                  "receipt": receipt or {}}
         if isinstance((receipt or {}).get("before"), dict):
             entry["before"] = receipt["before"]

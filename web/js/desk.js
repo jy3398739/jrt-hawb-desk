@@ -847,7 +847,7 @@ async function stageTicket(t){
     toast("已暂存（相对模型改了 " + n + " 列）：同事按主单号检索就能看到这张票", "ok");
   }catch(e){ toast("暂存失败：" + (e.message || e), "bad"); }
 }
-async function submitTicket(t){
+async function submitTicket(t, ackNoReview){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
   // 提交门（前端体验层，服务端另有一道只认主/分单号的硬门）：
@@ -861,7 +861,9 @@ async function submitTicket(t){
   if (remaining.length){
     toast("还有未清的红旗：先逐条处理完才能提交（" + remaining[0] + (remaining.length > 1 ? " 等 " + remaining.length + " 条" : "") + "）", "bad"); return;
   }
-  const body = {tickets:[payloadFor(t, who)], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
+  const p = payloadFor(t, who);
+  if (ackNoReview) p.acked_no_review = true;   // 只在人确认过之后才带，不许默认替人确认
+  const body = {tickets:[p], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
   t.state = "submitting"; render();
   let pending = false;
   try{
@@ -871,9 +873,18 @@ async function submitTicket(t){
     else {
       const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
       if (!r.ok || j.ok === false){
-        // 服务端 400 的 detail 可能是字符串（缺号），也可能是 {message, flags}（红旗未清）：
-        // 不把 message 挖出来，制单员只会看到光秃秃一句 "HTTP 400"，不知道该改哪。
+        // 服务端 400 的 detail 可能是字符串（缺号），也可能是 {message, flags}（红旗未清）
+        // 或 {message, ack}（没人复核过）：不把 message 挖出来，制单员只会看到光秃秃一句
+        // "HTTP 400"，不知道该改哪。
         const d = j.detail;
+        if (d && d.ack === "no_inputter_review"){
+          // 第三道门：服务器说这张票没有录入员复核过的暂存记录。问一次，点了确认才重发；
+          // 不点就当没发生过——绝不能自己替他确认。
+          t.state = "done"; render();
+          if (confirm((d.message || "这张票没有录入员复核过的暂存记录。") +
+                      "\n\n确认「未经录入员复核，仍要回传公司」？")) submitTicket(t, true);
+          return;
+        }
         throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
       }
     }

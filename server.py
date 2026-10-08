@@ -398,10 +398,13 @@ def _sent_fingerprint(mawb: str, hawb: str, rec: dict) -> str:
 def submit(body: SubmitBody, user: dict = Depends(current_user)):
     """制单员提交：这是"回传公司 + 进索引"的唯一出口。
 
-    两道门都以服务端为准，不信前端（前端那道只是体验）：
+    三道门都以服务端为准，不信前端（前端那道只是体验）：
     ① 主/分单号必须可归一化——复合键是"日后能否按号打开原件"的唯一连接键，缺号进索引等于塞坏数据；
     ② 红旗按**提交时刻的当前值**重算（`jobs.recompute_flags`，与解析时同一批判据同一套文案），
-       未清的必须逐条 `acked_flags` 确认；改了值旧旗文案会变，自动要重新确认。
+       未清的必须逐条 `acked_flags` 确认；改了值旧旗文案会变，自动要重新确认；
+    ③ 没有"录入员复核过的暂存记录"的，必须带 `acked_no_review`（一次显式确认），台账留痕
+       `no_inputter_review`——制单员可以直发，但这一档不能悄悄发生，否则需求三会把
+       "没复核就发的"和"复核过才发的"混在一个数里。
     任一不过 → 400 且**一个公司请求都不发**（先整批门检，再逐张发，别提交一半）。
     复核人取登录会话身份。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，补号后重新提交即可。
     机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。"""
@@ -424,9 +427,18 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         if left:
             raise HTTPException(400, {"message": f"{hawb} 还有未清的红旗：逐条确认后才能回传公司",
                                       "flags": left})
-        passed.append((tk, stem, mawb, hawb, rec, acked))
+        # 第三道门（2026-10-08 用户定案）：制单员可以直发，但"没有录入员复核过的暂存记录"
+        # 必须多点一次确认。判据只认服务器上的暂存事件，不认前端写的任何名字；
+        # 确认之后台账留 no_inputter_review，否则以后答不出"跳过复核直接发的那批错得多不多"。
+        st = store.load_staged(stem) or {}
+        reviewed = store.reviewed_by_inputter(st)
+        if not reviewed and not tk.get("acked_no_review"):
+            raise HTTPException(400, {
+                "message": f"{hawb} 没有录入员复核过的暂存记录：确认「未经录入员复核，仍要回传公司」后再提交",
+                "ack": "no_inputter_review"})
+        passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed))
     results = []
-    for tk, stem, mawb, hawb, rec, acked in passed:
+    for tk, stem, mawb, hawb, rec, acked, st, reviewed in passed:
         try:
             receipt = _company_submit({"mawb": mawb, "hawb": hawb, "stem": stem, "air": rec})
         except company_api.CompanyLocked as e:
@@ -436,7 +448,6 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             LOG.warning("分单回传失败：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
             raise HTTPException(502, f"回传公司失败：{e}")
         fp = _sent_fingerprint(mawb, hawb, rec)
-        st = store.load_staged(stem) or {}
         entry = store.mark_submitted(stem, mawb, hawb, str(user.get("name") or ""), receipt,
                                      acked_flags=acked,
                                      edited_fields=(tk.get("edited_fields")
@@ -444,14 +455,15 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                                      sent_fingerprint=fp,
                                      company_action=str(receipt.get("action") or ""),
                                      air_sent=rec, stager=st.get("stager") or "",
-                                     staged_at=st.get("staged_at") or "")
+                                     staged_at=st.get("staged_at") or "",
+                                     no_inputter_review=not reviewed)
         if st:
             store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)
         results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
-        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s",
+        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s%s",
                  user.get("name"), mawb, hawb, receipt.get("mode"), receipt.get("action") or "-",
                  bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked),
-                 st.get("stager") or "-")
+                 st.get("stager") or "-", "" if reviewed else "（未经录入员复核，已确认）")
     return {"ok": True, "results": results}
 
 
