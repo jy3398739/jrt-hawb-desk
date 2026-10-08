@@ -375,3 +375,106 @@ def test_desk_master_search_reads_pending_from_the_server():
     assert "drafts()" not in body, "待提交名单不许再读浏览器暂存"
     assert "提交回公司" in html, "空表要说明白：先提交，公司才有这条分单"
     assert "暂存" in html, "空表还要指出中间那一档：同事暂存过的票也在这张表里"
+
+
+def test_submit_records_what_was_actually_sent_and_who_staged_it():
+    """台账里要能读出"这次真发了什么值"和"发之前谁暂存过"。
+
+    从前只存一个 sha256（`sent_fingerprint`）：整表写回把某列抹成 NULL 时，拿着哈希对不回
+    到底发了什么值，只能重算；而 `edited_fields` 只有字段名、没有值，需求三的逐字段正确率
+    算不出来。`sent_fingerprint` 保留（那条用例还在盯），旁边补一份全量终值。
+    暂存记录同时盖章：submitted_at/submitter——这样"暂存了但没发出去"和"发出去了"一眼分得开。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_sent_"))
+    old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
+           config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR,
+           config.TRANSCRIPT_DIR, auth.USERS_FILE)
+    try:
+        config.SUBMIT_LEDGER = tmp / "submitted.json"
+        config.ARCHIVE_DIR = tmp / "archive"
+        config.STAGED_DIR = tmp / "staged"
+        config.OUTPUT_AIR_DIR = tmp / "air"
+        config.OUTPUT_RAW_DIR = tmp / "raw"          # 提交门会读这里：不指开就等于读这台机器的真 L2
+        config.OUTPUT_QC_DIR = tmp / "qc"
+        config.TRANSCRIPT_DIR = tmp / "transcript"
+        auth.USERS_FILE = tmp / "users.json"
+        for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+                  config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR):
+            p.mkdir()
+        (config.ARCHIVE_DIR / "CLA26090022").mkdir()
+        (config.OUTPUT_AIR_DIR / "CLA26090022.json").write_text(
+            json.dumps({"MAWB_NO": "235-96146363", "HAWB_NO": "CLA26090022",
+                        "DEST_NAME": "LAX"}, ensure_ascii=False), encoding="utf-8")
+        store.save_qc("CLA26090022", {"source_name": "CLA26090022.pdf", "channel": "vlm",
+                                      "model": "qwen3.8-flash", "processed_at": "2026-10-08T09:00:00",
+                                      "flags": [], "error": ""})
+        auth.ensure_seed()
+        auth.set_password("马殿齐", "rv-123456", "reviewer")
+        client = TestClient(server.app)
+        assert client.post("/login", json={"name": "马殿齐", "password": "rv-123456"}).status_code == 200
+
+        tk = _clean_ticket()
+        tk["air_reviewed"]["DEST_NAME"] = "ORD"
+        assert client.post("/stage", json={"tickets": [tk]}).status_code == 200
+        r = client.post("/submit", json={"tickets": [tk]})
+        assert r.status_code == 200, r.text
+
+        e = store.ledger()["CLA26090022"]
+        assert e["air_sent"]["DEST_NAME"] == "ORD", f"发出去的值没进台账：{e.get('air_sent')}"
+        assert e["sent_fingerprint"], "指纹还留着（整表写回对账要用）"
+        assert e["stager"] == "马殿齐" and e["staged_at"], f"谁暂存的没带进台账：{e}"
+        st = store.load_staged("CLA26090022")
+        assert st["submitted_at"] and st["submitter"] == "马殿齐", st
+        assert st["sent_fingerprint"] == e["sent_fingerprint"], "两边指纹对不上，盖章等于没盖"
+    finally:
+        (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+         config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
+         auth.USERS_FILE) = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_submit_without_a_stage_still_records_the_sent_values():
+    """没暂存过也要记下发了什么：暂存是可选的一档，不是提交的前置条件。
+    这时 stager 为空，统计就按"模型值→提交值"算总改动，别把没暂存当成没改动。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_sent_"))
+    old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
+           config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR, auth.USERS_FILE)
+    try:
+        config.SUBMIT_LEDGER = tmp / "submitted.json"
+        config.ARCHIVE_DIR = tmp / "archive"
+        config.STAGED_DIR = tmp / "staged"
+        config.OUTPUT_AIR_DIR = tmp / "air"
+        config.OUTPUT_RAW_DIR = tmp / "raw"
+        config.TRANSCRIPT_DIR = tmp / "transcript"
+        auth.USERS_FILE = tmp / "users.json"
+        for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+                  config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR):
+            p.mkdir(parents=True)
+        (config.ARCHIVE_DIR / "CLA26090022").mkdir()
+        client = _logged_client(tmp)
+        tk = _clean_ticket()
+        tk["air_reviewed"]["DEST_NAME"] = "AMS"
+        assert client.post("/submit", json={"tickets": [tk]}).status_code == 200
+        e = store.ledger()["CLA26090022"]
+        assert e["air_sent"]["DEST_NAME"] == "AMS", e
+        assert e["stager"] == "" and e["staged_at"] == "", e
+        assert store.load_staged("CLA26090022") is None, "提交不该顺手造一份暂存记录"
+    finally:
+        (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
+         config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR, auth.USERS_FILE) = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_desk_has_a_stage_button_that_cannot_reach_the_company():
+    """前端也必须把两档分开：暂存发 /stage，提交发 /submit，不许复用同一段。
+
+    这不是体验问题：点错一次就是给公司库写了一条记录，而"绝不代替人发送公司"是这台桌子的底线。
+    打开别人暂存的票同样不能顺手把 /submit 那条路走完。"""
+    js = web_src.desk()
+    assert 'id="stage"' in js, "核对区没有「暂存本票」按钮"
+    assert 'BASE + "/stage"' in js, "暂存没接到 /stage"
+    i = js.index("async function stageTicket(")
+    body = js[i:js.index("\n}", i)]
+    assert "/submit" not in body, "暂存那段里混进了 /submit：那会真发给公司"
+    assert 'BASE + "/staged/"' in js, "录入员打开别人暂存的票要读 /staged"
+    assert "L.stagedMerge(" in js, "本地未存改动与服务器暂存合并要走 logic，别在渲染里再算一遍"

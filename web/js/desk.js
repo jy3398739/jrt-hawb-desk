@@ -826,6 +826,27 @@ function addFiles(files){
 }
 
 /* ── 提交 ───────────────────────────────────────────────────────────── */
+/* 暂存：把现在这份核对结果存到服务器上给同事看，一个公司请求都不发。
+   与提交分开是需求二的核心——两档的门槛本来就不一样：缺号、红旗没清都能存
+   （那正是需要同事接着看的票），而提交必须两样都过。姓名只是留个称呼，
+   服务器认的是登录会话里的身份。 */
+async function stageTicket(t){
+  const who = $("#reviewer").value.trim();
+  if (!who){ toast("先填复核人姓名：暂存也要留是谁核对的", "bad"); $("#reviewer").focus(); return; }
+  try{
+    const r = await fetch(BASE + "/stage", {method:"POST", headers:{"Content-Type":"application/json"},
+                                           body:JSON.stringify({tickets:[payloadFor(t, who)]})});
+    const j = await r.json().catch(() => ({ok:false}));
+    if (!r.ok || j.ok === false){
+      const d = j.detail;
+      throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
+    }
+    const n = (j.staged && j.staged[0] && j.staged[0].edited) || 0;
+    t.staged = {at: nowTxt(), by: who, edited: n};
+    render();
+    toast("已暂存（相对模型改了 " + n + " 列）：同事按主单号检索就能看到这张票", "ok");
+  }catch(e){ toast("暂存失败：" + (e.message || e), "bad"); }
+}
 async function submitTicket(t){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
@@ -1119,7 +1140,7 @@ function renderMain(){
       <span class="dot ${c}" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
-          ${t.restored ? " · 本地暂存载入" : ""}${label ? " · " + label : ""}
+          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本地暂存载入" : "")}${label ? " · " + label : ""}
           · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
     <div class="todo">
@@ -1136,6 +1157,7 @@ function renderMain(){
       <th class="num">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="ft bottom">
+      <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器上给同事看：不发公司，缺号也能存">暂存本票</button>
       <button class="btn pri" id="submit">提交本票</button>
       <button class="btn" id="expOne">导出本票 JSON</button>
       <button class="btn" id="expAll">导出全部已解析</button>
@@ -1230,6 +1252,7 @@ function wireMain(t){
       row.hidden = e.target.checked && !interesting;
     }
   });
+  $("#stage").addEventListener("click", () => stageTicket(t));
   $("#submit").addEventListener("click", () => submitTicket(t));
   $("#expOne").addEventListener("click", () => exportTickets([t], (t.stem || t.filename) + ".审核结果.json"));
   $("#expAll").addEventListener("click", () => exportTickets(
@@ -1498,16 +1521,32 @@ async function openHouse(stem){
       throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     }
     const d = await r.json(), dr = drafts()[stem] || {};
-    const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:true,
+    /* `/ticket` 只有模型口径；别人核对过的值在 `/staged` 那份里。没暂存过就是没有（404），
+       不影响打开——所以这里不能 throw，安静地按"没有"处理。 */
+    let st = null;
+    try{
+      const sr = await fetch(BASE + "/staged/" + encodeURIComponent(stem));
+      if (sr.ok) st = await sr.json();
+    }catch(e){ st = null; }
+    const mg = L.stagedMerge(d.air || {}, st && st.air_final, dr.airE || {});
+    const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:"server",
                channel:d.channel, elapsed:d.elapsed,
                qc: Object.keys(d.qc || {}).length ? d.qc : null,
-               raw:d.raw || {}, air:d.air || {}, airE:dr.airE || {}, ackF:dr.ackF || [],
+               raw:d.raw || {}, air:d.air || {}, airE:mg.airE, ackF:dr.ackF || [],
+               staged: st && !st.submitted_at ? {by:st.stager, role:st.stager_role,
+                                                 at:st.staged_at, edited:Object.keys(st.edits || {}).length} : null,
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
                                          reviewer:d.submitted.reviewer} : null};
     S.tickets.push(t); mvOff(); S.sel = stem; render();
     $("#view").scrollIntoView({behavior:"smooth", block:"start"});
-    toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + (t.submitted ? "已提交过，改动需再点提交"
-          : "本机结果，改完点提交") + "）", "ok");
+    const from = t.submitted ? "已提交过，改动需再点提交"
+      : (st ? "载入 " + L.roleCn(st.stager_role) + " " + st.stager + " 暂存的核对结果（改 "
+                 + Object.keys(st.edits || {}).length + " 列）" : "本机模型结果，改完点提交");
+    toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + from + "）", "ok");
+    if (mg.conflicts.length){
+      toast("注意：" + mg.conflicts.join("、") + " 你这台机器上的改动和服务器上的暂存不一致，" +
+            "已按服务器版本显示；你那份没删，还在下面的「本地暂存」里", "warn");
+    }
   }catch(e){ toast("打开这张分单失败：" + (e.message || e), "bad"); }
 }
 async function mstSearch(force){

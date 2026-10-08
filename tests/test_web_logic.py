@@ -262,3 +262,24 @@ def test_desk_wires_the_preview_toggle_to_logic_not_its_own_math():
     assert "PREVIEW.pdfFit === " not in js, "别再留原来那颗二态硬编码"
     assert "cycle.length < 2" in js, "只剩一档时这颗按钮就是死的，要藏起来而不是留着让人点"
 
+
+
+def test_stagedMerge_prefers_the_server_but_names_the_conflict():
+    """打开别人暂存的票时，自己那份没存过的改动不能悄悄被盖掉，也不能悄悄盖掉别人。
+
+    规则：服务器（别人核对过的）赢，本地这份不删——它还在「本机未保存的编辑」里；
+    但冲突的字段必须点名报给人，否则人会以为自己刚填的值还在。
+    只在本机改过的字段（服务器没动的）保留本地值。
+    """
+    model = {"DEST_NAME": "LAX", "PIECES": 1, "GOODS_INFO": "STEEL"}
+    final = {"DEST_NAME": "ORD", "PIECES": 1}
+    local = {"DEST_NAME": "MAD", "GOODS_INFO": "STEEL PARTS"}
+    assert web_src.logic("L.stagedMerge(m, f, l)", m=model, f=final, l=local) == {
+        "airE": {"DEST_NAME": "ORD", "GOODS_INFO": "STEEL PARTS"},
+        "conflicts": ["DEST_NAME"], "local": {"DEST_NAME": "MAD"}}
+    # 没暂存过：本地改动照旧生效，没有冲突可言
+    assert web_src.logic("L.stagedMerge(m, f, l)", m=model, f=None, l=local) == {
+        "airE": {"DEST_NAME": "MAD", "GOODS_INFO": "STEEL PARTS"}, "conflicts": [], "local": {}}
+    # 服务器改了、本地没碰：直接采用，不许报冲突（报多了人就学会忽略提示）
+    r = web_src.logic("L.stagedMerge(m, f, l)", m=model, f=final, l={})
+    assert r["airE"] == {"DEST_NAME": "ORD"} and r["conflicts"] == [], r

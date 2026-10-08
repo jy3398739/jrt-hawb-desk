@@ -435,16 +435,23 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         except (company_api.CompanyApiError, company_api.CompanyNotConfigured) as e:
             LOG.warning("分单回传失败：%s|%s（stem=%s）→ %s", mawb, hawb, stem, e)
             raise HTTPException(502, f"回传公司失败：{e}")
+        fp = _sent_fingerprint(mawb, hawb, rec)
+        st = store.load_staged(stem) or {}
         entry = store.mark_submitted(stem, mawb, hawb, str(user.get("name") or ""), receipt,
                                      acked_flags=acked,
                                      edited_fields=(tk.get("edited_fields")
                                                     if isinstance(tk.get("edited_fields"), list) else []),
-                                     sent_fingerprint=_sent_fingerprint(mawb, hawb, rec),
-                                     company_action=str(receipt.get("action") or ""))
+                                     sent_fingerprint=fp,
+                                     company_action=str(receipt.get("action") or ""),
+                                     air_sent=rec, stager=st.get("stager") or "",
+                                     staged_at=st.get("staged_at") or "")
+        if st:
+            store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)
         results.append({"stem": stem, "submitted": True, "key": entry["key"], "mode": receipt.get("mode")})
-        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条",
+        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s",
                  user.get("name"), mawb, hawb, receipt.get("mode"), receipt.get("action") or "-",
-                 bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked))
+                 bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked),
+                 st.get("stager") or "-")
     return {"ok": True, "results": results}
 
 

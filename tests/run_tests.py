@@ -78,10 +78,16 @@ def update_baseline():
 
 
 def _machine_files():
-    """跑回归之前先记住这两个文件的字节与修改时刻：它们是**这台机器的真配置**，不是测试夹具。
-    2026-10-08 就是被这套件悄悄改掉的——`_ModelState` 只存了模块全局、没重定向 ENV_FILE，
-    于是每个 set_model() 都写进真 .env；在服务器上跑就等于每次部署都把模型选择改回去。
-    光比字节不够（写回同一个值就查不出来），所以 mtime 也一起比：原子替换一定会动它。"""
+    """跑回归之前先记住这台机器的真配置与真数据的**清单**：它们不是测试夹具。
+
+    两个来源都是踩过的坑：
+    ① 2026-10-08 `_ModelState` 只存了模块全局、没重定向 ENV_FILE，于是每个 set_model() 都写进
+       真 .env；在服务器上跑就等于每次部署都把模型选择改回去（光比字节不够，写回同一个值查不出来，
+       所以 mtime 也一起比：原子替换一定会动它）。
+    ② 同日另一条：一条提交用例忘了把 OUTPUT_RAW_DIR 指开，往真 output/raw 里落了一份假 L2，
+       于是后面三条用例读到了它、报出凭空的红旗。output/ 不比内容，比"有哪些文件"——
+       测试写进真输出目录的动作就是新建/删掉一个文件，这一层足够抓到，而且不用扫全树哈希。
+    """
     import hashlib
     import os
     out = {}
@@ -90,6 +96,9 @@ def _machine_files():
             out[name] = (hashlib.sha256(p.read_bytes()).hexdigest(), os.stat(p).st_mtime_ns)
         else:
             out[name] = None
+    odir = ROOT / "output"
+    out["output/ 文件清单"] = sorted(str(p.relative_to(odir)).replace("\\", "/")
+                                    for p in odir.rglob("*") if p.is_file()) if odir.is_dir() else []
     return out
 
 
@@ -121,10 +130,19 @@ def main():
     if not ran:
         print(f"没有任何用例被跑到（过滤词 {args.filter!r} 没匹配上 test_*.py），这不算通过。")
         return 1
-    changed = [k for k, v in before.items() if _machine_files()[k] != v]
+    after = _machine_files()
+    changed = [k for k, v in before.items() if after[k] != v]
     if changed:
-        print(f"❌ 这套回归把这台机器的真配置改了：{changed}（用例必须指到自己的临时文件，"
-              f"否则在服务器上跑就等于每次部署都改掉线上选择）")
+        bits = []
+        for k in changed:
+            if isinstance(before[k], list):
+                bits.append(f"{k} 新增 {sorted(set(after[k]) - set(before[k]))[:5] or '无'}、"
+                            f"少了 {sorted(set(before[k]) - set(after[k]))[:5] or '无'}")
+            else:
+                bits.append(k)
+        print(f"❌ 这套回归改了这台机器的真东西：{'；'.join(bits)}"
+              f"（用例必须指到自己的临时文件：在服务器上跑就等于每次部署都改掉线上配置，"
+              f"往真 output/ 里落一份假结果则会让后面的用例读到凭空的红旗）")
         return 1
     print(f"通过 {passed}，失败 {failed}" + ("  ✅ 全部绿灯" if not failed else "  ❌ 有回归"))
     return 1 if failed else 0

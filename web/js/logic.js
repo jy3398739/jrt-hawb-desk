@@ -48,6 +48,31 @@ const L = {
             conflicts: Object.keys(edit).filter(k => L.str(base, k) !== L.str(cur, k))};
   },
 
+  /* 打开别人（或自己在别的机器）暂存过的票时怎么合并：服务器那份赢，
+     本地这份没存过的改动不删，但冲突的字段必须点名报给人。
+     静悄悄盖任何一边都坏——盖掉服务器，同事以为你看的是他核对过的值；
+     盖掉本地，人刚填的两格凭空消失又不知道为什么。
+     只在本机改过的列（服务器没动的）保留本地值；两边改动内容一样的不算冲突。 */
+  stagedMerge(model, final, localDiff){
+    const m = model || {}, f = final || null, l = localDiff || {};
+    const airE = {}, conflicts = [], kept = {};
+    const seen = {}, keys = [];
+    Object.keys(f || {}).concat(Object.keys(l)).forEach(k => {
+      if (seen[k]) return; seen[k] = 1; keys.push(k);
+    });
+    keys.forEach(k => {
+      const mv = L.str(m, k), lv = Object.prototype.hasOwnProperty.call(l, k) ? L.str(l, k) : null;
+      const fv = f && Object.prototype.hasOwnProperty.call(f, k) ? L.str(f, k) : null;
+      const serverMoved = fv !== null && fv !== mv;
+      const localMoved = lv !== null && lv !== mv;
+      if (serverMoved){
+        airE[k] = f[k];
+        if (localMoved && lv !== fv){ conflicts.push(k); kept[k] = l[k]; }
+      } else if (localMoved){ airE[k] = l[k]; }
+    });
+    return {airE: airE, conflicts: conflicts, local: kept};
+  },
+
   /* 人改了一列：值与当前解析一致就不算改动；基准挪到当前解析，这一列的打架随之消解
      （他已经对着新值看过了，再报一次只会让人学会忽略提示）。 */
   draftTouch(edit, editBase, conflicts, k, value, orig){
