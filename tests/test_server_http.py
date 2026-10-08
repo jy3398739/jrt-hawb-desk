@@ -1151,3 +1151,11 @@ def test_the_word_for_stage_means_only_the_server_tier():
     for rel in ("index.html", "js/desk.js"):
         t = web_src.part(rel)
         assert "本地暂存" not in t, f"{rel} 还在用「本地暂存」称呼本机草稿：和服务器那一档混名"
+    # 光把「本地暂存」改掉不够：无障碍名与确认框文案随后又各自冒出了别的叫法，
+    # 同一个东西三个名字，人点对齐不了屏上那行字，也就想不起它没上服务器。
+    html = web_src.part("index.html")
+    assert 'aria-label="本机未保存的编辑"' in html, "草稿面板的可读名要跟着屏上那几个字走"
+    assert "本机暂存的编辑" not in html, "无障碍名里别再把本机那份叫暂存"
+    js = web_src.part("js/desk.js")
+    assert "条暂存记录" not in js, "清空本机编辑的确认框不许把它说成暂存记录：那一档只在服务器上"
+    assert "本机草稿" not in js, "「本机草稿」是第三个名字，只保留「本机未保存的编辑」这一个"

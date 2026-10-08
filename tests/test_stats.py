@@ -130,6 +130,31 @@ def test_a_direct_send_with_no_stage_trace_counts_every_change_against_the_prepa
         assert s["unreviewed"] == 1, "没复核就发的张数要单独报，它是那批数的对照组"
 
 
+def test_a_ticket_staged_but_never_sent_is_not_counted_as_sent_without_review():
+    """这一档的标签是"未经录入员复核就发出"，那它数到的必须真的发出去了。
+
+    只暂存没发的票也带着"还没有 inputter 事件"，一起加进去的话，这个数会随着谁
+    把工作停在暂存那一档而涨——而它涨的恰好是拿去决定要不要对接平台的那个数。
+    行上的标记照旧留着（那是这张票自己的复核状态），只是不进这个合计。
+    """
+    with _world():
+        a = _parsed("SENT-OK", {"DEST_NAME": "LAX"})
+        _stage("SENT-OK", {**a, "DEST_NAME": "PAR"}, "马殿齐", "reviewer")
+        _stage("SENT-OK", {**a, "DEST_NAME": "AMS"}, "刘明", "inputter")
+        _send("SENT-OK", "235-96146363", "SENT-OK", {**a, "DEST_NAME": "AMS"}, "刘明",
+              stager="刘明", no_review=False)
+        w = _parsed("WAITING", {"DEST_NAME": "ORD"})
+        _stage("WAITING", {**w, "DEST_NAME": "PAR"}, "马殿齐", "reviewer")
+        j = _parsed("JUMPED", {"DEST_NAME": "MAD"})
+        _send("JUMPED", "235-96146363", "JUMPED", {**j, "DEST_NAME": "AMS"}, "马殿齐")
+        rows = {x["stem"]: x for x in stats.collect()}
+        assert rows["WAITING"]["state"] == "staged", rows["WAITING"]
+        assert rows["WAITING"]["no_inputter_review"] is True, "这张票自己的复核状态还是要标出来"
+        s = stats.summary(list(rows.values()))
+        assert s["tickets"] == 3, s
+        assert s["unreviewed"] == 1, f"只有真发出去又没人复核的那张算：{s['unreviewed']}"
+
+
 def test_ledger_entries_without_value_trace_are_counted_as_legacy_not_as_zero_edits():
     """本功能上线之前的台账没有 air_sent（只存过字段名与哈希）：算不了就别混进来。
 

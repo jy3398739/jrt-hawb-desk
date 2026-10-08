@@ -52,23 +52,24 @@ const L = {
      本地这份没存过的改动不删，但冲突的字段必须点名报给人。
      静悄悄盖任何一边都坏——盖掉服务器，同事以为你看的是他核对过的值；
      盖掉本地，人刚填的两格凭空消失又不知道为什么。
-     只在本机改过的列（服务器没动的）保留本地值；两边改动内容一样的不算冲突。 */
-  stagedMerge(model, final, localDiff){
-    const m = model || {}, f = final || null, l = localDiff || {};
+     「服务器改了哪几列」只认服务端算好的那份 edits（store.field_diff 对数字列做了归一，
+     45.0 与 45 不算改动）；前端自己再比一遍就会把这些假改动摆到人面前。
+     出来的值一律转成字符串：核对页整条值管道按字符串处理，数字塞进 airE 会在渲染时抛异常。 */
+  stagedMerge(final, localDiff, serverEdits){
+    const f = final || {}, l = localDiff || {}, ed = serverEdits || {};
+    const has = Object.prototype.hasOwnProperty;
     const airE = {}, conflicts = [], kept = {};
     const seen = {}, keys = [];
-    Object.keys(f || {}).concat(Object.keys(l)).forEach(k => {
+    Object.keys(ed).concat(Object.keys(l)).forEach(k => {
       if (seen[k]) return; seen[k] = 1; keys.push(k);
     });
     keys.forEach(k => {
-      const mv = L.str(m, k), lv = Object.prototype.hasOwnProperty.call(l, k) ? L.str(l, k) : null;
-      const fv = f && Object.prototype.hasOwnProperty.call(f, k) ? L.str(f, k) : null;
-      const serverMoved = fv !== null && fv !== mv;
-      const localMoved = lv !== null && lv !== mv;
-      if (serverMoved){
-        airE[k] = f[k];
-        if (localMoved && lv !== fv){ conflicts.push(k); kept[k] = l[k]; }
-      } else if (localMoved){ airE[k] = l[k]; }
+      const sv = has.call(ed, k) && has.call(f, k) ? L.str(f, k) : null;
+      const lv = has.call(l, k) ? L.str(l, k) : null;
+      if (sv !== null){
+        airE[k] = sv;
+        if (lv !== null && lv !== sv){ conflicts.push(k); kept[k] = l[k]; }
+      } else if (lv !== null){ airE[k] = lv; }
     });
     return {airE: airE, conflicts: conflicts, local: kept};
   },

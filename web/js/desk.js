@@ -576,7 +576,7 @@ function fieldValCandidates(t, k){
   }
   return out;
 }
-/* 转录来源：本次会话提取的用响应里的 t.ll；本机草稿载入的从服务端 /layout 取（要归档过才有）。
+/* 转录来源：本次会话提取的用响应里的 t.ll；本机未保存的编辑载入的从服务端 /layout 取（要归档过才有）。
    在途 Promise 挂在票上共享：连点两个字段时第二个别再发一遍请求、也不会误判"无转录"。 */
 async function layoutFor(t){
   const usable = ll => { const ls = (ll && ll.lines) || []; return ls.some(l => l.bbox) ? ls : null; };
@@ -1076,9 +1076,9 @@ function renderMain(){
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
       ${chips ? `<div class="chips">${chips}</div>` : ""}
-      ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机草稿与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
+      ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机未保存的编辑与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
       ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
-      ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机草稿里</span></div>` : ""}
+      ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机未保存的编辑里</span></div>` : ""}
       ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="ft top">
@@ -1157,7 +1157,7 @@ function renderMain(){
       <span class="dot ${c}" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
-          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机草稿载入" : "")}${label ? " · " + label : ""}
+          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机未保存的编辑载入" : "")}${label ? " · " + label : ""}
           · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
     <div class="todo">
@@ -1328,15 +1328,15 @@ $("#drafts").addEventListener("click", e => {
   const row = e.target.closest("[data-load]");
   if (!row) return;
   const t = loadDraft(row.dataset.load);
-  if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本机草稿：" + t.stem, "ok"); }
+  if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本机未保存的编辑：" + t.stem, "ok"); }
 });
 /* 「清空」在卡片标题栏里，不在 #drafts 列表内——挂在列表上的委托收不到它的点击（曾因此点了没反应） */
 $("#clearDrafts").addEventListener("click", () => {
   const n = Object.keys(drafts()).length;
   if (!n){ toast("本机没有未保存的编辑", "bad"); return; }
-  if (!confirm(`清空本机浏览器里的 ${n} 条暂存记录？（已落盘的 JSON 结果不受影响）`)) return;
+  if (!confirm(`清空本机浏览器里未保存的 ${n} 条编辑？（它们从没上过服务器；已落盘的 JSON 结果不受影响）`)) return;
   localStorage.removeItem(LS.draft); renderDrafts();
-  toast(`已清空本机草稿 ${n} 条`, "ok");
+  toast(`已清空本机未保存的编辑 ${n} 条`, "ok");
 });
 /* ── 登录 / 角色 / 账号管理 ─────────────────────────────────────────── */
 function acctErr(msg, clear){ const el = $("#acctErr"); if (clear){ el.hidden = true; return; } el.textContent = msg; el.hidden = false; }
@@ -1545,7 +1545,7 @@ async function openHouse(stem){
       const sr = await fetch(BASE + "/staged/" + encodeURIComponent(stem));
       if (sr.ok) st = await sr.json();
     }catch(e){ st = null; }
-    const mg = L.stagedMerge(d.air || {}, st && st.air_final, dr.airE || {});
+    const mg = L.stagedMerge(st && st.air_final, dr.airE || {}, st && st.edits);
     const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:"server",
                channel:d.channel, elapsed:d.elapsed,
                qc: Object.keys(d.qc || {}).length ? d.qc : null,
@@ -1628,7 +1628,7 @@ function mvRestore(rec){
   const m = L.draftMerge(mstDrafts()[MV.mawb], (rec || {}).ams || {});
   /* 服务器上有别人（或自己上次）暂存的核对结果时，那份赢；本机未存的改动不删，冲突列点名。
      和分单侧同一条规则：静悄悄盖掉任何一边，人都会拿着错的版本往下核。 */
-  const mg = L.stagedMerge((rec || {}).ams || {}, rec && rec.ams_final, m.edit);
+  const mg = L.stagedMerge(rec && rec.ams_final, m.edit, rec && rec.edits);
   MV.edit = mg.airE; MV.acked = m.acked; MV.extraFlags = m.extraFlags;
   MV.editBase = m.editBase; MV.conflicts = m.conflicts; MV.localDiff = mg.conflicts;
   MV.staged = (rec && rec.ams_final && !rec.submitted_at)

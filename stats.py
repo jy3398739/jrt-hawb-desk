@@ -177,7 +177,10 @@ def summary(rows: list, group_by: str = None) -> dict:
                           else round(sum(1 for r in usable if not r.get("total")) / len(usable), 4)),
            "acc_field": _rate(total, fields),
            "acc_after_review": _rate(inp, fields),
-           "unreviewed": sum(1 for r in usable if r.get("no_inputter_review")),
+           # 只数真的发出去那批：只暂存没发的票同样还没有 inputter 事件，把它算进来，
+           # 这个数会随谁把工作停在暂存一档而涨——而它是拿去看要不要对接的数。
+           "unreviewed": sum(1 for r in usable
+                             if r.get("no_inputter_review") and r.get("state") == "submitted"),
            "by_field": sorted(by_field.values(), key=lambda e: (-e["edits"], e["field"]))}
     if group_by in GROUPS:
         buckets: dict = {}

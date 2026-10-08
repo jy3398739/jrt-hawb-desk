@@ -314,6 +314,8 @@ def test_master_stage_stores_the_edited_columns_without_writing_to_the_company()
         assert rec["ams_final"]["GOODS_INFO_HSCODE"] == "8412909080", rec.get("ams_final")
         assert rec["ams_model"]["GOODS_INFO_HSCODE"] == "841290901", "模型那版被人工值盖掉了"
         assert list(rec["events"][0]["edits"]) == ["GOODS_INFO_HSCODE"], rec["events"]
+        assert list(rec["edits"]) == ["GOODS_INFO_HSCODE"], \
+            "顶层那份逐字段差异是给前端合并用的：没有它，前端只能自己比，45.0 与 45 会被算成改动"
         assert rec["events"][0]["role"] == "reviewer" and rec["stager"] == "马殿齐", rec["events"]
         assert not [s for s in sent if "mawb2" in s["path"]], f"暂存居然写了公司：{sent}"
     finally:

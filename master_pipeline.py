@@ -111,6 +111,7 @@ def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = N
                    "edits": store.field_diff(last, ams),
                    "acked_flags": [str(x) for x in (acked_flags or [])]})
     rec.update({"ams_model": base, "ams_final": ams, "events": events,
+                "edits": store.field_diff(base, ams),
                 "staged_at": now, "stager": str(by or ""), "stager_role": str(role or ""),
                 "updated_at": now})
     return _write(rec)

@@ -270,16 +270,35 @@ def test_stagedMerge_prefers_the_server_but_names_the_conflict():
     规则：服务器（别人核对过的）赢，本地这份不删——它还在「本机未保存的编辑」里；
     但冲突的字段必须点名报给人，否则人会以为自己刚填的值还在。
     只在本机改过的字段（服务器没动的）保留本地值。
+    「哪几列是服务器改的」用服务端算好的那份 edits（store.field_diff），不在前端再比一遍。
     """
-    model = {"DEST_NAME": "LAX", "PIECES": 1, "GOODS_INFO": "STEEL"}
     final = {"DEST_NAME": "ORD", "PIECES": 1}
+    edits = {"DEST_NAME": {"from": "LAX", "to": "ORD"}}
     local = {"DEST_NAME": "MAD", "GOODS_INFO": "STEEL PARTS"}
-    assert web_src.logic("L.stagedMerge(m, f, l)", m=model, f=final, l=local) == {
+    assert web_src.logic("L.stagedMerge(f, l, e)", f=final, l=local, e=edits) == {
         "airE": {"DEST_NAME": "ORD", "GOODS_INFO": "STEEL PARTS"},
         "conflicts": ["DEST_NAME"], "local": {"DEST_NAME": "MAD"}}
     # 没暂存过：本地改动照旧生效，没有冲突可言
-    assert web_src.logic("L.stagedMerge(m, f, l)", m=model, f=None, l=local) == {
+    assert web_src.logic("L.stagedMerge(f, l, e)", f=None, l=local, e={}) == {
         "airE": {"DEST_NAME": "MAD", "GOODS_INFO": "STEEL PARTS"}, "conflicts": [], "local": {}}
     # 服务器改了、本地没碰：直接采用，不许报冲突（报多了人就学会忽略提示）
-    r = web_src.logic("L.stagedMerge(m, f, l)", m=model, f=final, l={})
+    r = web_src.logic("L.stagedMerge(f, l, e)", f=final, l={}, e=edits)
     assert r["airE"] == {"DEST_NAME": "ORD"} and r["conflicts"] == [], r
+    # 值本身仍要跟着模型那一版：PIECES 服务器没改，就不许出现在合并结果里
+    assert "PIECES" not in r["airE"], r["airE"]
+
+
+def test_stagedMerge_yields_strings_and_only_the_columns_the_server_flagged():
+    """暂存记录里的值是服务端归一过的：NUM 列存成了数字（45 而不是 45.0）。
+
+    两件事都会咬人，都得钉住：
+    ① 数字直接进 airE，核对页渲染到 l3.trim() 就地炸——整页字段一个都不出来，
+       人只看到「上传分单后在这里逐字段核对」（2026-10-09 浏览器走查实测）。
+    ② 前端自己比值会把 45.0 与 45 算成"人改过"，一个没人动过的列挂上改动标记。
+    """
+    final = {"WEIGHT": 45, "PIECES": 77, "GOODS_INFO": "STEEL PARTS 99"}
+    edits = {"PIECES": {"from": 8, "to": 77}, "GOODS_INFO": {"from": "MAGNET", "to": "STEEL PARTS 99"}}
+    r = web_src.logic("L.stagedMerge(f, l, e)", f=final, l={}, e=edits)
+    assert all(isinstance(v, str) for v in r["airE"].values()), f"airE 必须全是字符串：{r['airE']}"
+    assert r["airE"] == {"PIECES": "77", "GOODS_INFO": "STEEL PARTS 99"}, r["airE"]
+    assert "WEIGHT" not in r["airE"], "服务端没算作改动的列，前端不许复活成改动"
