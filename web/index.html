@@ -22,9 +22,9 @@
   <span class="seg" role="tablist" aria-label="视图切换">
     <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
     <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日台账</button>
-    <button class="btn sm" id="viewStats" type="button" role="tab" aria-selected="false">统计</button>
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
+  <button class="btn sm" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">统计</button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
@@ -60,6 +60,26 @@
     </div>
     <div class="lgerr" id="acctErr" role="status" aria-live="polite" hidden></div>
     <div class="lghint">制单员：上传、看票面、核字段、提交。只有管理员能切模型与管账号。改自己的口令：上方填 admin + 新口令保存。</div>
+  </div>
+</div>
+
+<!-- 统计是一张窗口，不是压在页面最下面的一节（2026-10-09 用户提的）：那一版它永远比核对区矮半截，
+     要滚到底才看得见，也没法一边开着票一边看数。数据仍是 /stats 现算，窗口只是换个摆法。 -->
+<div class="gate" id="statsWin" hidden>
+  <div class="card statsbox">
+    <div class="t">解析正确率<span class="sp"></span>
+      <label class="f">起<input id="stFrom" type="date" aria-label="统计起始日"></label>
+      <label class="f">止<input id="stTo" type="date" aria-label="统计截止日"></label>
+      <label class="f">分组<select id="stGroup" aria-label="分组轴">
+        <option value="">不分组</option><option value="model">按模型</option>
+        <option value="role">按角色</option><option value="user">按上传人</option>
+        <option value="field">按列</option></select></label>
+      <button class="btn sm" id="stGo" type="button">刷新</button>
+      <button class="btn sm" id="stCsv" type="button">导出 Excel</button>
+      <span class="n" id="stCnt"></span>
+      <button class="btn sm gh" id="statsClose" type="button">关闭</button>
+    </div>
+    <div class="statsbody" id="stBox"></div>
   </div>
 </div>
 
@@ -139,20 +159,6 @@
     <button class="btn sm" id="dayGo" type="button">刷新</button>
     <span class="n" id="dayCnt"></span></div>
   <div id="dayBox"></div>
-</section>
-
-<section class="stack" id="statsCard" hidden>
-  <div class="t">解析正确率<span class="sp"></span>
-    <label class="f">起<input id="stFrom" type="date" aria-label="统计起始日"></label>
-    <label class="f">止<input id="stTo" type="date" aria-label="统计截止日"></label>
-    <label class="f">分组<select id="stGroup" aria-label="分组轴">
-      <option value="">不分组</option><option value="model">按模型</option>
-      <option value="role">按角色</option><option value="user">按上传人</option>
-      <option value="field">按列</option></select></label>
-    <button class="btn sm" id="stGo" type="button">刷新</button>
-    <button class="btn sm" id="stCsv" type="button">导出 Excel</button>
-    <span class="n" id="stCnt"></span></div>
-  <div id="stBox"></div>
 </section>
 
 <div id="toasts" aria-live="polite"></div>

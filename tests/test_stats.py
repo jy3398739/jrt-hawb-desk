@@ -223,6 +223,31 @@ def test_stats_route_needs_login_and_reports_the_source_of_truth():
         assert win["summary"]["tickets"] == 0 and win["summary"]["legacy"] == 0, win
 
 
+def test_stats_is_admin_only_for_page_and_export():
+    """统计回的是"谁改了哪几列"，业主定案只给管理员看（2026-10-09）。
+
+    门禁必须在服务端：把入口藏掉只挡得住眼睛，制单员在浏览器控制台里照样能读 /stats，
+    那"只给管理员"就成了句空话。导出那条链接同理——它是同一份数的另一种拿法。
+    """
+    with _world():
+        m = _parsed("G7", {"DEST_NAME": "LAX"})
+        _stage("G7", {**m, "DEST_NAME": "ORD"}, "马殿齐", "reviewer")
+        pw = "pw-123456"
+        for name, role in (("马殿齐", "reviewer"), ("刘明", "inputter")):
+            auth.ensure_seed()
+            assert auth.set_password(name, pw, role)[1] is None
+            c = TestClient(server.app)
+            assert c.post("/login", json={"name": name, "password": pw}).status_code == 200
+            assert c.get("/stats").status_code == 403, f"{role} 读到了统计"
+            assert c.get("/stats/export").status_code == 403, f"{role} 导出了统计"
+        anon = TestClient(server.app)
+        assert anon.get("/stats/export").status_code == 401, "不登录就能导出整桌经手记录"
+        adm = TestClient(server.app)
+        adm.post("/login", json={"name": "admin", "password": "admin123"})
+        assert adm.get("/stats").status_code == 200
+        assert adm.get("/stats/export").status_code == 200
+
+
 def test_the_exported_excel_carries_the_same_numbers_as_the_api():
     """导出必须与页面同源：同一套算术如果哪里再写一遍，两份百分比会不一致，
     而拿去开会的往往是 Excel 那份。"""
@@ -257,7 +282,16 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
 
     还要把"能不能对接"的那个数与"模型本身准不准"分开摆，并说明历史数据没进分母。"""
     page, js = web_src.part("index.html"), web_src.part("js/desk.js")
-    assert 'id="viewStats"' in page and 'id="statsCard"' in page, "缺少统计页入口或整页"
+    # 统计是一张窗口（顶栏按钮开的浮层），不是压在页面最下面的一节：
+    # 放在最下面时它永远比核对区矮半截，人要滚到底才看得见，也没法一边看票一边看数。
+    assert 'id="btnStats"' in page and 'id="statsWin"' in page, "缺少统计窗口入口或窗口本体"
+    assert 'id="viewStats"' not in page, "统计不再是第三个页签：入口留在顶栏那颗按钮就行"
+    assert 'id="statsCard"' not in page, "旧的整页那一节已经改窗口，别留一份没人显示的"
+    assert '$("#btnStats").hidden = !admin' in js, "统计入口只对管理员可见（与 /stats 的门禁同一口径）"
+    assert '$("#statsClose")' in js, "窗口要有关闭的那一下并且接上（遮罩之外得有明确的出口）"
+    # 表头那根 sticky 的偏移是给"整页滚"准备的；窗口里滚的是正文，不重置就会把表头推下来压住第一行
+    css = web_src.part("css/desk.css")
+    assert ".statsbody th{top:0}" in css, "统计窗口里的表头还在用整页那个 sticky 偏移（会浮在第一行数据上）"
     assert '"/stats"' in js and "renderStats" in js, "前端没接 /stats"
     for k in ("acc_field", "acc_after_review", "clean_rate"):
         assert k in js, f"页面上少了 {k} 这个数"

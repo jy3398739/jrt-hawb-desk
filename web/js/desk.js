@@ -1346,7 +1346,7 @@ function applyRole(){
   $("#gate").hidden = !!ME;                 // 已登录：收起登录遮罩
   // 遮罩只挡视觉，不挡键盘焦点与点击穿透前的探索：未登录时把背后整片标成 inert，
   // 这样 Tab 进不去、点也点不动，不会让人以为"按钮坏了"。
-  [document.querySelector(".hdr"), $("#wrap"), $("#mstHawbCard"), $("#dayCard"), $("#statsCard")].forEach(el => {
+  [document.querySelector(".hdr"), $("#wrap"), $("#mstHawbCard"), $("#dayCard")].forEach(el => {
     if (el) el.inert = !ME;
   });
   $("#whoWrap").hidden = !ME;
@@ -1355,6 +1355,7 @@ function applyRole(){
   $("#whoName").textContent = ME.name;
   $("#whoRole").textContent = L.roleCn(ME.role);
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
+  $("#btnStats").hidden = !admin;            // 统计仅管理员（/stats 与 /stats/export 后端也是这道门）
   $("#pwWarn").hidden = !(admin && PW_DEFAULT);   // 默认口令没改：把话放在管理员天天看得见的地方
   $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
@@ -1763,19 +1764,17 @@ function syncCards(){
   const v = VIEW.cur;
   $("#wrap").hidden = v !== "desk";
   $("#dayCard").hidden = v !== "day";
-  $("#statsCard").hidden = v !== "stats";
   $("#mstHawbCard").hidden = v !== "desk" || !MST_CARD_ON;
 }
 function setView(v){
-  VIEW.cur = (v === "day" || v === "stats") ? v : "desk";
-  ["desk", "day", "stats"].forEach(k => {
+  VIEW.cur = (v === "day") ? v : "desk";
+  ["desk", "day"].forEach(k => {
     const b = $("#view" + k.charAt(0).toUpperCase() + k.slice(1));
     b.classList.toggle("on", VIEW.cur === k);
     b.setAttribute("aria-selected", String(VIEW.cur === k));
   });
   syncCards();
   if (VIEW.cur === "day") loadDay();
-  if (VIEW.cur === "stats") loadStats();
 }
 const todayStr = () => {
   const n = new Date(), p = x => String(x).padStart(2, "0");
@@ -1911,7 +1910,9 @@ $("#rail").addEventListener("click", e => {
   render();
 });
 $("#viewDay").addEventListener("click", () => setView("day"));
-$("#viewStats").addEventListener("click", () => setView("stats"));
+// 统计是一张盖在整页之上的窗口：打开时现算，改日期/分组也仍是现算（窗口里不留第二套算术）
+$("#btnStats").addEventListener("click", () => { $("#statsWin").hidden = false; loadStats(); });
+$("#statsClose").addEventListener("click", () => { $("#statsWin").hidden = true; });
 $("#stGo").addEventListener("click", loadStats);
 $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });
 ["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));

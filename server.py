@@ -26,6 +26,8 @@
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
   GET  /staged/{stem}      需登录会话；一份暂存（模型原样 + 人工最新值 + 每次谁改了哪几列）
+  GET  /stats              仅管理员；?from=&to=&group_by=model|role|user|field → 解析正确率（模型那版 vs 人定下的那版）
+  GET  /stats/export       仅管理员；同一份数导成 Excel（口径 / 每张票 / 逐列 三张表）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
   GET  /mawb/source/{mawb} 回看主单原件（需登录会话，任意角色）；原件在 output/mawb_source/<归一化主单号>/
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
@@ -717,7 +719,7 @@ def tickets(date: str = "", state: str = "", mawb: str = "", _: None = Depends(r
 @app.get("/stats")
 def stats_report(date_from: str = Query("", alias="from", description="含端点的起始日 yyyy-mm-dd"),
                  date_to: str = Query("", alias="to", description="含端点的截止日 yyyy-mm-dd"),
-                 group_by: str = "", _: dict = Depends(require_web)):
+                 group_by: str = "", _: dict = Depends(require_admin)):
     """解析正确率（需求三）：模型那一版与人最后定下的那一版逐列比。
 
     算术只有 `stats.py` 一处——页面、导出、以后任何读数都从这里出，同一套算术写两遍迟早给出
@@ -738,8 +740,10 @@ _XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @app.get("/stats/export")
 def stats_export(date_from: str = Query("", alias="from"), date_to: str = Query("", alias="to"),
-                 _: dict = Depends(require_web)):
-    """把同一份统计导成 Excel（口径 / 每张票 / 逐列 三张表），与页面严格同源。"""
+                 _: dict = Depends(require_admin)):
+    """把同一份统计导成 Excel（口径 / 每张票 / 逐列 三张表），与页面严格同源。
+
+    与 `/stats` 同一道门（仅管理员）：导出是同一份数的另一种拿法，只把入口藏起来不算门禁。"""
     rows = stats.collect(date_from, date_to)
     data = stats.export_bytes(rows, stats.summary(rows))
     name = "解析正确率_" + (date_from or "全部") + ("_" + date_to if date_to else "") + ".xlsx"
