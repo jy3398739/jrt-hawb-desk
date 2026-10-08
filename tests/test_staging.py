@@ -31,18 +31,26 @@ def _model_air(**over):
 
 
 def _env(tmp: Path, air: dict | None = None):
-    """把暂存目录、L3、质检、台账、账号表全指到临时目录；返回旧值供还原。"""
-    old = (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
+    """把暂存目录、四层结果、台账、归档与账号表全指到临时目录；返回旧值供还原。
+
+    一个都不能漏：这条链路的用例里既有 `store.save_result` 这样的真写盘，也有读 output/raw
+    的提交门。2026-10-08 就是因为少指了 OUTPUT_RAW_DIR，往真 output/raw 落了一份假 L2——
+    本机因为上一次跑残留过同名文件而查不出来，是回归入口的 output/ 清单守卫在干净的 VM 上抓到的。
+    """
+    old = (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+           config.TRANSCRIPT_DIR, config.OUTPUT_QC_DIR,
            config.SUBMIT_LEDGER, config.ARCHIVE_DIR, auth.USERS_FILE)
     config.STAGED_DIR = tmp / "staged"
     config.OUTPUT_AIR_DIR = tmp / "air"
+    config.OUTPUT_RAW_DIR = tmp / "raw"
+    config.TRANSCRIPT_DIR = tmp / "transcript"
     config.OUTPUT_QC_DIR = tmp / "qc"
     config.SUBMIT_LEDGER = tmp / "submitted.json"
     config.ARCHIVE_DIR = tmp / "archive"
     auth.USERS_FILE = tmp / "users.json"
-    config.STAGED_DIR.mkdir(parents=True)
-    config.OUTPUT_AIR_DIR.mkdir(parents=True)
-    config.OUTPUT_QC_DIR.mkdir(parents=True)
+    for p in (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+              config.TRANSCRIPT_DIR, config.OUTPUT_QC_DIR):
+        p.mkdir(parents=True)
     (config.ARCHIVE_DIR / STEM).mkdir(parents=True)
     a = _model_air() if air is None else air
     (config.OUTPUT_AIR_DIR / f"{STEM}.json").write_text(
@@ -56,8 +64,9 @@ def _env(tmp: Path, air: dict | None = None):
 
 
 def _undo(old):
-    (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
-     config.SUBMIT_LEDGER, config.ARCHIVE_DIR, auth.USERS_FILE) = old
+    (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
+     config.TRANSCRIPT_DIR, config.OUTPUT_QC_DIR, config.SUBMIT_LEDGER,
+     config.ARCHIVE_DIR, auth.USERS_FILE) = old
 
 
 def _client_as(tmp: Path, name: str, role: str):
