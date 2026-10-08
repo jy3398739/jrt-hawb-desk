@@ -19,9 +19,11 @@
   POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器**不发公司**，缺号也允许存
-  GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)并自动起主单解析；?force=1 重解析
+  GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1）
   GET  /results            已落盘条数（需登录会话）
+  GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
+  GET  /staged/{stem}      需登录会话；一份暂存（模型原样 + 人工最新值 + 每次谁改了哪几列）
   GET  /source/{stem}      回看票面原件，供审核台预览（需登录会话）；?raw=true 发原件本身供下载
   GET  /mawb/source/{mawb} 回看主单原件（需登录会话，任意角色）；原件在 output/mawb_source/<归一化主单号>/
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
@@ -639,6 +641,21 @@ def day(date: str = "", _: None = Depends(require_web)):
     return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who)}
 
 
+@app.get("/tickets")
+def tickets(date: str = "", state: str = "", mawb: str = "", _: None = Depends(require_web)):
+    """这台服务器上经手过的票与它们的状态：parsed / staged / submitted / failed。
+
+    `/day` 就是它按天的视图，参数都可省（不填 date=全表）。这张表的读数全部来自磁盘
+    （质检记录 + 暂存文件 + 提交台账），不看任何浏览器状态——需求一"录入员要看得见制单员
+    传上来的票"、需求二"谁暂存过、改了哪几列"读的都是它。计数不在这里算（口径归 logic.js 一处）。"""
+    if state and state not in ("parsed", "staged", "submitted", "failed"):
+        raise HTTPException(400, "state 只能是 parsed / staged / submitted / failed")
+    if date and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
+    rows = store.ticket_rows(date=date or None, state=state or None, mawb=mawb or None)
+    return {"ok": True, "rows": rows}
+
+
 def _archive_dir(stem: str):
     """URL 里的 stem 只当单段目录名用：'..' / 带分隔符 / 空名一律不认，
     否则 ../../ 就能越过归档根去读服务器上任何目录。"""
@@ -706,6 +723,22 @@ def ticket_result(stem: str, _: None = Depends(require_web)):
             "raw": json.loads(raw_p.read_text(encoding="utf-8")),
             "air": json.loads(air_p.read_text(encoding="utf-8")),
             "qc": qc, "submitted": store.ledger().get(name)}
+
+
+@app.get("/staged/{stem}")
+def staged_record(stem: str, _: None = Depends(require_web)):
+    """读一份暂存：模型原样 + 最新人工值 + 每次谁改了哪几列。
+
+    `/ticket/{stem}` 给的是模型口径（air/raw/qc），看不到人工值；录入员打开别人暂存的票
+    走这里（需求二"由录入员核对后再发公司"的读侧）。没暂存过要说清为什么没有，
+    不能让人以为票丢了。"""
+    name = _safe_stem(stem)
+    if name is None:
+        raise HTTPException(400, "stem 不合法（不接受带路径的名字）")
+    rec = store.load_staged(name)
+    if rec is None:
+        raise HTTPException(404, f"{name} 还没有暂存记录：票主没点过「暂存」，或暂存文件被清理过")
+    return {"ok": True, **rec, "reviewed_by_inputter": store.reviewed_by_inputter(rec)}
 
 
 @app.get("/source/{stem}")

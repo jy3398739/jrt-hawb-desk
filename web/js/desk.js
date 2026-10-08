@@ -1431,30 +1431,15 @@ function mstCard(j, mawb){
   return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>';
 }
 const SEND_TXT = {0:"待公司发送", 1:"公司已发送（锁定）", 2:"已改·待公司重发"};
-/* 本台已解析、但还没提交回公司的同主单分单。名下分单表读的是公司接口，而公司只认提交过的票——
-   制单员刚解析完就检索主单，会以为系统不认识自己那张票（2026-09-29 用户实测：09:15 检索"没有分单"，
-   09:35 提交后那条才出现）。所以把这些票单独报出来，点分单号同样能打开核对页。 */
-function pendingUnder(mawb){
-  const key = s => String(s || "").toUpperCase().replace(/[^0-9A-Z]/g, "");
-  const want = key(mawb);
-  if (!want) return [];
-  const out = [], seen = {};
-  const hit = o => {
-    const air = Object.assign({}, o.air || {}, o.airE || {}), stem = o.stem || "";
-    if (!stem || seen[stem] || key(air.MAWB_NO) !== want) return;
-    if (o.submitted && o.submitted.mode === "server") return;      // 已经进公司的走公司那些行
-    seen[stem] = 1;
-    out.push({stem: stem, hawb: air.HAWB_NO || stem, mawb: air.MAWB_NO || mawb});
-  };
-  S.tickets.forEach(hit);
-  const d = drafts(); Object.keys(d).forEach(k => hit(d[k]));
-  return out;
-}
+/* 名下分单表里"公司还不认识"的那几行，来源是检索响应里的 pending（服务器从盘上现算）。
+   从前这里是自己数浏览器状态（pendingUnder 读 S.tickets + localStorage），那份名单只对
+   当前这个人、这台机器成立——制单员上午传的票，录入员下午查同一张主单仍是"没有分单"。 */
 function mstTable(list, pend){
   pend = pend || [];
   if (!list.length && !pend.length)
     return '<p class="hint hintp">这条主单下公司还没有分单记录。' +
-           '<b>解析不等于提交</b>：分单要点「提交」回传公司之后，这里才会有记录。</p>';
+           '<b>解析不等于提交</b>：有人点「暂存」，核对结果就存在服务器上给同事看；' +
+           '点「提交」才会回传公司，这里才会出现公司的行。</p>';
   const rows = list.map(o => {
     const ss = o.send_status === undefined || o.send_status === null ? "—"
              : (SEND_TXT[o.send_status] || o.send_status);
@@ -1467,13 +1452,19 @@ function mstTable(list, pend){
       "</td><td>" + esc(ss) + "</td><td>" +
       (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
               : '<span class="hint">本机无归档</span>') + "</td></tr>";
-  }).join("") + pend.map(p =>
-      '<tr><td><a href="#" data-open="' + esc(p.stem) + '" title="点开这张分单的核对页">' + esc(p.hawb) + '</a></td>' +
-      "<td>" + esc(p.mawb) + "</td><td>—</td>" +
-      '<td><span class="hint">本台待提交</span></td>' +
-      '<td><span class="hint">公司侧还没有</span></td>' +
-      '<td><a href="' + BASE + '/source/' + encodeURIComponent(p.stem) + '" target="_blank">查看原件</a></td></tr>'
-    ).join("");
+  }).join("") + pend.map(p => {
+    const no = p.stem
+      ? '<button type="button" class="lk" data-open="' + esc(p.stem) + '" title="点开这张分单的核对页">' + esc(p.hawb) + '</button>'
+      : esc(p.hawb);
+    const who = p.stager
+      ? esc(p.stager) + (p.edited ? ' <span class="st-edited">改 ' + p.edited + ' 列</span>' : '')
+      : '<span class="hint">只解析，没人暂存</span>';
+    return '<tr><td>' + no + "</td><td>" + esc(p.mawb) + "</td><td>" + who + "</td><td>" +
+      (p.staged_at ? esc(p.staged_at) : '<span class="hint">—</span>') + '</td>' +
+      '<td><span class="hint">公司侧还没有</span></td><td>' +
+      (p.has_original ? '<a href="' + BASE + '/source/' + encodeURIComponent(p.stem) + '" target="_blank">查看原件</a>'
+                      : '<span class="hint">本机无归档</span>') + "</td></tr>";
+  }).join("");
   return '<table><colgroup><col style="width:19%"><col style="width:15%"><col style="width:12%">' +
     '<col style="width:18%"><col style="width:16%"><col></colgroup><thead><tr>' +
     '<th>分单号</th><th>主单号</th><th>提交人</th><th>提交时间</th><th>公司发送状态</th><th>票面原件</th>' +
@@ -1481,12 +1472,13 @@ function mstTable(list, pend){
     '<p class="hint hintp">「提交人/提交时间」是本审核台提交回公司的留痕；' +
     '「公司发送状态」是公司有没有把这条分单发给航司。' +
     '待公司发送 = 公司已收到、还没往航司发，不是说本台没提交。' +
-    (pend.length ? '标「本台待提交」的那 ' + pend.length + ' 张只在这台机器上解析过，还没回传公司。' : '') + '</p>';
+    (pend.length ? '另有 ' + pend.length + ' 张公司还不认识：它们是这台机器上解析/暂存过的，' +
+     '「改 N 列」是暂存时相对模型输出改了多少。' : '') + '</p>';
 }
 /* 一份结果两处落位：左栏只留入口那一行，名下分单表进页面底部整宽卡（264px 里放不下五列） */
 function mstRender(j, mawb){
   $("#mstResult").innerHTML = mstCard(j, mawb);
-  const list = j.hawb_orders || [], pend = pendingUnder(mawb);
+  const list = j.hawb_orders || [], pend = j.pending || [];
   MST_CARD_ON = !!(list.length || pend.length);
   syncCards();
   $("#mstHawbCnt").textContent = (list.length || pend.length)

@@ -269,12 +269,17 @@ def submitted_by_mawb(mawb: str) -> list:
     return [e for e in _load_ledger().values() if norm_no(e.get("mawb", "")) == want]
 
 
-def day_rows(date: str) -> list:
-    """某一天经手过的票：质检记录是"经手"的凭据（每解析一张必落一份 QC），
-    再联结 L3 的单号、提交台账与原件归档。今日台账这一页读的就是它。
+def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
+    """这台服务器经手过的票，一行一张，**状态从盘上现算**。
 
-    解析了但没提交的票也要在表里——它正是"今天还差哪几张没回公司"的答案；
-    解析失败的更要摆出来，不然制单员只知道"它没出现在提交记录里"。
+    状态只有四个来源，不看任何前端状态：有质检记录=parsed；另有暂存文件=staged；
+    进了提交台账=submitted；质检记录带 error=failed。
+    "解析了但没提交"从前只活在某个人浏览器的 localStorage 里（desk.js 的 pendingUnder），
+    换个人查主单就看不见——这张表就是把它搬到服务器上（需求一、需求二共用）。
+
+    date 给定时只看那一天（今日台账走这条路）；state/mawb 给定时筛。
+    计数不在这里算：那套"今天 N 张 · 已提交 M · 待提交 K"的口径归 logic.js 一处，
+    服务器再算一遍就是两套算术，迟早对不上（test_day_ledger 盯着）。
     """
     if not config.OUTPUT_QC_DIR.exists():
         return []
@@ -285,9 +290,12 @@ def day_rows(date: str) -> list:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             continue                     # 一条坏记录不该拖挂整页（与 load_qc 同口径）
-        if str(rec.get("processed_at", "")).startswith(date):
-            found.append((f.stem, rec))
+        when = str(rec.get("processed_at", ""))
+        if date and not when.startswith(date):
+            continue
+        found.append((f.stem, rec))
     found.sort(key=lambda kv: str(kv[1].get("processed_at")))
+    want_mawb = norm_no(mawb) if mawb else ""
     rows = []
     for stem, rec in found:
         try:
@@ -295,19 +303,46 @@ def day_rows(date: str) -> list:
         except Exception:
             air = {}
         e = led.get(stem) or {}
+        st = load_staged(stem) or {}
+        if rec.get("error"):
+            state_of = "failed"
+        elif e:
+            state_of = "submitted"
+        elif st:
+            state_of = "staged"
+        else:
+            state_of = "parsed"
+        if state and state_of != state:
+            continue
+        row_mawb = e.get("mawb") or air.get("MAWB_NO", "") or st.get("mawb", "")
+        if want_mawb and norm_no(row_mawb) != want_mawb:
+            continue
         rows.append({"stem": stem, "source_name": rec.get("source_name") or stem,
                      "channel": rec.get("channel") or "", "elapsed": rec.get("elapsed"),
                      "processed_at": rec.get("processed_at") or "",
-                     "mawb": e.get("mawb") or air.get("MAWB_NO", ""),
-                     "hawb": e.get("hawb") or air.get("HAWB_NO", ""),
+                     "state": state_of,
+                     "uploader": rec.get("uploader") or "",
+                     "uploader_role": rec.get("uploader_role") or "",
+                     "model": rec.get("model") or st.get("model") or "",
+                     "mawb": row_mawb,
+                     "hawb": e.get("hawb") or air.get("HAWB_NO", "") or st.get("hawb", ""),
                      "flags": len(rec.get("flags") or []),
                      "needs_review": bool(rec.get("needs_review")),
                      "failed": bool(rec.get("error")),
                      "error": rec.get("error") or "",
+                     "stager": st.get("stager") or "", "stager_role": st.get("stager_role") or "",
+                     "staged_at": st.get("staged_at") or "",
+                     "edited": len(st.get("edits") or {}) if st else 0,
+                     "reviewed_by_inputter": reviewed_by_inputter(st) if st else False,
                      "submitted": ({"reviewer": e.get("reviewer") or "", "at": e.get("submitted_at") or "",
                                     "action": e.get("company_action") or ""} if e else None),
                      "has_original": (config.ARCHIVE_DIR / stem).is_dir()})
     return rows
+
+
+def day_rows(date: str) -> list:
+    """某一天经手过的票。今日台账那一页读的就是它（`ticket_rows` 的按天视图）。"""
+    return ticket_rows(date=date)
 
 
 # === 暂存：人工核对结果落服务器，但不发公司 ===
@@ -425,25 +460,3 @@ def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = N
 def reviewed_by_inputter(rec: dict) -> bool:
     """这张票有没有被录入员核对过（暂存过至少一次）。/submit 的"未经复核"门读的就是它。"""
     return any(str(e.get("role") or "") == "inputter" for e in (rec or {}).get("events") or [])
-
-
-def staged_by_mawb(mawb: str) -> list:
-    """按主单号列出本机暂存过的票（不含 air 全文，检索行只需要这几列）。"""
-    want = norm_no(mawb)
-    if not want or not config.STAGED_DIR.exists():
-        return []
-    out = []
-    for f in sorted(config.STAGED_DIR.glob("*.json")):
-        rec = load_staged(f.stem)
-        if not rec or norm_no(rec.get("mawb", "")) != want:
-            continue
-        out.append({"stem": rec.get("stem") or f.stem, "mawb": rec.get("mawb", ""),
-                    "hawb": rec.get("hawb", ""), "key": rec.get("key") or "",
-                    "stager": rec.get("stager") or "", "stager_role": rec.get("stager_role") or "",
-                    "staged_at": rec.get("staged_at") or "",
-                    "edited": len(rec.get("edits") or {}),
-                    "reviewed_by_inputter": reviewed_by_inputter(rec),
-                    "submitted_at": rec.get("submitted_at") or "",
-                    "has_original": (config.ARCHIVE_DIR / (rec.get("stem") or f.stem)).is_dir()})
-    out.sort(key=lambda r: str(r.get("staged_at")))
-    return out

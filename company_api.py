@@ -130,6 +130,21 @@ def _unrepr(v):
     return re.sub(r"\s+", " ", s)
 
 
+_PENDING_COLS = ("stem", "mawb", "hawb", "state", "stager", "stager_role", "staged_at",
+                 "edited", "reviewed_by_inputter", "has_original")
+
+
+def local_pending(mawb: str) -> list:
+    """本机已解析或已暂存、但还没进提交台账的分单——公司不认识它们，两种模式都要单独回。
+
+    名下分单表读的是公司接口，公司只认提交过的票：只上传/只暂存的票要是不出现在这里，
+    录入员查同一张主单就还是"没有分单"（2026-09-29 用户实测过这个，当时的补丁只在浏览器里
+    数自己这台机器的票，换个人照样看不见）。名单从 `store.ticket_rows` 现算，
+    已经在台账里的不重复列。"""
+    return [{k: r.get(k) for k in _PENDING_COLS}
+            for r in store.ticket_rows(mawb=mawb) if r["state"] in ("parsed", "staged")]
+
+
 def search_mawb(mawb: str) -> dict:
     """按主单号检索该主单及其名下分单。"""
     mawb = str(mawb or "").strip()
@@ -145,6 +160,7 @@ def search_mawb(mawb: str) -> dict:
                    "submitted_here": True}
                   for e in store.submitted_by_mawb(mawb)]
         return {"mode": "mock", "mawb": mawb, "mawb_order": {}, "hawb_orders": orders,
+                "pending": local_pending(mawb),
                 "source_available": store.mawb_source_dir(mawb) is not None}
     if not config.COMPANY_API_URL or not config.COMPANY_HAWB_KEY:
         raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_HAWB_KEY/COMPANY_MAWB_KEY")
@@ -176,6 +192,7 @@ def search_mawb(mawb: str) -> dict:
                        "submitted_here": bool(ent),
                        "send_status": row.get("SEND_STATUS"), "row": row})
     return {"mode": "live", "mawb": mawb, "mawb_order": mawb_order, "hawb_orders": orders,
+            "pending": local_pending(mawb),
             "source_available": store.mawb_source_dir(mawb) is not None}
 
 

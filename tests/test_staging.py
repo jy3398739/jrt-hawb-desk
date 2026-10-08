@@ -294,8 +294,99 @@ def test_stage_keeps_a_ticket_visible_without_complete_numbers_but_out_of_the_in
         rec = json.loads((config.STAGED_DIR / f"{STEM}.json").read_text(encoding="utf-8"))
         assert rec["air_final"]["HAWB_NO"] == ""
         assert store.lookup_stem(MAWB, "") is None, "缺号的暂存票混进了复合键索引"
-        assert [e["stem"] for e in store.staged_by_mawb(MAWB)] == [STEM], \
+        assert [e["stem"] for e in store.ticket_rows(mawb=MAWB, state="staged")] == [STEM], \
             "暂存的票要能按主单号被列出来，否则需求一的检索还是看不见它"
+    finally:
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_staged_ticket_can_be_reopened_by_another_role():
+    """录入员要能打开别人暂存的票——这是需求二"录入员核对之后再发公司"的读侧。
+
+    `/ticket/{stem}` 给的是模型口径（air/raw/qc），读不到人工值；这里给的是暂存记录本身。
+    任何登录角色都能读（内部部署，登录是门槛），但没暂存过要说清楚为什么没有。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    try:
+        tk = _ticket()
+        tk["air_reviewed"]["DEST_NAME"] = "ORD"
+        assert _client_as(tmp, "马殿齐", "reviewer").post("/stage", json={"tickets": [tk]}).status_code == 200
+
+        anon = TestClient(server.app)
+        assert anon.get("/staged/" + STEM).status_code == 401, "暂存里有整张票面内容，不登录不给读"
+
+        inp = _client_as(tmp, "刘明", "inputter")
+        r = inp.get("/staged/" + STEM)
+        assert r.status_code == 200, r.text
+        j = r.json()
+        assert j["air_final"]["DEST_NAME"] == "ORD", "录入员读到的还是模型那一版"
+        assert j["air_model"]["DEST_NAME"] == "LAX"
+        assert j["stager"] == "马殿齐" and j["reviewed_by_inputter"] is False, j
+        assert j["edits"]["DEST_NAME"] == {"from": "LAX", "to": "ORD"}, j["edits"]
+        assert len(j["events"]) == 1
+
+        miss = inp.get("/staged/从没暂存过的票")
+        assert miss.status_code == 404 and "暂存" in miss.json()["detail"], miss.text
+        bad = inp.get("/staged/" + "a/b")
+        assert bad.status_code in (400, 404), f"带路径的 stem 要挡：{bad.status_code}"
+    finally:
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_search_lists_staged_tickets_under_that_mawb():
+    """主单检索的结果里必须看得见"本机暂存过、公司还没有"的分单。
+
+    名下分单表读的是公司接口，公司只认提交过的票——制单员刚暂存的票要是只出现在
+    「本台待提交」那种浏览器局部视图里，换个人查主单就还是"没有分单"（2026-09-29 用户实测
+    过的就是这个，当时的补丁 pendingUnder 只治本机本人）。现在由服务器把 pending 一起回。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    try:
+        store.stage_ticket(STEM, {"MAWB_NO": MAWB, "HAWB_NO": HAWB, "ORIGIN_NAME": "BJS",
+                                  "DEST_NAME": "ORD"}, "马殿齐", "reviewer")
+        j = company_api.search_mawb(MAWB)
+        pend = j["pending"]
+        assert [p["stem"] for p in pend] == [STEM], pend
+        assert pend[0]["hawb"] == HAWB and pend[0]["stager"] == "马殿齐", pend[0]
+        assert pend[0]["has_original"] is True, "归档在机器上却报没有原件，前端就不给开票面了"
+        assert pend[0]["reviewed_by_inputter"] is False
+
+        assert company_api.search_mawb("111-11111111")["pending"] == [], "别的主单不该串进来"
+    finally:
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_search_lists_tickets_that_were_only_uploaded_too():
+    """只上传、只解析、还没人暂存的票也要在 pending 里。
+
+    需求一的原话是"制单员上传分单要真实上传到服务器，录入员要能检索到主单和分单（分单原件）"，
+    并没有要求制单员先点暂存。少了这一档，检索就只对"勤快点了暂存的人"成立；
+    而从前的浏览器名单（pendingUnder）恰恰连解析过的票一起报，不能改完反而更看不见。
+    """
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    try:
+        store.stage_ticket(STEM, {"MAWB_NO": MAWB, "HAWB_NO": HAWB}, "马殿齐", "reviewer")
+        store.save_result("另张只解析的票", {"MAWB_NO": MAWB, "HAWB_NO": "ONLYPARSED"},
+                          {"MAWB_NO": MAWB, "HAWB_NO": "ONLYPARSED", "DEST_NAME": "AMS"})
+        store.save_qc("另张只解析的票", {"source_name": "另张只解析的票.pdf", "channel": "vlm",
+                                        "processed_at": "2026-10-08T11:00:00", "flags": [],
+                                        "error": ""})
+        (config.ARCHIVE_DIR / "另张只解析的票").mkdir()
+
+        pend = company_api.search_mawb(MAWB)["pending"]
+        assert sorted(p["hawb"] for p in pend) == sorted([HAWB, "ONLYPARSED"]), pend
+        bystem = {p["stem"]: p for p in pend}
+        assert bystem[STEM]["state"] == "staged" and bystem[STEM]["stager"] == "马殿齐", bystem[STEM]
+        only = bystem["另张只解析的票"]
+        assert only["state"] == "parsed" and only["stager"] == "", \
+            "解析档要老实标成解析，别让人以为已经有人核对过"
+        assert only["has_original"] is True, "原件在归档却没报 has_original，前端就不给开票面"
     finally:
         _undo(old)
         shutil.rmtree(tmp, ignore_errors=True)

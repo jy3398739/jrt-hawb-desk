@@ -358,13 +358,20 @@ def test_company_submit_failure_is_logged_with_the_numbers():
         f"日志要同时有号和原因：{got}"
 
 
-def test_desk_master_search_explains_unsubmitted_house_orders():
-    """用户 09:13 上传解析、09:15 检索主单看到"没有分单"，其实那张票 09:35 提交后公司才有行
-    ——解析≠提交。名下分单为空时要说清这条，并把本台还没提交的同主单票数报出来。"""
+def test_desk_master_search_reads_pending_from_the_server():
+    """名下分单那张表的"还没提交"要来自服务器，不再由浏览器自己数。
+
+    浏览器数那份（`pendingUnder` 读 `S.tickets` + localStorage）只对当前这个人、这台机器成立：
+    制单员上午传的票，录入员下午查同一张主单仍然是"没有分单"——这正是需求一要修的。
+    现在检索响应自带 `pending`（本机已解析/已暂存、公司还不认识的那些票），前端只渲染它。
+    """
     html = web_src.desk()
-    assert "提交回公司" in html and "这里才会有记录" in html, "空表要说明白：先提交，公司才有这条分单"
-    assert "function pendingUnder(" in html, "要能按主单号找出本台已解析未提交的分单"
-    body = html[html.index("function pendingUnder("):]
-    body = body[:min(x for x in (body.find("\nfunction "), body.find("\nasync function ")) if x > 0)]
-    assert "S.tickets" in body and "drafts()" in body, "两处都要看：本次列表里的 + 浏览器暂存里的"
-    assert "pendingUnder(mawb)" in html, "检索结果落位时要用上"
+    assert "function pendingUnder(" not in html, \
+        "浏览器自己数待提交的老路子还在：换个人查同一张主单就看不见别人的票"
+    i = html.index("function mstRender(")
+    body = html[i:i + 900]
+    assert "j.pending" in body, "检索响应里的 pending 没用上"
+    assert "mstTable(list, pend)" in body
+    assert "drafts()" not in body, "待提交名单不许再读浏览器暂存"
+    assert "提交回公司" in html, "空表要说明白：先提交，公司才有这条分单"
+    assert "暂存" in html, "空表还要指出中间那一档：同事暂存过的票也在这张表里"
