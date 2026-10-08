@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parent.parent
 # git add -A 一把带走（2026-10-08 就差点发生一次）。
 MUST_BLOCK = (".env", "users.json", "output/air/any.json", "input/any.pdf",
               ".venv/Scripts/python.exe", "__pycache__/config.pyc",
-              ".env.bak-20261008-131937", "users.json.bak-deadkeys")
+              ".env.bak-20261008-131937", "users.json.bak-deadkeys",
+              # 暂存档：一张票一份，里面是整张票面的人工终值与人名（和 submitted.json 同级敏感）
+              "output/staged/any.json")
 # 必须能被 sync.sh 的 git ls-files 取到，挡了就等于"部署成功但线上缺文件"
 # .env.example 是模板（要入库），规则写成 .env.* 时必须靠 ! 把它放回来——它也在这一条里核。
 MUST_NOT_BLOCK = ("config.py", "server.py", "web/js/desk.js", "deploy/sync.sh",
