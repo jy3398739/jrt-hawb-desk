@@ -102,7 +102,11 @@ MODEL_PRESETS = {
     # 要重新接任何一家：`resolve_model` 对未知键原样透传，先在 .env 写模型 id 就能用，
     # 但那样拿不到预设的 base_url/api_key_env/extra_body，正式接仍需回到这张表。
 }
-DEFAULT_MODEL_KEY = "intern-s2-official"
+# 2026-10-08 用户定案：优先公司的 qwen（百炼专属实例），官方书生 S2 降为兜底。
+# 默认键跟着走 —— 不然"优先 qwen"只写在两台 .env 里，换台机器部署就悄悄退回 S2（两份真值）。
+# S2 仍在表里且排第一，顶栏下拉随时热切回去，公司实例哪天不通了不影响开工。
+DEFAULT_MODEL_KEY = "qwen38-flash-bailian"
+
 
 
 def resolve_model(choice: str = "") -> dict:
@@ -303,8 +307,13 @@ XLSX_PDF_TIMEOUT = int(os.getenv("XLSX_PDF_TIMEOUT", "120"))
 # 同时最多开几个 LibreOffice 子进程（每个约 300MB）。机器上还跑着别的服务，默认 1 个。
 XLSX_PDF_SLOTS = int(os.getenv("XLSX_PDF_SLOTS", "1"))
 # 解析并发上限：一张票 = LibreOffice 子进程 + 全页渲染 + 最多两次模型调用。
-# 8 人 × 30 单/人/天 ≈ 每分钟 1 张，2 个槽位足够；一旦看到排队，多半是模型或公司在抖。
-DESK_CONCURRENCY = int(os.getenv("DESK_CONCURRENCY", "2"))
+# 2026-10-08 从 2 提到 4。依据是当天在服务器（4 核 / 3.7G，hawb-desk 内存闸 900M/1.3G）实测：
+#   · 槽位 2 时吞吐 15.0 张/分钟，一次传 24 张最后一张等 88 秒、60 张等 232 秒；
+#   · 服务内存高水位只有 142MB（离 900M 很远），LibreOffice 那个约 300MB 的大头由
+#     XLSX_PDF_SLOTS=1 单独管着、不随这里变；
+#   · 公司百炼专属实例 1/4/8/12 并发同时打全部 200、零限流（整批墙钟会变长，那是吞吐上限）。
+# 原来那句"8 人 × 30 单/天 ≈ 每分钟 1 张，2 个槽位足够"是按平均算的，没按"早上一起开工"算。
+DESK_CONCURRENCY = int(os.getenv("DESK_CONCURRENCY", "4"))
 # 排到这个数就拒收（429），不再让每个人都等到超时
 DESK_QUEUE_MAX = int(os.getenv("DESK_QUEUE_MAX", "200"))
 
