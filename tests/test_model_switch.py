@@ -251,30 +251,34 @@ def test_qwen_preset_pins_id_and_carries_thinking_off():
     ① 清单里的 id 就是 `qwen3.8-flash`，`qwen3.8-flash-next` 那类写法回 404 ⇒ 预设钉死这一个；
     ② 真读图（测试票面照抄正确），也是思考型 ⇒ 与 S2/MiMo 同样要 max_tokens 下限；
     ③ 关思考两种写法都认（{"enable_thinking":false} 与 {"thinking":{"type":"disabled"}}），
-       取文档里通用的 enable_thinking:false；关思考后 20 票实测与 S2 同速、比 MiMo 长尾轻。"""
+       取文档里通用的 enable_thinking:false；关思考后 20 票实测与 S2 同速、比 MiMo 长尾轻。
+    2026-10-04 换成公司提供的百炼专属实例（MaaS，ws-<id>.maas.aliyuncs.com）：上面三条实测结论照旧成立
+    （那边清单里也有 qwen3.8-flash；1.3s 照抄三行票面、image_tokens 236、enable_thinking:false 有效），
+    变的只有地址与密钥——公共百炼那把个人 key 从此不再出现在配置里。"""
     with _ModelState():
         config.set_model("qwen38-flash-bailian")
-        assert config.VLM_MODEL == "qwen3.8-flash", "百炼只服务这一个 id，写 qwen3.8-flash-next 会 404"
+        assert config.VLM_MODEL == "qwen3.8-flash", "模型清单里只有这一个 id，写 qwen3.8-flash-next 会 404"
         assert config.MODEL_VISION is True
-        assert config.vlm_base_url() == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        assert config.vlm_base_url().endswith(".maas.aliyuncs.com/compatible-mode/v1"), \
+            f"该走公司专属实例（MaaS），实际 {config.vlm_base_url()}"
         assert config.model_extra_body() == {"enable_thinking": False}, \
             "预设没声明关思考——带思考那一档会在输出里多烧几千 reasoning token"
         assert config.MODEL_PRESETS["qwen38-flash-bailian"]["max_tokens"] >= 32768, \
             "它是思考型，没有下限会 finish_reason=length、content 空"
-        saved = os.environ.get("DASHSCOPE_API_KEY")
-        os.environ.pop("DASHSCOPE_API_KEY", None)
+        saved = os.environ.get("QWEN_API_KEY")
+        os.environ.pop("QWEN_API_KEY", None)
         try:
             config.require_vlm_api_key()
-            raise AssertionError("没配 DASHSCOPE_API_KEY 时居然放行了")
+            raise AssertionError("没配 QWEN_API_KEY 时居然放行了")
         except SystemExit as e:
-            assert "DASHSCOPE_API_KEY" in str(e), f"报错要点名该配哪个变量: {e}"
+            assert "QWEN_API_KEY" in str(e), f"报错要点名该配哪个变量: {e}"
         finally:
             # 不还原的话，后面任何读这把密钥的用例都会看到"没配"——曾经让 /models 的
             # key_configured 断言在全量回归里假失败（单跑正常、连跑就红）。
             if saved is None:
-                os.environ.pop("DASHSCOPE_API_KEY", None)
+                os.environ.pop("QWEN_API_KEY", None)
             else:
-                os.environ["DASHSCOPE_API_KEY"] = saved
+                os.environ["QWEN_API_KEY"] = saved
 
 
 def test_preset_extra_body_reaches_every_model_call():

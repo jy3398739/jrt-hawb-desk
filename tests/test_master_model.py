@@ -23,8 +23,15 @@ def _bundle_of(choice):
 def test_master_chain_has_its_own_default_preset():
     assert config.DEFAULT_MASTER_MODEL_KEY == "qwen38-flash-bailian"
     b = _bundle_of(config.DEFAULT_MASTER_MODEL_KEY)
-    assert b["model"] == "qwen3.8-flash" and b["base_url"].startswith("https://dashscope")
-    assert b["api_key_env"] == "DASHSCOPE_API_KEY" and b["max_tokens"] >= 8192
+    assert b["model"] == "qwen3.8-flash" and b["max_tokens"] >= 8192
+    # 2026-10-04：qwen 这一路从"我自己的公共百炼 key"换成"公司提供的百炼专属实例（MaaS）"。
+    # 专属实例的地址一定是 ws-<id>.<region>.maas.aliyuncs.com，密钥是 sk-ws- 开头的 token，
+    # 两者与公共百炼互不通用——所以这里钉的是"必须是专属实例、且绝不是公共 dashscope"，
+    # 而不是钉死那串 workspace id（公司重新开通实例时不必来改测试）。
+    assert b["base_url"].endswith(".maas.aliyuncs.com/compatible-mode/v1"), \
+        f"主单链该走公司专属实例，实际 {b['base_url']}"
+    assert "dashscope.aliyuncs.com" not in b["base_url"], "又指回公共百炼了：那烧的是个人余额"
+    assert b["api_key_env"] == "QWEN_API_KEY"
     assert b["extra_body"] == {"enable_thinking": False}, "主单是纯文本任务，思考开着既慢又贵"
 
 

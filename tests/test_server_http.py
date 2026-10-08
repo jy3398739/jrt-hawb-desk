@@ -834,9 +834,14 @@ def test_master_chain_model_is_visible_and_switchable_separately():
     old_hawb = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION)
     config.ENV_FILE = tmp / ".env"
     config.MASTER_VLM_MODEL = "qwen38-flash-bailian"   # 回归入口把它钉成空（=跟分单同渠道），这里显式设
-    config.ENV_FILE.write_text("INTERNLM_API_KEY=sk-x\nDASHSCOPE_API_KEY=sk-y\n"
+    config.ENV_FILE.write_text("INTERNLM_API_KEY=sk-x\nQWEN_API_KEY=sk-y\n"
                                "VLM_MODEL=intern-s2-official\nMASTER_VLM_MODEL=qwen38-flash-bailian\n",
                                encoding="utf-8")
+    # 密钥状态读的是进程环境（config 里 os.getenv），写临时 .env 并不会改变它——
+    # 以前这条断言其实是靠"开发机真 .env 里配了这把 key"才过的，换 key 的当天就会假失败。
+    # 显式设再还原，让它在任何机器上都是真的在测"配了就该报 True"。
+    old_key = os.environ.get("QWEN_API_KEY")
+    os.environ["QWEN_API_KEY"] = "sk-y-test-only"
     try:
         with _stubbed():
             _login_admin(client)
@@ -853,6 +858,10 @@ def test_master_chain_model_is_visible_and_switchable_separately():
             assert client.post("/model", json={"model": "intern-s2-official", "chain": "nope"}).status_code == 400, \
                 "乱填 chain 居然放行了"
     finally:
+        if old_key is None:
+            os.environ.pop("QWEN_API_KEY", None)
+        else:
+            os.environ["QWEN_API_KEY"] = old_key
         config.ENV_FILE, config.MASTER_VLM_MODEL = old_env_file, old_state
         config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION = old_hawb
         shutil.rmtree(tmp, ignore_errors=True)

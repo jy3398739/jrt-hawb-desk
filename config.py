@@ -72,8 +72,7 @@ MODEL_PRESETS = {
                            "base_url": "https://chat.intern-ai.org.cn/api/v1",
                            "api_key_env": "INTERNLM_API_KEY",
                            "key_hint": "https://internlm.intern-ai.org.cn/api/tokens"},
-    # 阿里云百炼 Qwen3.8-Flash（OpenAI 兼容端点 https://dashscope.aliyuncs.com/compatible-mode/v1，
-    # 密钥在百炼控制台申请，按 token 计费）。2026-09-24 接入前三项实测：
+    # Qwen3.8-Flash（OpenAI 兼容端点，密钥从 QWEN_API_KEY 读）。2026-09-24 接入前三项实测：
     # ① 模型清单里只有 qwen3.8-flash 这一个 id，qwen3.8-flash-next 之类写法回 404 ⇒ 钉死；
     # ② 也是思考型：关思考前单票会多烧几千 reasoning token（同族 qwen3.8-27b 实测），
     #    与 S2/MiMo 一样需要 max_tokens 下限，否则 finish_reason=length、content 空；
@@ -83,11 +82,16 @@ MODEL_PRESETS = {
     # 解掉 S2 两处静默缺陷（FAX 槽塞电话号、漏主单号），零新增静默错，长尾比 MiMo 轻（MiMo 有 47s 那一档）；
     # 代价：ANGB 两票丢 TO1=AMS（与 S2 关思考时同款，红旗会抓）+ 均值比 S2 慢约 3 秒/票。
     # 用户 2026-09-24 定案：默认仍是 intern-s2-official，本渠道排第二供切换。
+    # 2026-10-04 换成公司提供的**百炼专属实例（MaaS）**：地址 ws-<id>.<region>.maas.aliyuncs.com，
+    # 密钥是 sk-ws- 开头的实例 token，与公共百炼的 key 互不通用（拿错 key 会 401，不会静默走别处）。
+    # 换完当天实测：清单里有 qwen3.8-flash；三行票面 1.3s 照抄无误、image_tokens 236、
+    # enable_thinking:false 照样有效（completion 里没有 reasoning）。原先那把个人公共版 key 已下线。
     "qwen38-flash-bailian": {"model": "qwen3.8-flash", "vision": True, "max_tokens": 32768,
-                             "label": "Qwen3.8-Flash · 阿里云百炼 · 视觉（已关思考）",
-                             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                             "api_key_env": "DASHSCOPE_API_KEY",
-                             "key_hint": "百炼控制台 https://bailian.console.aliyun.com/?tab=model#/api-key（按 token 计费，余额不足会 4xx）",
+                             "label": "Qwen3.8-Flash · 公司百炼专属实例 · 视觉（已关思考）",
+                             "base_url": "https://ws-21g0jh2xbvre59nd.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+                             "api_key_env": "QWEN_API_KEY",
+                             "key_hint": "公司百炼专属实例（MaaS）token，sk-ws- 开头，向管理员索取；"
+                                         "它只认这一个实例地址，与公共百炼 key 不通用",
                              "extra_body": {"enable_thinking": False}},
     # 小米 MiMo API（https://api.xiaomimimo.com/v1，密钥在 https://platform.xiaomimimo.com/#/console/api-keys 申请，付费）。
     # 2026-09-24 接入前四项实测：① id 大小写敏感——文档示例里的 MiMo-V2.6-Flash 写法回 400 Unsupported model，

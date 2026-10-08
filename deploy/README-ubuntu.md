@@ -49,7 +49,7 @@ cp .env.example .env && chmod 600 .env
 ```
 
 - 必填：`INTERNLM_API_KEY`（默认渠道 `intern-s2-official`）。
-- 主单链默认走 `qwen38-flash-bailian` → 需要 `DASHSCOPE_API_KEY`
+- 主单链默认走 `qwen38-flash-bailian` → 需要 `QWEN_API_KEY`（公司百炼专属实例 token，`sk-ws-` 开头；向管理员索取，不是公共百炼控制台那把）
   （不想配就把 `MASTER_VLM_MODEL=` 留空，让它跟分单同渠道）。
 - 真连公司系统才需要：`COMPANY_API_MODE=live`、`COMPANY_API_URL`、
   `COMPANY_MAWB_KEY`、`COMPANY_HAWB_KEY`（两把 key 不通用，找 IT 要）。
