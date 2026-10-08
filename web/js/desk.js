@@ -404,7 +404,7 @@ function readPdfBox(){
 /* 票面默认不再嵌浏览器阅读器：Chrome/Edge 各自的侧栏与工具栏要吃掉近 1/4 宽度，
    而关侧栏的参数两家不通用（实测 Edge 完全不理 navpanes=0）。改成逐页取我们服务端渲染的
    页图（/render，定位模式本来就在用），缩放与「整页看全」全归我们算，两家表现一致。
-   拿不到归档（上传时没勾「落盘留档」）才退回阅读器，所以这里返回 false 让调用方接着走老路。 */
+   拿不到归档（只可能是早于「上传一律落盘」上线的老票）才退回阅读器，所以这里返回 false 让调用方接着走老路。 */
 const PV_SCALE = 2;                     // ≈150dpi：A4 出 1190px，够放到 176% 不糊
 async function showPages(stem, seq){
   const urls = [];
@@ -496,7 +496,7 @@ async function loadPreview(t){
     if (!r.ok){
       const j = await r.json().catch(() => ({}));
       pvBody(`<div class="empty">${esc(j.detail || ("取票面失败 HTTP " + r.status))}<br>
-        <span class="sub">要回看票面，上传时勾「落盘留档」。</span></div>`);
+        <span class="sub">这台机器上没有它的归档：重传一次这张票就能回看（现在上传都会落盘）。</span></div>`);
       return;
     }
     const blob = await r.blob();
@@ -592,13 +592,10 @@ async function enterLocate(t, k){
   const seq = ++_pvSeq;
   const label = (FIELDS.find(f => f[0] === k) || [k, k])[1];
   const ll = await layoutFor(t);
-  if (!ll){ toast(`「${label}」没有可用的 L1 转录：上传时勾「落盘留档」才能定位到票面`, "bad"); return; }
-  const img = fileKind(t.filename) === "img";
-  let base;
-  if (t.file && !t.save){
-    if (!img){ toast("原件没归档：服务器没法按页渲染。重新上传并勾「落盘留档」即可定位", "bad"); return; }
-    base = URL.createObjectURL(t.file);       // 未落盘的图票：浏览器里那份文件就能当底图
-  } else base = BASE + "/render/" + encodeURIComponent(t.stem);
+  if (!ll){ toast(`「${label}」没有可用的 L1 转录：这张票早于转录留档上线，重传一次就能定位`, "bad"); return; }
+  // 底图一律取服务端按页渲染的 /render。从前"没勾落盘"时只能拿浏览器里那份 Blob 顶一下，
+  // 而现在上传必落盘，那份临时文件不再是任何路径的数据来源。
+  const base = BASE + "/render/" + encodeURIComponent(t.stem);
   LOC.on = true; LOC.key = (t.stem || t.filename) + "|" + k;
   LOC.stem = t.stem || ""; LOC.base = base; LOC.remote = base.indexOf("/render/") > -1;
   LOC.ll = ll;
@@ -631,7 +628,7 @@ async function showLocPage(page, seq){
       if (LOC.url) URL.revokeObjectURL(LOC.url);
       src = LOC.url = URL.createObjectURL(await r.blob());
     }catch(e){ pvBody(`<div class="empty">取票面页图失败：${esc(String(e.message || e))}<br>
-        <span class="sub">按页渲染读的是归档原件：上传时勾「落盘留档」。</span></div>`); return; }
+        <span class="sub">按页渲染读的是归档原件：这台机器上没有它，重传一次就有。</span></div>`); return; }
   }
   if (seq !== _pvSeq) return;                 // 期间又点了别的字段/票，这份丢掉
   const boxes = LOC.hits.filter(l => (l.page || 1) === LOC.page).map(l => {
@@ -757,8 +754,7 @@ $("#modelSelM").addEventListener("change", e => switchModel(e.target, "master"))
 async function extract(t){
   const fd = new FormData();
   fd.append("file", t.file, t.filename);
-  const r = await fetch(BASE + "/extract?save=" + (t.save ? "true" : "false"),
-    {method:"POST", body:fd});
+  const r = await fetch(BASE + "/extract", {method:"POST", body:fd});   // 落不落盘不再是前端的事
   const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
   if (r.status === 429) throw new Error((j.detail || j.error || "后端排队已满") + "，稍后再传");
   if (!r.ok && r.status !== 202) throw new Error(j.error || j.detail || ("HTTP " + r.status));
@@ -796,7 +792,6 @@ async function runQueue(){
   for (;;){
     const t = S.tickets.find(x => x.state === "queued");
     if (!t) break;
-    if (t.save === undefined) t.save = $("#doSave").checked;   // 定位模式要知道原件当时归没归档
     t.state = "busy"; t.startedAt = Date.now(); render();
     try{
       const j = await extract(t);

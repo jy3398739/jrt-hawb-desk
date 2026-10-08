@@ -446,7 +446,7 @@ def test_disk_name_follows_the_ticket_not_the_tempfile():
     client = TestClient(server.app)
     with _stubbed() as calls:
         _login_admin(client)
-        r = _post(client, params={"save": "true"})
+        r = _post(client)
         assert r.status_code == 200, r.text
         used = [c for c in calls if "path" in c][0]
         assert used["save"] is True
@@ -454,6 +454,47 @@ def test_disk_name_follows_the_ticket_not_the_tempfile():
         assert used["exists"], "handle_file 调用时临时文件必须还在"
         assert not used["path"].parent.exists(), "上传临时目录没清理"
         assert any(c.get("rebuild") for c in calls), "落盘后要重建汇总"
+
+
+def test_uploading_a_ticket_always_persists_it():
+    """上传就必须落盘，而且这事不再由前端决定。
+
+    从前 `POST /extract` 的 save 默认 False，值来自浏览器里那个「落盘留档」复选框：不勾则
+    L0 归档 / L1 转录 / L2 / L3 / 质检一个字节都不写，上传的原件还被当场删掉。需求一撞的正是
+    这个——录入员在主单检索里查不到制单员刚上传的票（那些票压根没进服务器），换台机器更是一张都不认识。
+
+    所以 save 这个参数现在整个不认：不传、传 true、传 false 都一律落盘。老前端带着
+    ?save=false 也不能绕过（它只会被忽略），直接 curl 调接口的人同理。
+    落盘本身写不写由 jobs.handle_file 那组用例盯（save=False 一个字节都不写 / True 全写），
+    这条只钉住"HTTP 这道门口径恒真"。"""
+    client = TestClient(server.app)
+    with _stubbed() as calls:
+        _login_admin(client)
+        for q, tag in (({}, "不带参数"), ({"save": "true"}, "save=true"),
+                       ({"save": "false"}, "save=false")):
+            r = _post(client, filename="PERSIST.pdf", params=q)
+            assert r.status_code == 200, f"{tag} 上传失败：{r.json()}"
+            used = [c for c in calls if "path" in c][-1]
+            assert used["save"] is True, f"{tag} 上传居然没落盘，别人就检索不到这张票"
+            assert any(c.get("rebuild") for c in calls), f"{tag} 落盘后没重建汇总"
+
+
+def test_desk_stops_asking_whether_to_keep_the_ticket():
+    """那个复选框描述的是一个已经不存在的用法："这次别留下痕迹"。审核台里每一张票都要
+    能被别人查到，所以复选框、发给 /extract 的 save 参数、以及票对象上的 t.save 一起删掉。
+    留着最坏的后果不是难看：勾掉的那张票在服务器上不存在，而制单员以为同事能看见它。"""
+    page = web_src.part("index.html")
+    assert "doSave" not in page, "「落盘留档」复选框还在：落不落盘不该由浏览器决定"
+    js = web_src.part("js/desk.js")
+    assert "extract?save=" not in js, "前端还在给 /extract 传 save"
+    assert not re.search(r"\bt\.save\b", js), \
+        "票对象上还带着 save：这个字段已经没有意义，留着会骗到按页渲染那条分支"
+    # 复选框没了，提示语就不许再教人去勾它：照着找框的人会以为系统坏了，而真正的原因
+    #（这张票早于本功能上传、或归档被清理过）一句都没说到。
+    for rel in ("index.html", "js/desk.js"):
+        assert "落盘留档" not in web_src.part(rel), f"{rel} 还在让人勾一个已经不存在的框"
+    srv = (Path(__file__).resolve().parent.parent / "server.py").read_text(encoding="utf-8")
+    assert "落盘留档" not in srv, "服务器的 404 提示还在让人去勾那个框"
 
 
 def test_traversal_and_missing_extension_are_neutralised():
@@ -767,7 +808,7 @@ def test_source_needs_login_and_explains_missing_archive():
         assert client.get("/source/CLA26090022").status_code == 401, "未登录要拒绝"
         _login_admin(client)
         r = client.get("/source/CLA26090022")
-        assert r.status_code == 404 and "落盘留档" in r.json()["detail"], r.text
+        assert r.status_code == 404 and "归档" in r.json()["detail"], r.text
 
 
 def test_source_raw_downloads_what_the_browser_cannot_render():
@@ -963,7 +1004,7 @@ def test_layout_explains_missing_and_refuses_traversal():
     with _stubbed(), _transcripts({"坏文件.json": b"{oops"}):
         _login_admin(client)
         r = client.get("/layout/CLA26090022")
-        assert r.status_code == 404 and "落盘留档" in r.json()["detail"], r.text
+        assert r.status_code == 404 and "转录" in r.json()["detail"], r.text
         bad = client.get("/layout/" + quote("坏文件"))
         assert bad.status_code == 500 and "转录文件读坏" in bad.json()["detail"], "读坏要说清怎么修"
         for stem in ("%2e%2e", "..%5c..", "a%2fb", "."):

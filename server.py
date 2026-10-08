@@ -16,7 +16,7 @@
   POST /admin/users        设/重置口令或新建账号（管理员）；body={"name","password"?,"role"?}
   DELETE /admin/users/{name}  删除账号（管理员；不能删自己或唯一管理员）
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
-  POST /extract            需登录会话；multipart 字段 file=分单文件；?save=true 同时按原名落盘
+  POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1）
@@ -489,13 +489,15 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
 DESK_QUEUE = desk_queue.DeskQueue(slots=config.DESK_CONCURRENCY, max_pending=config.DESK_QUEUE_MAX)
 
 
-def _parse_ticket(tmp_dir: Path, path: Path, save: bool, filename: str, who: str) -> dict:
+def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str) -> dict:
     """队列 worker 里跑的那一段：解析 → 重算汇总 → 清临时目录。返回的就是从前 /extract 的响应体，
-    前端因此只多了"轮询 /job"这一步。"""
+    前端因此只多了"轮询 /job"这一步。
+
+    一律 save=True：这张票只有落了盘，别人才检索得到、才打得开原件（需求一的根）。"""
     try:
         try:
-            r = handle_file(path, save)
-            if save and not r["error"]:
+            r = handle_file(path, True)
+            if not r["error"]:
                 store.rebuild_summary()
         except (Exception, SystemExit) as e:
             # handle_file 自己会兜住绝大部分失败；真漏出来的一律变成任务结果，别把 worker 带走
@@ -517,13 +519,16 @@ def _parse_ticket(tmp_dir: Path, path: Path, save: bool, filename: str, who: str
 
 
 @app.post("/extract")
-async def extract(file: UploadFile = File(...), save: bool = Query(False, description="是否按原文件名落盘"),
-                  user: dict = Depends(current_user)):
+async def extract(file: UploadFile = File(...), user: dict = Depends(current_user)):
     """上传一张分单：入队即 202，结果靠 `GET /job/{job}` 取。
 
     从前这个接口是同步等的：一次解析最坏十几分钟，nginx 900 秒先给人一个 504，
     后端却还在继续跑继续花钱。现在解析在队列里跑（同时最多 DESK_CONCURRENCY 张），
-    排队位次回给前端显示"排队中·前面 N 张"。塞满则直接 429 拒收，不再让每个人都超时。"""
+    排队位次回给前端显示"排队中·前面 N 张"。塞满则直接 429 拒收，不再让每个人都超时。
+
+    以前这里还有一个 `?save=` 参数（默认 False），勾不勾由浏览器里那个复选框决定；不勾时
+    四层结果一个都不写、上传的原件当场删掉，结果就是这张票在服务器上根本不存在——
+    录入员检索主单查不到同事刚传的票（需求一）。现在一律落盘，参数不再接受，带了也忽略。"""
     user_name = str(user.get("name") or "?")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in config.ALL_EXTS:
@@ -535,7 +540,7 @@ async def extract(file: UploadFile = File(...), save: bool = Query(False, descri
     handed_off = False
     try:
         await _save_upload(file, path)
-        jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, save, file.filename, user_name),
+        jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, file.filename, user_name),
                                 who=user_name, name=file.filename or "")
         handed_off = True            # 临时目录从这一刻归 worker 清
     except desk_queue.QueueFull as e:
@@ -670,7 +675,8 @@ def source(stem: str, raw: bool = Query(False, description="true=发原件本身
     改发 LibreOffice 转出的 PDF——也就是模型实际看过的那张，对账口径一致。"""
     d = _archive_dir(stem)
     if d is None:
-        raise HTTPException(404, "归档里没有这张票的原件：上传时没勾「落盘留档」，或归档已被清理")
+        raise HTTPException(404, "归档里没有这张票的原件：它是在「上传一律落盘」上线之前传的，"
+                                 "或归档目录被清理过")
     if raw:
         original = _archive_files(d)[0]
         return FileResponse(original, media_type="application/octet-stream", filename=original.name)
@@ -708,7 +714,8 @@ def layout(stem: str, _: None = Depends(require_web)):
         raise HTTPException(404, "stem 不是合法的单段名称")
     f = config.TRANSCRIPT_DIR / f"{name}.json"
     if not f.is_file():
-        raise HTTPException(404, "没有这张票的 L1 转录：上传时未勾「落盘留档」，或转录早于本功能")
+        raise HTTPException(404, "没有这张票的 L1 转录：它是在转录留档上线之前解析的，"
+                                 "或转录文件被清理过——重新上传一次这张票就有")
     try:
         data = json.loads(f.read_text(encoding="utf-8"))
     except Exception as e:
@@ -732,7 +739,8 @@ def render(stem: str, page: int = Query(1, ge=1, description="1 起的页码"),
     归档了就能定位。"""
     d = _archive_dir(stem)
     if d is None:
-        raise HTTPException(404, "归档里没有这张票的原件：上传时没勾「落盘留档」，无法按页定位")
+        raise HTTPException(404, "归档里没有这张票的原件，无法按页定位：它是在「上传一律落盘」"
+                                 "上线之前传的，或归档目录被清理过")
     try:
         p = _preview_file(stem, d)
     except HTTPException as e:
