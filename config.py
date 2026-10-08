@@ -270,6 +270,11 @@ OUTPUT_RAW_DIR = Path(os.getenv("OUTPUT_RAW_DIR", str(BASE_DIR / "output" / "raw
 OUTPUT_AIR_DIR = Path(os.getenv("OUTPUT_AIR_DIR", str(BASE_DIR / "output" / "air")))  # L3 航空口径 全字段
 OUTPUT_QC_DIR = Path(os.getenv("OUTPUT_QC_DIR", str(BASE_DIR / "output" / "qc")))     # 质检红旗，Excel/DB 按名联结
 PREVIEW_DIR = Path(os.getenv("PREVIEW_DIR", str(BASE_DIR / "output" / "preview")))    # 电子单转出的 PDF，审核台回看票面用
+# 暂存（人工核对结果）：一张票一份，stem→{模型原样快照, 最新人工值, 每次谁改的哪几列}。
+# 状态到这里为止都不发公司——它是"存工作进度给同事看"，不是交付。为什么不并进提交台账：
+# 那边一条=一次真回传，混进来会让"进了台账就等于回传过公司"这句前提失效（复合键索引靠它建）。
+# 按 stem 单文件而不是一本大 JSON：和 output/master 同形，也避开跨进程读改写台账那处旧竞态。
+STAGED_DIR = Path(os.getenv("STAGED_DIR", str(BASE_DIR / "output" / "staged")))
 # 提交台账：制单员点提交、回传公司成功后逐张记一笔（stem→{主单号,分单号,复合键,复核人,时间,回执}）。
 # "仅人工提交才回传"，机批/监控/站点都只落盘不进这里；(主单号|分单号)↔原件 的索引也只从这张表构建。
 SUBMIT_LEDGER = Path(os.getenv("SUBMIT_LEDGER", str(BASE_DIR / "output" / "submitted.json")))

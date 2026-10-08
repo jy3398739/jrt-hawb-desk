@@ -18,6 +18,7 @@
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
+  POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器**不发公司**，缺号也允许存
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 检索主单+名下分单(带本机原件 stem)并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1）
   GET  /results            已落盘条数（需登录会话）
@@ -445,6 +446,44 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
     return {"ok": True, "results": results}
 
 
+class StageBody(BaseModel):
+    tickets: list = []
+
+
+@app.post("/stage")
+def stage(body: StageBody, user: dict = Depends(current_user)):
+    """暂存：把核对结果存到服务器，**一个公司请求都不发**（有测试把外发口打死来钉这条）。
+
+    和 /submit 的分工是刻意的，别混：那边是交付——号必须齐全、红旗必须逐条确认、发出去就进台账
+    进索引；这边只是把工作进度交给同事——缺号也允许存（那张票还是同一张，别人能接着补），
+    也绝不写台账。需求二"录入员核对之后再发公司"与需求三"改动按人分账"都靠这一层落地：
+    人工值从前只活在浏览器 localStorage 里，换台机器、换个人就什么都没留下。
+    逐字段差异由服务器拿 output/air 那份模型原样来算，不信前端的 edited_fields。"""
+    tickets = body.tickets if isinstance(body.tickets, list) else []
+    if not tickets:
+        raise HTTPException(400, "没有要暂存的票据")
+    out = []
+    for tk in tickets:
+        if not isinstance(tk, dict):
+            raise HTTPException(400, "票据格式不正确：tickets 里每一项都应是对象")
+        stem = str(tk.get("stem") or "").strip()      # 不退回 filename：那是带扩展名的原名，对不上落盘的键
+        if not stem:
+            raise HTTPException(400, "这张票没有 stem，暂存不知道要存哪一张（解析过的票都带 stem）")
+        rec = tk.get("air_reviewed") if isinstance(tk.get("air_reviewed"), dict) else {}
+        if not rec:
+            raise HTTPException(400, f"这张票没有可存的核对内容：{stem}")
+        try:
+            saved = store.stage_ticket(stem, rec, str(user.get("name") or ""),
+                                       str(user.get("role") or ""), tk.get("acked_flags"))
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        out.append({"stem": saved["stem"], "hawb": saved["hawb"], "edited": len(saved["edits"])})
+        LOG.info("暂存 who=%s(%s) stem=%s %s|%s 改动=%d 列 本次改=%d 列",
+                 user.get("name"), user.get("role"), saved["stem"], saved["mawb"], saved["hawb"],
+                 len(saved["edits"]), len(saved["events"][-1]["edits"]))
+    return {"ok": True, "staged": out}
+
+
 @app.get("/models")
 def models():
     """可选模型清单 + 两条链各自在用什么。免登录：审核台要先填出下拉（可能还没登录）。"""
@@ -610,13 +649,10 @@ def _archive_dir(stem: str):
     return d if d.is_dir() else None
 
 
-def _safe_stem(stem: str):
-    """单段文件名的那半道闸门：/layout 读的是转录目录不是归档目录，没法靠
-    「目录存在」兜底，必须先剥掉路径与 '..' 再拼文件名。"""
-    name = str(stem or "").replace("\\", "/").split("/")[-1]
-    if not name or name in (".", "..") or name != stem:
-        return None
-    return name
+_safe_stem = store.safe_stem
+# 单段文件名的判定只留一份（真身在 store.safe_stem）：读转录/归档与写暂存文件用的是同一条规则。
+# 写成模块级赋值而不是转调 store.safe_stem，是因为测试会把 server.store 整个换成桩——
+# 输入校验不该跟着被换掉。
 
 
 def _make_excel_preview(stem: str, xls: Path) -> Path:

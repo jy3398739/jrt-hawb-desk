@@ -5,6 +5,7 @@ from pathlib import Path
 
 import config
 import atomic
+import fieldspec
 
 
 def _write(path: Path, data: dict):
@@ -122,6 +123,18 @@ def list_inputs(inp: Path):
 # 仅制单员人工点提交、回传公司成功后写这里；机批/监控/站点只落盘、绝不进台账。
 # 因此"进了台账"就等于"号齐全、过了门"——索引直接从台账派生，不必再防脏数据/冲突。
 _LEDGER_LOCK = threading.Lock()        # 同进程内多制单员并发提交（handle_file 走线程池）时串行化读改写
+
+
+def safe_stem(stem: str):
+    """URL/请求体里的 stem 只当单段文件名的那半段用：带 '/'、'\\'、'..'、空名一律不认。
+
+    暂存文件的路径是 `STAGED_DIR/<stem>.json`，stem 由前端给——不先剥掉穿越就拼路径，
+    ../../ 就能写到服务器上任何地方。转录目录那侧从前在 server 里有一份同样的判断，
+    现在两边共用这一份（写文件的入口比读文件的入口更需要它）。"""
+    name = str(stem or "").replace("\\", "/").split("/")[-1]
+    if not name or name in (".", "..") or name != str(stem or ""):
+        return None
+    return name
 
 
 def norm_no(value: str) -> str:
@@ -295,3 +308,142 @@ def day_rows(date: str) -> list:
                                     "action": e.get("company_action") or ""} if e else None),
                      "has_original": (config.ARCHIVE_DIR / stem).is_dir()})
     return rows
+
+
+# === 暂存：人工核对结果落服务器，但不发公司 ===
+# 状态到这里为止都只是"存工作进度给同事看"。为什么不并进提交台账：那边一条=一次真回传，
+# 混进来会让"进了台账就等于号齐全、过了门、回传过公司"这句前提失效（复合键索引靠它建）。
+_STAGED_LOCK = threading.Lock()        # 同进程两人同时暂存同一张票：读改写要串行
+_NUM_FIELDS = set(fieldspec.NUM)       # 件数/SLAC/重量：按数值比，170.0 与 170 不算改
+_NO_FIELDS = ("MAWB_NO", "HAWB_NO")    # 两个单号：按归一化比，连字符有无不算改
+
+
+def _fold(v) -> str:
+    return re.sub(r"\s+", " ", str(v if v is not None else "")).strip()
+
+
+def _as_num(v):
+    try:
+        return float(str(v).replace(",", "").replace(" ", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def same_value(field, a, b) -> bool:
+    """人有没有真改这一列。统计要的是"模型读错了"，不是"人重新敲了一遍"：
+    空格数、单号里的连字符、170.0 与 170 都不算改动；大小写算（Italy→ITALY 是人动过）。
+
+    这里不套 fidelity 的归一：那边为了"在转录里找到原文"还要把全角标点折成半角，
+    而这里比的是人工回填值与模型输出值，多折一层会把人真改过的标点藏掉。"""
+    if not _fold(a) and not _fold(b):
+        return True
+    if field in _NO_FIELDS:
+        return norm_no(a) == norm_no(b)
+    if field in _NUM_FIELDS:
+        na, nb = _as_num(a), _as_num(b)
+        if na is not None and nb is not None:
+            return na == nb
+    return _fold(a) == _fold(b)
+
+
+def field_diff(old: dict, new: dict) -> dict:
+    """逐字段差异 {列: {"from": 旧值, "to": 新值}}，只收真改过的那几列。"""
+    out = {}
+    for k in sorted(set(old or {}) | set(new or {})):
+        a, b = (old or {}).get(k), (new or {}).get(k)
+        if not same_value(k, a, b):
+            out[k] = {"from": a if a is not None else "", "to": b if b is not None else ""}
+    return out
+
+
+def _staged_file(stem: str):
+    name = safe_stem(stem)
+    return None if name is None else config.STAGED_DIR / f"{name}.json"
+
+
+def load_staged(stem: str):
+    """读一份暂存记录；没有、名字不合法、或文件写坏了都返回 None（不能让一张坏票拖垮列表）。"""
+    p = _staged_file(stem)
+    if p is None or not p.is_file():
+        return None
+    try:
+        rec = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return rec if isinstance(rec, dict) else None
+
+
+def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = None) -> dict:
+    """把这张票当前的人工核对结果存到服务器上，并记下"这一步是谁、改了哪几列"。
+
+    三条口径是刻意的：
+    ① **基线是模型原样**，取 output/air 那份且只在第一次暂存时快照——重解析会覆盖 air，
+       不做快照的话，改过一次的票再重跑一遍，"模型当初读了什么"就永远丢了；
+    ② **差异由服务器算**，不信前端传来的 edited_fields（前端说没改就是没改的话，
+       统计可以被浏览器随意抹平）；
+    ③ **每次暂存追加一条事件**而不是覆盖：同一张票先制单员改、再录入员改，
+       盖成一份就答不出"这一列是模型错还是人错"，而需求三要的正是分开算。
+    """
+    name = safe_stem(stem)
+    if name is None:
+        raise ValueError(f"stem 不合法（不接受带路径的名字）：{stem!r}")
+    air = air if isinstance(air, dict) else {}
+    qc = {}
+    try:
+        qc = json.loads((config.OUTPUT_QC_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass                       # 别的机器解析的票没有 qc：留痕照记，模型名空着就是了
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    with _STAGED_LOCK:
+        prev = load_staged(name) or {}
+        base = prev.get("air_model") if isinstance(prev.get("air_model"), dict) else None
+        if base is None:
+            try:
+                base = json.loads((config.OUTPUT_AIR_DIR / f"{name}.json").read_text(encoding="utf-8"))
+            except Exception:
+                base = {}
+        last = prev.get("air_final") if isinstance(prev.get("air_final"), dict) else base
+        edits = field_diff(last, air)
+        events = list(prev.get("events") or [])
+        events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
+                       "edits": edits, "acked_flags": [str(x) for x in (acked_flags or [])]})
+        mawb, hawb = str(air.get("MAWB_NO", "") or "").strip(), str(air.get("HAWB_NO", "") or "").strip()
+        rec = {"stem": name, "source_name": qc.get("source_name") or name,
+               "mawb": mawb, "hawb": hawb, "key": number_key(mawb, hawb),
+               "model": qc.get("model") or "", "model_choice": qc.get("model_choice") or "",
+               "channel": qc.get("channel") or "", "parsed_at": qc.get("processed_at") or "",
+               "uploader": qc.get("uploader") or "", "uploader_role": qc.get("uploader_role") or "",
+               "air_model": base, "air_final": air, "edits": field_diff(base, air),
+               "events": events, "staged_at": now, "stager": str(by or ""), "stager_role": str(role or ""),
+               "submitted_at": prev.get("submitted_at") or "",
+               "submitter": prev.get("submitter") or "",
+               "sent_fingerprint": prev.get("sent_fingerprint") or ""}
+        atomic.write_json(_staged_file(name), rec, mode=0o600)
+    return rec
+
+
+def reviewed_by_inputter(rec: dict) -> bool:
+    """这张票有没有被录入员核对过（暂存过至少一次）。/submit 的"未经复核"门读的就是它。"""
+    return any(str(e.get("role") or "") == "inputter" for e in (rec or {}).get("events") or [])
+
+
+def staged_by_mawb(mawb: str) -> list:
+    """按主单号列出本机暂存过的票（不含 air 全文，检索行只需要这几列）。"""
+    want = norm_no(mawb)
+    if not want or not config.STAGED_DIR.exists():
+        return []
+    out = []
+    for f in sorted(config.STAGED_DIR.glob("*.json")):
+        rec = load_staged(f.stem)
+        if not rec or norm_no(rec.get("mawb", "")) != want:
+            continue
+        out.append({"stem": rec.get("stem") or f.stem, "mawb": rec.get("mawb", ""),
+                    "hawb": rec.get("hawb", ""), "key": rec.get("key") or "",
+                    "stager": rec.get("stager") or "", "stager_role": rec.get("stager_role") or "",
+                    "staged_at": rec.get("staged_at") or "",
+                    "edited": len(rec.get("edits") or {}),
+                    "reviewed_by_inputter": reviewed_by_inputter(rec),
+                    "submitted_at": rec.get("submitted_at") or "",
+                    "has_original": (config.ARCHIVE_DIR / (rec.get("stem") or f.stem)).is_dir()})
+    out.sort(key=lambda r: str(r.get("staged_at")))
+    return out
