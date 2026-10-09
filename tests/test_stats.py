@@ -276,6 +276,45 @@ def test_the_exported_excel_carries_the_same_numbers_as_the_api():
         assert list(per["票名"]) == ["F1"] and per["改动列数"][0] == 1, per
 
 
+def test_a_stats_row_carries_the_numbers_a_person_searches_by():
+    """统计里"这是哪张票"要报主单号 + 分单号（2026-10-09 用户定案）：票名是文件名，
+    拿着它去公司系统对还得先查一遍是谁。
+
+    取法一条：提交过的以台账为准（那才是要跟公司系统对上的号），没提交过的看暂存记录；
+    两边都没有就留空——不许拿票名硬凑，缺号本身是要看得见的事实。"""
+    with _world():
+        m = _parsed("N1", {"MAWB_NO": "176-62400004", "HAWB_NO": "TST1213386"})
+        _stage("N1", {**m, "GOODS_INFO": "STEEL"}, "马殿齐", "reviewer")
+        r = stats.ticket_row("N1")
+        assert (r["mawb"], r["hawb"]) == ("176-62400004", "TST1213386"), r
+
+        m2 = _parsed("N2", {"MAWB_NO": "", "HAWB_NO": "TST2"})
+        _stage("N2", {**m2, "MAWB_NO": "999-90271484"}, "马殿齐", "reviewer")
+        r2 = stats.ticket_row("N2")
+        assert (r2["mawb"], r2["hawb"]) == ("999-90271484", "TST2"), \
+            "人把主单号补上了，统计要报补过的那个——那才是检索得到的号"
+
+        # 暂存之后又改了号才发出去：报台账里那个（发出去的就是它，页面上报别的号会对不上公司）
+        m3 = _parsed("N3", {"MAWB_NO": "235-96146363", "HAWB_NO": "TST3"})
+        _stage("N3", m3, "马殿齐", "reviewer")
+        _send("N3", "999-35931384", "TST3", {**m3, "MAWB_NO": "999-35931384"}, "刘明", stager="马殿齐")
+        r3 = stats.ticket_row("N3")
+        assert (r3["mawb"], r3["hawb"]) == ("999-35931384", "TST3"), \
+            f"发出去的是 999-35931384，统计不许还报暂存时那个：{r3}"
+
+        # 一个号都没解析出来：留空，不拿票名凑
+        m4 = _parsed("N4", {"MAWB_NO": "", "HAWB_NO": ""})
+        _stage("N4", {**m4, "GOODS_INFO": "STEEL"}, "马殿齐", "reviewer")
+        r4 = stats.ticket_row("N4")
+        assert r4["mawb"] == "" and r4["hawb"] == "", f"缺号不许拿票名硬凑：{r4}"
+
+        # 历史台账（没有 air_sent）：号在台账里，照样要报得出
+        _parsed("N5", {"MAWB_NO": "235-96146363", "HAWB_NO": "TST5"})
+        store.mark_submitted("N5", "235-96146363", "TST5", "admin", {"mode": "mock"})
+        r5 = stats.ticket_row("N5")
+        assert r5["legacy"] is True and (r5["mawb"], r5["hawb"]) == ("235-96146363", "TST5"), r5
+
+
 def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
     """统计页只许渲染服务器算好的数：同一套算术在前后端各写一遍，迟早给出两个百分比
     （今日台账那页就为这件事专门留了一条用例）。
@@ -304,3 +343,11 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
         "统计页在自己重算合计：与服务器同一套算术写两遍迟早对不上"
     # 导出走服务器，页面与导出同源
     assert '"/stats/export"' in js, "要能导出同一份数"
+    # 逐张表：第一列按主单号+分单号报（票名挪到悬停提示里），模型那一列删掉。
+    # 删的只是页面这一列——分组轴「按模型」与 Excel 的模型列留着，横评还得靠它们。
+    assert "主单号 · 分单号" in js, "逐张表还在用文件名当第一列"
+    assert "<th>票名</th><th>模型</th>" not in js, "老的两列（票名/模型）还在"
+    i = js.index('class="t2">逐张</div>')
+    per = js[i:i + 1400]
+    assert "r.model" not in per, "页面上模型那一列没删干净"
+    assert "r.stem" in per and "title" in per, "票名要从这一列挪走但别丢掉：找回原件全靠它"

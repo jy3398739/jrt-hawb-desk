@@ -54,6 +54,19 @@ def _when(stem: str, qc: dict, staged: dict, entry: dict) -> str:
             or str(staged.get("staged_at") or ""))
 
 
+def _numbers(entry: dict, staged: dict) -> tuple:
+    """这张票"是哪一张"用主单号 + 分单号报（2026-10-09 用户定案）：票名是文件名，
+    拿着它去公司系统对还得先查一遍是谁。
+
+    取法只有一条：**提交过的以台账为准**（那是要跟公司系统对上的号），**没提交过的看暂存记录**
+    （两处存的都已经是人定下的那一版，不是模型那一版）。都没有就留空——不拿票名硬凑，
+    缺号本身是要看得见的事实。"""
+    en = entry if isinstance(entry, dict) else {}
+    st = staged if isinstance(staged, dict) else {}
+    return (str(en.get("mawb") or st.get("mawb") or "").strip(),
+            str(en.get("hawb") or st.get("hawb") or "").strip())
+
+
 def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = None) -> dict | None:
     """一张票的对照行。没有人工结果（既没暂存也没提交）就不产行：没有答案就没有正确率可言。
 
@@ -76,7 +89,8 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
     legacy = submitted and not (isinstance(final, dict) and final)
     if legacy:
         # 本功能之前的台账只存过字段名与哈希，没有值：算不了就别混进分母。
-        return {"stem": stem, "state": "submitted", "legacy": True, "total": None,
+        lm, lh = _numbers(entry, staged)
+        return {"stem": stem, "mawb": lm, "hawb": lh, "state": "submitted", "legacy": True, "total": None,
                 "doc": [], "inp": [], "comparable": 0, "fields": [],
                 "model": qc.get("model") or staged.get("model") or "",
                 "uploader": qc.get("uploader") or "", "uploader_role": qc.get("uploader_role") or "",
@@ -97,7 +111,9 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
         inp |= set(store.field_diff(staged.get("air_final") or {}, final))
     else:
         doc = set(diff_all)
-    return {"stem": stem, "state": "submitted" if submitted else "staged", "legacy": False,
+    nm, nh = _numbers(entry, staged)
+    return {"stem": stem, "mawb": nm, "hawb": nh, "state": "submitted" if submitted else "staged",
+            "legacy": False,
             "total": len(diff_all), "doc": sorted(doc), "inp": sorted(inp),
             "comparable": len(keys), "fields": keys,
             "model": qc.get("model") or staged.get("model") or "",
