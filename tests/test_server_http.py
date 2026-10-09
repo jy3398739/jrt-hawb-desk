@@ -1201,6 +1201,27 @@ def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
         "列宽只写在 td 上：table-layout:fixed 只认第一行（表头）给的宽度，拖了不会变"
 
 
+def test_the_value_box_itself_has_a_width_handle():
+    """值这一格的框要能直接拖宽（2026-10-09 用户否掉了"你去拖那两道把手"的说法）。
+
+    原生 resize 帮不上：它对 <input> 根本不生效，而值列里一半是 input——
+    "长文本能拖宽、短文本不能"比不能还糟。所以把手是自己画的，贴在格子右边界。"""
+    css = web_src.part("css/desk.css")
+    js = web_src.part("js/desk.js")
+    assert re.search(r"td\.v\{position:relative\}", css), \
+        "把手要贴值格右边界：td.v 不是定位上下文，absolute 的把手会飘到整页去找最近的定位祖先"
+    assert ".edg{" in css and "cursor:ew-resize" in css, "值格右边界没有横向拖把手"
+    assert ".edg{display:none}" in css, "两栏堆叠时没有另一侧可以挤，这把手留着就是骗人的假抓手"
+    assert "function edgeGripHtml()" in js, "把手没进模板"
+    assert js.count("${edgeGripHtml()}") >= 2, "分单表与主单表是两处模板，只接一处另一张表的框还是拖不动"
+    assert re.search(r'closest\("\.edg"\)', js), "把手没接 pointerdown/keydown"
+    assert js.count("L.boxWidthPct(") >= 2, "宽度算式只接在拖拽上：键盘那一路（←/→）没接，读屏器用户就只用得鼠标"
+    # 与分栏那道把手写的是同一份偏好：各存各的会互相盖，拖完一边另一边不知道
+    assert js.count("saveDeskShare(") >= 3, "值格把手没和分栏把手共用同一份份额偏好"
+    assert '"--vw"' in js, "份额没写回 CSS 变量，拖了不改变布局"
+    assert 'role="separator"' in js, "把手得让键盘与读屏器知道它是分隔条"
+
+
 def test_the_word_for_stage_means_only_the_server_tier():
     """「暂存」现在只有一个意思：存到服务器上给同事看（需求二那一档）。
 

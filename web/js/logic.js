@@ -205,6 +205,13 @@ const L = {
     if (!(v > 0)) return lo;
     return Math.min(hi, Math.max(lo, v));
   },
+  /* 值格右边缘那道把手：人往右拉是想要框更宽，而框的宽就是值这一列的宽——这一列没有自己的
+     刻度，它是"整行减去票面栏"剩下的，所以宽度只能从票面栏那头扣：pullRight>0 ⇒ 票面份额变小。
+     方向写反就是"想拉宽结果更窄"，这条最容易错，所以单独一个函数、单独一条用例。
+     底线沿用分栏那道把手的（同一个偏好、两个入口，界限必须一致，否则一边能把另一边拖不进的位置停住）。 */
+  boxWidthPct(viewW, pullRight, avail, min){
+    return L.splitPctAfter((Number(viewW) || 0) - (Number(pullRight) || 0), avail, min);
+  },
 
   /* 点字段定位后放多大：各人的手感不一样（2026-10-09 用户要的选择权）——
      auto 按命中行高算（约占窗格 1/3），fixed 用人填的，off 干脆不动。

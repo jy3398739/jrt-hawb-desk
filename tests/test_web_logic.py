@@ -269,6 +269,18 @@ def test_drag_handles_report_a_usable_share_and_width():
     assert _eval("L.colWidthAfter('', 120, 420)") == 120, "坏值退回默认宽，不是 0 宽"
 
 
+def test_box_width_grip_pulls_the_width_from_the_ticket_pane():
+    """人拖的是值格右边缘，想要的是"框更宽"，而框的宽来自值这一列——列要从票面栏那儿要地方。
+    所以这里最容易错的是方向：往右拉必须让票面栏变小（值列变大），反了就是"想拉宽结果更窄"。
+    2026-10-09 用户："我只想单纯的可以改变文本框的宽度"。"""
+    assert _eval("L.boxWidthPct(500, 100, 1000, 260)") == 40, "往右拉 100px 就是值列宽 100px：票面份额得减这么多"
+    assert _eval("L.boxWidthPct(500, -100, 1000, 260)") == 60, "往左推是收窄：票面份额加回来"
+    assert _eval("L.boxWidthPct(300, 200, 1000, 260)") == 26, "票面栏已经窄到底线，再拉也不许把它挤没"
+    assert _eval("L.boxWidthPct(500, -400, 1000, 260)") == 74, "反过来把字段栏挤成一条竖字也不行"
+    assert _eval("L.boxWidthPct(500, 'abc', 1000, 260)") == 50, "量到个坏值就当没拖，不许把布局弄飞"
+    assert _eval("L.boxWidthPct(0, 100, 0, 260)") == 50, "还没量到栏位尺寸时不许除零"
+
+
 def test_pan_only_offered_when_content_overflows():
     """放大后要能按住拖动看别处（不用去够滚动条）。但内容没超出栏位时不给抓手——
     给了就是骗人：按住拖半天一动不动，比没有还糟。"""

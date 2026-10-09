@@ -1076,6 +1076,13 @@ function gripColHtml(){
   return '<div class="grip" id="gripCol" role="separator" aria-orientation="vertical" tabindex="0" '
     + 'title="按住左右拖：调字段名列的宽窄，整列一起变（方向键同样可以）"></div>';
 }
+/* 值格右边界那道：用户 2026-10-09 明确要"单纯地改变文本框的宽度"，别让他去找页面上别的把手。
+   原生 resize 给不了——它对 <input> 不生效，而值列里一半是 input：长文本能拖宽、短文本不能，
+   比都不能拖更让人以为坏了。所以自己画一条，textarea 与 input 都一样有。 */
+function edgeGripHtml(){
+  return '<div class="edg" role="separator" aria-orientation="vertical" tabindex="0" '
+    + 'title="按住左右拖：这一列的框拉宽/推窄（宽是从票面栏那头要的，←/→ 同样可以）"></div>';
+}
 function resetFieldHeights(){
   const n = Object.keys(fieldHeights()).length;
   localStorage.removeItem(LS.fieldH);
@@ -1133,7 +1140,7 @@ function renderMain(){
       rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
         <td class="c v${k in MV.edit ? " edited" : ""}">${MV_LONG.has(k)
-          ? `<textarea data-mk="${k}">${esc(v)}</textarea>` : `<input data-mk="${k}" value="${esc(v)}">`}</td>
+          ? `<textarea data-mk="${k}">${esc(v)}</textarea>` : `<input data-mk="${k}" value="${esc(v)}">`}${edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
           : (v ? `<span class="badge same">有值</span>` : `<span class="badge">资料没提</span>`)}</td></tr>`;
@@ -1227,7 +1234,7 @@ function renderMain(){
     const fl = fm.map[k] || [];
     rows += `<tr id="f-${k}" class="${fl.length ? "flag" : ""}">
       <td class="k loc"><button type="button" class="kbtn" data-jump-field="${k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(lab)}</span><span class="ky">${esc(k)}</span></button></td>
-      <td class="c v" data-cell="air">${control(t, k)}</td>
+      <td class="c v" data-cell="air">${control(t, k)}${edgeGripHtml()}</td>
       <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
   }
   const fid = t.qc && t.qc.fidelity;
@@ -2023,9 +2030,20 @@ $("#dayBox").addEventListener("click", e => {
   setView("desk");                       // 回工作台，再复用同一条打开已归档分单的链路
   openHouse(b.dataset.open);
 });
-/* ── 两道把手：分栏宽窄（票面栏↔字段栏）与字段名列宽 ──────────────────────
+/* ── 三道把手：分栏宽窄（票面栏↔字段栏）、字段名列宽、值格自己的宽 ──────────
    存本机不存账号：各人屏幕不一样，不该互相将就。拖的时候只改样式，松手才写盘
-   （每帧写 localStorage 会把拖动本身拖慢）。 */
+   （每帧写 localStorage 会把拖动本身拖慢）。
+   分栏那道与值格那道写的是同一份份额偏好（LS.split / --vw）：值格宽出来的每一像素都是从
+   票面栏扣的，各存一份就会互相盖——拖完一边，另一边回到旧值，看起来像"没生效"。 */
+function deskGeom(){
+  const wrap = $("#wrap"), cs = getComputedStyle(wrap);
+  /* 百分数是相对"整行的内容宽"（不含 .wrap 的左右内边距）——CSS 里那条轨道就是这么算的，
+     量两栏之和会算出偏大的百分数，拖 100px 实际走 130px。 */
+  const avail = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  return [$("#view").getBoundingClientRect().width, avail];
+}
+function setDeskShare(pct){ $("#wrap").style.setProperty("--vw", pct + "%"); }
+function saveDeskShare(pct){ setDeskShare(pct); localStorage.setItem(LS.split, pct); }
 function applyDeskPrefs(){
   const wrap = $("#wrap"), vw = Number(localStorage.getItem(LS.split)), kw = Number(localStorage.getItem(LS.colK));
   if (vw > 0) wrap.style.setProperty("--vw", vw + "%");
@@ -2035,21 +2053,13 @@ function bindSplitGrip(){
   const g = $("#gripView");
   if (!g) return;
   let st = null;
-  const put = pct => $("#wrap").style.setProperty("--vw", pct + "%");
-  /* 百分数是相对"整行的内容宽"（不含 .wrap 的左右内边距）——CSS 里那条轨道就是这么算的，
-     量两栏之和会算出偏大的百分数，拖 100px 实际走 130px。 */
-  const geom = () => {
-    const wrap = $("#wrap"), cs = getComputedStyle(wrap);
-    const avail = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-    return [$("#view").getBoundingClientRect().width, avail];
-  };
   g.addEventListener("pointerdown", e => {
-    e.preventDefault(); const [w, avail] = geom();
+    e.preventDefault(); const [w, avail] = deskGeom();
     st = {x: e.clientX, w, avail, v: 0}; g.classList.add("drag"); g.setPointerCapture(e.pointerId);
   });
   g.addEventListener("pointermove", e => {
     if (!st) return;
-    st.v = L.splitPctAfter(st.w + (e.clientX - st.x), st.avail, 260); put(st.v);
+    st.v = L.splitPctAfter(st.w + (e.clientX - st.x), st.avail, 260); setDeskShare(st.v);
   });
   g.addEventListener("pointerup", () => {
     if (!st) return;
@@ -2061,8 +2071,8 @@ function bindSplitGrip(){
     const d = e.key === "ArrowLeft" ? -40 : e.key === "ArrowRight" ? 40 : 0;
     if (!d) return;
     e.preventDefault();
-    const [w, avail] = geom(), v = L.splitPctAfter(w + d, avail, 260);
-    put(v); localStorage.setItem(LS.split, v);
+    const [w, avail] = deskGeom();
+    saveDeskShare(L.splitPctAfter(w + d, avail, 260));
   });
 }
 /* 表头里那道是每次渲染新建的，所以监听挂在 document 上按 id 找——直接绑会在换票后失效。 */
@@ -2099,5 +2109,37 @@ function bindColGrip(){
 document.addEventListener("click", e => {
   if (e.target.closest && e.target.closest("[data-fhreset]")) resetFieldHeights();
 });
-applyDeskPrefs(); bindSplitGrip(); bindColGrip();
+/* 值格右边缘那道：拖的是「值这一列」的宽，所以整列一起变——一格一格变会参差得像页面坏了。
+   格子是每次渲染新建的，监听挂 document 上按 class 找；直接绑会在换票后失效。 */
+function bindEdgeGrip(){
+  let st = null;
+  document.addEventListener("pointerdown", e => {
+    const g = e.target.closest && e.target.closest(".edg");
+    if (!g) return;
+    e.preventDefault();               // 别把这一拖顺手变成"取消选择正在编辑的那格"
+    const [w, avail] = deskGeom();
+    st = {x: e.clientX, w, avail, v: 0};
+    g.classList.add("drag"); g.setPointerCapture(e.pointerId);
+  });
+  document.addEventListener("pointermove", e => {
+    if (!st) return;
+    st.v = L.boxWidthPct(st.w, e.clientX - st.x, st.avail, 260); setDeskShare(st.v);
+  });
+  document.addEventListener("pointerup", () => {
+    if (!st) return;
+    document.querySelectorAll(".edg.drag").forEach(g => g.classList.remove("drag"));
+    if (st.v) localStorage.setItem(LS.split, st.v);
+    st = null;
+  });
+  document.addEventListener("keydown", e => {
+    const g = e.target.closest && e.target.closest(".edg");
+    if (!g) return;
+    const d = e.key === "ArrowRight" ? 40 : e.key === "ArrowLeft" ? -40 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const [w, avail] = deskGeom();
+    saveDeskShare(L.boxWidthPct(w, d, avail, 260));
+  });
+}
+applyDeskPrefs(); bindSplitGrip(); bindColGrip(); bindEdgeGrip();
 checkAuth();
