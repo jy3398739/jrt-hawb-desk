@@ -1208,6 +1208,20 @@ def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
         "th.kcol 里别再写 position：它会盖掉全局 th 的 sticky，表头第一格滚走只剩两格"
 
 
+def test_the_stage_button_reports_both_the_local_copy_and_the_company_one():
+    """「暂存到公司」一次做两件事（本机留痕 + j9 占位），回执就得把两件事都说清，
+    否则公司那一发失败时人以为整件白点了，又去点一次（2026-10-09 用户定案走这一档）。"""
+    js = web_src.part("js/desk.js")
+    fn = re.search(r"function stageMsg\(n, c\)\{(.*?)\n\}", js, re.S)
+    assert fn, "stageMsg 没了：暂存的回执要分三档说"
+    body = fn.group(1)
+    assert "mock" in body, "本机 mock 模式要说清没发公司，不然人以为已经寄出去了"
+    assert "状态 0" in body, "成功那一档要写明是可反复改的状态 0，不是已发送"
+    assert "skipped" in body and "error" in body, "缺号与公司失败两档都得有话说"
+    assert js.count(">暂存到公司</button>") == 2, "分单与主单两颗按钮要同名，只改一颗另一张表还在说旧口径"
+    assert js.count("才会真的发送") >= 2, "悬停要写清只有提交才发送——这决定人会否误以为已经发出去了"
+
+
 def test_the_value_box_itself_has_a_width_handle():
     """值这一格的框要能直接拖宽（2026-10-09 用户否掉了"你去拖那两道把手"的说法）。
 

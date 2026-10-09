@@ -284,9 +284,9 @@ def _post_guarded(key: str, record: dict, path: str, wrapper: str, api_key: str)
     return receipt
 
 
-def submit_master(payload: dict) -> dict:
-    """把一条主单资料**提交发送**给公司（`POST /api/v1/j9/mawb3/`，落库状态 1）。
-    mock 只回带 mode 的回执；live 先读后写。
+def _master_write(payload: dict, send: bool) -> dict:
+    """主单写公司：`send=True` 走 `mawb3/`（提交发送，落库状态 1），`send=False` 走 `mawb2/`
+    （暂存，恒落 0、可反复改）。mock 只回带 mode 的回执；live 先读后写。
 
     先读是为了两件事：① 库里这条记录的 SEND_STATUS 不是 0 就说明已提交/已发送、公司会拒改，
     **一个写请求都不发**；② 写口是整表写回，没给的列会被写成 NULL，所以要把读到的列原样
@@ -320,19 +320,33 @@ def submit_master(payload: dict) -> dict:
         if col in ams:
             record[col] = ams[col]
     record["MAWB_NO"] = mf.norm_mawb_hyphen(mawb)
-    receipt = _post_guarded(store.norm_no(mawb), record, "/api/v1/j9/mawb3/", "AMS_RECORD",
+    receipt = _post_guarded(store.norm_no(mawb) + ("#send" if send else "#stage"), record,
+                            "/api/v1/j9/mawb3/" if send else "/api/v1/j9/mawb2/", "AMS_RECORD",
                             config.COMPANY_MAWB_KEY)
     return {"mode": "live", "accepted": receipt["accepted"], "action": receipt["action"],
-            "mawb": mawb, "before": existing, "idempotent": receipt.get("idempotent") is True}
+            "mawb": mawb, "before": existing, "stage": not send,
+            "idempotent": receipt.get("idempotent") is True}
 
 
-def submit_order(payload: dict) -> dict:
-    """把一张核对/修改后的分单回传公司。mock 只回带 mode 的回执；live 先读后写。"""
+def submit_master(payload: dict) -> dict:
+    """主单**提交发送**（mawb3，落 1）。公司侧一旦离开状态 0 就再也改不动，只有人工点。"""
+    return _master_write(payload, True)
+
+
+def stage_master(payload: dict) -> dict:
+    """主单**暂存到公司**（mawb2，落 0，可反复改）。不写提交台账——那是"已交付"的凭据。"""
+    return _master_write(payload, False)
+
+
+def _order_write(payload: dict, send: bool) -> dict:
+    """分单写公司：`send=True` 走 `hawb3`（提交发送，落 1），`send=False` 走 `hawb2`（暂存，落 0）。
+    mock 只回带 mode 的回执；live 先读后写。"""
     if config.COMPANY_API_MODE != "live":
         if config.COMPANY_API_MODE != "mock":
             raise CompanyNotConfigured(f"COMPANY_API_MODE={config.COMPANY_API_MODE!r}：只能是 mock 或 live。")
         return {"mode": "mock", "accepted": True,
-                "mawb": (payload or {}).get("mawb", ""), "hawb": (payload or {}).get("hawb", "")}
+                "mawb": (payload or {}).get("mawb", ""), "hawb": (payload or {}).get("hawb", ""),
+                "stage": not send}
     if not config.COMPANY_API_URL or not config.COMPANY_HAWB_KEY:
         raise CompanyNotConfigured("live 模式缺配置：.env 里要配 COMPANY_API_URL 与 COMPANY_HAWB_KEY")
     mawb = _norm_mawb((payload or {}).get("mawb", ""))
@@ -363,8 +377,19 @@ def submit_order(payload: dict) -> dict:
         record.setdefault(col, None)      # 没给值的列也要占位：缺键与"本来就是空"必须分得开
         if col in _HAWB_NUM and record[col] == "":
             record[col] = None            # 空数字格发 null——空串会被公司判「必须为整数」整条退回
-    receipt = _post_guarded(store.number_key(mawb, hawb), record, "/api/v1/j9/hawb3", "HAWB_RECORD",
+    receipt = _post_guarded(store.number_key(mawb, hawb) + ("#send" if send else "#stage"), record,
+                            "/api/v1/j9/hawb3" if send else "/api/v1/j9/hawb2", "HAWB_RECORD",
                             config.COMPANY_HAWB_KEY)
     return {"mode": "live", "accepted": receipt["accepted"], "action": receipt["action"],
-            "mawb": mawb, "hawb": hawb, "before": existing or {},
+            "mawb": mawb, "hawb": hawb, "before": existing or {}, "stage": not send,
             "idempotent": receipt.get("idempotent") is True}
+
+
+def submit_order(payload: dict) -> dict:
+    """分单**提交发送**（hawb3，落 1）。离开状态 0 之后公司两侧都拒改，只有人工点。"""
+    return _order_write(payload, True)
+
+
+def stage_order(payload: dict) -> dict:
+    """分单**暂存到公司**（hawb2，落 0，可反复改）。不写提交台账：那张票还没交付。"""
+    return _order_write(payload, False)

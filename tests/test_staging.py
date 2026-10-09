@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""「暂存」回归：核对结果存到服务器，但**绝不**发公司。
+"""「暂存」回归：核对结果存到服务器（留痕、给同事复核），并在公司那边占个位（状态 0，可反复改）。
 
 这一层是需求二与需求三的地基：
   - 录入员要能读到别人核对过的内容（所以值必须落服务器，不能只在浏览器里）；
   - 解析正确率要能按人分账（所以每次改动是谁改的、改了哪几列，必须逐字段留下）。
-本模块不产生任何外部调用；第一条用例就是把外发口打死来验这件事。
+mock 模式下本模块不产生任何外部调用；第一条用例就是把提交发送口与底层 HTTP 打死来验这件事。
 """
 import json
 import shutil
@@ -91,25 +91,62 @@ def _ticket(**over):
     return tk
 
 
-def test_stage_never_calls_the_company():
-    """暂存这个动作必须**结构上**发不出去：三个对外写出口全打成 raise AssertionError，
+def test_stage_never_sends_and_in_mock_never_leaves_the_box():
+    """「发送公司」永远是人工动作：三个提交发送出口 + 最底层 HTTP 全打成 raise，
     点暂存仍要回 200 并把值写进服务器。
 
-    这条不是形式：用户反复强调"发送公司是人工动作，AI 不许点"。把它写成一条会失败的测试，
-    而不是写在注释里，才能保证以后有人图省事在暂存里顺手加一次回传时立刻变红。"""
+    这条不是形式：用户反复强调"发送公司是人工动作，AI 不许点"。写成会失败的测试，
+    才能保证以后有人图省事在暂存里顺手加一次回传时立刻变红。
+    mock 模式下连公司的暂存口都不该碰（回归与端到端验证都靠这条兜底）。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
     old = _env(tmp)
-    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("暂存居然碰了公司接口"))
-    real = (server._company_submit, company_api.submit_order, company_api.submit_master)
+    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("暂存居然碰了提交发送口"))
+    real = (server._company_submit, company_api.submit_order, company_api.submit_master,
+            company_api._j9_post)
     try:
         server._company_submit, company_api.submit_order = boom, boom
-        company_api.submit_master = boom
+        company_api.submit_master, company_api._j9_post = boom, boom
         client = _client_as(tmp, "马殿齐", "reviewer")
         r = client.post("/stage", json={"tickets": [_ticket()]})
         assert r.status_code == 200, f"暂存被公司接口绊住了：{r.status_code} {r.text[:200]}"
         assert (config.STAGED_DIR / f"{STEM}.json").is_file(), "暂存没落服务器，别人读不到"
+        assert r.json()["staged"][0]["company"]["mode"] == "mock", "mock 要说清没发公司"
     finally:
-        server._company_submit, company_api.submit_order, company_api.submit_master = real
+        (server._company_submit, company_api.submit_order, company_api.submit_master,
+         company_api._j9_post) = real
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_stage_parks_a_copy_at_the_company_without_sending():
+    """live 下点暂存 = 公司那边落一条状态 0（可反复改、外围不取），提交发送口一次都不许多碰。
+
+    公司那一发失败也不许把本机这份弄没：同事还得接着复核，所以只回原因、状态仍 200。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    old_mode = config.COMPANY_API_MODE
+    config.COMPANY_API_MODE = "live"
+    calls, real = [], (company_api.stage_order, company_api.submit_order, server._company_submit)
+    try:
+        client = _client_as(tmp, "马殿齐", "reviewer")
+        company_api.stage_order = lambda p: (calls.append(p), {"mode": "live", "accepted": True,
+                                                               "action": "insert", "stage": True})[1]
+        server._company_submit = lambda *a, **k: (_ for _ in ()).throw(AssertionError("暂存不许提交发送"))
+        r = client.post("/stage", json={"tickets": [_ticket()]})
+        assert r.status_code == 200, r.text[:200]
+        assert len(calls) == 1 and calls[0]["mawb"] == MAWB and calls[0]["hawb"] == HAWB, \
+            f"公司暂存没被调用或对不上号：{calls}"
+        assert calls[0]["air"]["DEST_NAME"] == "LAX", "发过去的得是合并后的终值"
+        assert r.json()["staged"][0]["company"]["ok"] is True
+        calls.clear()
+        company_api.stage_order = lambda p: (_ for _ in ()).throw(RuntimeError("公司那边连不上"))
+        r = client.post("/stage", json={"tickets": [_ticket()]})
+        assert r.status_code == 200, "公司失败不该让本机暂存报错"
+        assert r.json()["staged"][0]["company"]["ok"] is False, "但要把失败原样说给人听"
+        assert (config.STAGED_DIR / f"{STEM}.json").is_file(), "公司没占上位，本机这份仍要在"
+    finally:
+        (company_api.stage_order, company_api.submit_order, server._company_submit) = real
+        config.COMPANY_API_MODE = old_mode
         _undo(old)
         shutil.rmtree(tmp, ignore_errors=True)
 

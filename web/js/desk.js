@@ -853,10 +853,21 @@ function addFiles(files){
 }
 
 /* ── 提交 ───────────────────────────────────────────────────────────── */
-/* 暂存：把现在这份核对结果存到服务器上给同事看，一个公司请求都不发。
+/* 暂存：把现在这份核对结果存到服务器上给同事看，并在公司那边占个位（状态 0，可反复改）。
+   提交发送那一档永远只有人工点「提交」才走，见 stageMsg 与 submitTicket。
    与提交分开是需求二的核心——两档的门槛本来就不一样：缺号、红旗没清都能存
    （那正是需要同事接着看的票），而提交必须两样都过。姓名只是留个称呼，
    服务器认的是登录会话里的身份。 */
+/* 暂存的回执要说两件事：本机这份存没存上（同事能不能接着看）、公司那边占上位没有。
+   公司那一发失败不回滚本机这份，所以只补一句原因，不整条报"失败"——
+   报失败会让人以为白点了，又去点一次，而白点的其实只是公司那半。 */
+function stageMsg(n, c){
+  const base = "已暂存（改了 " + (n || 0) + " 列）：同事检索这条单号就能看到";
+  if (!c) return base;
+  if (c.ok && c.mode === "live") return "已暂存并寄到公司（状态 0，还能继续改）：改了 " + (n || 0) + " 列";
+  if (c.ok) return base + "；公司那边没发（本机 mock 模式）";
+  return base + "；" + (c.skipped || "公司暂存失败：" + (c.error || "未知原因"));
+}
 async function stageTicket(t){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：暂存也要留是谁核对的", "bad"); $("#reviewer").focus(); return; }
@@ -871,7 +882,7 @@ async function stageTicket(t){
     const n = (j.staged && j.staged[0] && j.staged[0].edited) || 0;
     t.staged = {at: nowTxt(), by: who, edited: n};
     render();
-    toast("已暂存（相对模型改了 " + n + " 列）：同事按主单号检索就能看到这张票", "ok");
+    toast(stageMsg(n, j.staged && j.staged[0] && j.staged[0].company), "ok");
   }catch(e){ toast("暂存失败：" + (e.message || e), "bad"); }
 }
 async function submitTicket(t, ackNoReview){
@@ -1185,7 +1196,7 @@ function renderMain(){
       ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="ft top">
-        <button class="btn" id="mvStage" type="button" title="把现在这 36 列存到服务器上给同事核对：不发公司">暂存主单</button>
+        <button class="btn" id="mvStage" type="button" title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
@@ -1280,7 +1291,7 @@ function renderMain(){
       <th class="num scol">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="ft bottom">
-      <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器上给同事看：不发公司，缺号也能存">暂存本票</button>
+      <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
       <button class="btn pri" id="submit">提交本票</button>
       <button class="btn" id="expOne">导出本票 JSON</button>
       <button class="btn" id="expAll">导出全部已解析</button>
@@ -1799,7 +1810,7 @@ function mvPoll(){
 }
 /* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。 */
 function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
-/* 主单暂存：把这 36 列存进服务器上的这条主单记录，不发公司。
+/* 主单暂存：把这 36 列存进服务器上的这条主单记录，并在公司那边占个位（状态 0，可反复改）。
    与分单同一个道理——从前 MV.edit 只在浏览器里，换台机器就什么都没交出去。 */
 async function mvStage(){
   if (!MV) return;
@@ -1812,7 +1823,7 @@ async function mvStage(){
       const d = j.detail;
       throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
     }
-    toast("主单已暂存（相对模型改了 " + j.edited + " 列）：不发公司，同事检索这条主单就能看到", "ok");
+    toast(stageMsg(j.edited, j.company), "ok");
   }catch(e){ toast("主单暂存失败：" + (e.message || e), "bad"); }
 }
 async function mvSubmit(ackNoReview){

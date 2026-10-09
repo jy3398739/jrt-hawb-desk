@@ -294,11 +294,12 @@ def _acct(name, role, pw):
     return _login(name, pw)
 
 
-def test_master_stage_stores_the_edited_columns_without_writing_to_the_company():
+def test_master_stage_parks_a_copy_at_the_company_but_never_sends():
     """主单侧的「暂存」：录入员改的 36 列从前根本没上过服务器（MV.edit 只在浏览器里，
     换台机器、刷新一下就没了），所以分单有了暂存档，主单也必须有——需求二说的是"主单和分单的暂存内容"。
 
-    这一条同时钉住"暂存不写公司"：fake_post 记下每一次外发，暂存之后不许出现 /mawb2/。
+    2026-10-09 起这一档还会在公司那边占位（mawb2，落状态 0，可反复改），
+    但**绝不许碰提交发送口（mawb3）**：发送永远是人工点「提交主单回公司」那一下。
     """
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mstage_"))
     old = _isolate(tmp)
@@ -318,7 +319,9 @@ def test_master_stage_stores_the_edited_columns_without_writing_to_the_company()
         assert list(rec["edits"]) == ["GOODS_INFO_HSCODE"], \
             "顶层那份逐字段差异是给前端合并用的：没有它，前端只能自己比，45.0 与 45 会被算成改动"
         assert rec["events"][0]["role"] == "reviewer" and rec["stager"] == "马殿齐", rec["events"]
-        assert not [s for s in sent if "mawb2" in s["path"]], f"暂存居然写了公司：{sent}"
+        assert any(j9_fake.is_stage(s["path"]) for s in sent), f"暂存要在公司那边占位：{sent}"
+        assert not [s for s in sent if j9_fake.is_send(s["path"])], f"暂存不许提交发送：{sent}"
+        assert r.json()["company"]["ok"] is True, "回执要告诉人公司那一发成没成"
     finally:
         undo()
         _restore(old, tmp)

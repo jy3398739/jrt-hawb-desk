@@ -18,10 +18,10 @@
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
-  POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器**不发公司**，缺号也允许存
+  POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器 + 公司占位(hawb2，状态 0)，缺号只存本机
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
-  POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器**不发公司**
+  POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器 + 公司占位(mawb2，状态 0)
   POST /master/submit      需登录会话；主单**提交发送**公司(mawb3)的唯一出口；没录入员复核过要带 acked_no_review
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
@@ -344,19 +344,30 @@ class MasterSubmitBody(BaseModel):
 
 @app.post("/master/stage")
 def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
-    """主单暂存：把 36 列的人工核对结果存进这条主单缓存，**不发公司**。
+    """主单暂存：36 列的人工核对结果存进这条主单缓存（留痕、给同事复核），并在公司那边占个位
+    （`mawb2`，落状态 0，可反复改）。
 
     分单有了暂存档，主单也必须有——需求二说的是"主单和分单的暂存内容"。从前 `MV.edit`
-    只活在浏览器里（换台机器、刷新一次就没了），录入员根本交不出主单的核对结果。"""
+    只活在浏览器里（换台机器、刷新一次就没了），录入员根本交不出主单的核对结果。
+    公司那一发失败不回滚本机这份，原因随响应带回去（见 _company_stage）。"""
     try:
         rec = master_pipeline.stage_master(body.mawb, body.ams, str(user.get("name") or ""),
                                            str(user.get("role") or ""), body.acked_flags)
     except ValueError as e:
         raise HTTPException(400, str(e))
+    company = {"ok": False, "skipped": "没有主单号"}
+    if rec.get("mawb"):
+        try:
+            res = company_api.stage_master({"mawb": rec["mawb"], "ams": rec.get("ams_final") or {}})
+            company = {"ok": True, "mode": res.get("mode"), "action": res.get("action")}
+        except Exception as e:
+            LOG.warning("主单公司暂存失败 %s who=%s：%s", rec.get("mawb"), user.get("name"), e)
+            company = {"ok": False, "error": str(e)[:200]}
     LOG.info("主单暂存 who=%s(%s) %s 改动=%d 列", user.get("name"), user.get("role"),
              body.mawb, len((rec.get("events") or [{}])[-1].get("edits") or {}))
     return {"ok": True, "mawb": rec.get("mawb"), "edited": len(rec.get("events")[-1]["edits"]),
-            "stager": rec.get("stager"), "reviewed_by_inputter": store.reviewed_by_inputter(rec)}
+            "stager": rec.get("stager"), "company": company,
+            "reviewed_by_inputter": store.reviewed_by_inputter(rec)}
 
 
 @app.post("/master/submit")
@@ -513,13 +524,32 @@ class StageBody(BaseModel):
     tickets: list = []
 
 
+def _company_stage(saved: dict, user: dict) -> dict:
+    """暂存顺手在公司那边占个位（`hawb2`，落 `SEND_STATUS=0`，可反复改、外围不取）。
+
+    两个前提缺一不可：主/分单号都在（公司按号定位那一行，缺号连行都找不到），
+    以及模式是 live（mock 下不发——回归与端到端验证都靠这条）。
+    发不成功**不回滚本机那份**：同事照样能接着复核，只是公司那边还没占上位，
+    所以把原因原样带回去让人看得见，而不是让整次暂存报错。"""
+    if not (saved.get("mawb") and saved.get("hawb")):
+        return {"ok": False, "skipped": "没解析出主单号或分单号，公司那边占不了位"}
+    try:
+        res = company_api.stage_order({"mawb": saved["mawb"], "hawb": saved["hawb"],
+                                       "stem": saved["stem"], "air": saved["air_final"]})
+    except Exception as e:
+        LOG.warning("公司暂存失败 stem=%s who=%s：%s", saved["stem"], user.get("name"), e)
+        return {"ok": False, "error": str(e)[:200]}
+    return {"ok": True, "mode": res.get("mode"), "action": res.get("action")}
+
+
 @app.post("/stage")
 def stage(body: StageBody, user: dict = Depends(current_user)):
-    """暂存：把核对结果存到服务器，**一个公司请求都不发**（有测试把外发口打死来钉这条）。
+    """暂存：核对结果存到服务器（留痕、给同事复核），并在公司那边**占个位**（状态 0，可反复改）。
 
     和 /submit 的分工是刻意的，别混：那边是交付——号必须齐全、红旗必须逐条确认、发出去就进台账
-    进索引；这边只是把工作进度交给同事——缺号也允许存（那张票还是同一张，别人能接着补），
-    也绝不写台账。需求二"录入员核对之后再发公司"与需求三"改动按人分账"都靠这一层落地：
+    进索引，而且**离开状态 0 就再也改不动**；这边只是把工作进度交出去——缺号也允许存本机
+    （那张票还是同一张，别人能接着补），缺号时干脆不发公司，也绝不写台账、绝不碰提交发送口。
+    需求二"录入员核对之后再发公司"与需求三"改动按人分账"都靠本机这一层落地：
     人工值从前只活在浏览器 localStorage 里，换台机器、换个人就什么都没留下。
     逐字段差异由服务器拿 output/air 那份模型原样来算，不信前端的 edited_fields。"""
     tickets = body.tickets if isinstance(body.tickets, list) else []
@@ -540,7 +570,8 @@ def stage(body: StageBody, user: dict = Depends(current_user)):
                                        str(user.get("role") or ""), tk.get("acked_flags"))
         except ValueError as e:
             raise HTTPException(400, str(e))
-        out.append({"stem": saved["stem"], "hawb": saved["hawb"], "edited": len(saved["edits"])})
+        out.append({"stem": saved["stem"], "hawb": saved["hawb"], "edited": len(saved["edits"]),
+                    "company": _company_stage(saved, user)})
         LOG.info("暂存 who=%s(%s) stem=%s %s|%s 改动=%d 列 本次改=%d 列",
                  user.get("name"), user.get("role"), saved["stem"], saved["mawb"], saved["hawb"],
                  len(saved["edits"]), len(saved["events"][-1]["edits"]))

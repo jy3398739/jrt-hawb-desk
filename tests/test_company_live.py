@@ -4,6 +4,9 @@
 ORGIN_NAME/CONSIGNEE_INFO_CITY 是公司列名（我们契约的 ORIGIN_NAME/CITTY 要换名）、
 读接口 SHIPPER_INFO 是 repr 列表串。"""
 import json
+import shutil
+import tempfile
+from pathlib import Path
 
 import company_api
 import config
@@ -235,6 +238,54 @@ def test_tax_number_shares_the_eori_cell_and_stays_idempotent():
         assert again == "NL009076815 / NL009076815B01", f"重复提交把同一格越拼越长：{again}"
     finally:
         restore()
+        config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = old
+
+
+def test_stage_order_live_writes_the_stage_endpoint_not_the_send_one():
+    """公司暂存（用户 2026-10-09 要的那一档）：走 `2` 落状态 0，可反复改，外围不取。
+
+    与提交发送共用先读后写、闸门与整表写回那一套——差别只有端点与落库状态。
+    暂存**不写提交台账**：那是"已交付公司"的凭据，暂存没交付任何东西。"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = "km", "kh"
+    sent = []
+    restore = _patch_post([dict(ROW)], sent=sent)
+    try:
+        out = company_api.stage_order({"mawb": "020-18134281", "hawb": "NOAIRWAW050582",
+                                       "stem": "T1", "air": AIR_REVIEWED})
+    finally:
+        restore()
+        config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = old
+    assert out["accepted"] is True
+    assert any(j9_fake.is_stage(s["path"]) for s in sent), f"暂存要走 2：{[s['path'] for s in sent]}"
+    assert not any(j9_fake.is_send(s["path"]) for s in sent), "暂存一次都不许碰提交发送口"
+    rec = j9_fake.writes(sent)[0]["body"]["HAWB_RECORD"]
+    assert rec["ORGIN_NAME"] == "BJS", "暂存同样要先读后写、整表带上没改的列"
+
+
+def test_stage_then_submit_are_not_each_others_duplicate():
+    """幂等锁按"同一份内容别写两次"设计，但暂存与提交内容相同是常态：
+    制单员点完暂存马上点提交，第二次要是被同一把锁当连点吞掉，票就永远停在状态 0——
+    正是这次改版要修的那个错。所以锁必须分档。"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = "km", "kh"
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_guard_"))
+    old_guard = config.SUBMIT_GUARD_DIR
+    config.SUBMIT_GUARD_DIR = tmp
+    sent = []
+    restore = _patch_post([dict(ROW)], sent=sent)
+    try:
+        payload = {"mawb": "020-18134281", "hawb": "NOAIRWAW050582", "stem": "T1", "air": AIR_REVIEWED}
+        company_api.stage_order(payload)
+        out = company_api.submit_order(payload)
+        assert out.get("idempotent") is not True, "暂存过的那一下不该把随后的提交当连点吞掉"
+        assert any(j9_fake.is_send(s["path"]) for s in sent), f"提交必须真的发出去：{[s['path'] for s in sent]}"
+    finally:
+        restore()
+        config.SUBMIT_GUARD_DIR = old_guard
+        shutil.rmtree(tmp, ignore_errors=True)
         config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = old
 
 
