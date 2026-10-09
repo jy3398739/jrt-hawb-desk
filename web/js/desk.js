@@ -57,7 +57,8 @@ const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
 const SUBMIT_URL = BASE + "/submit";
 
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate",
-            locateZoom:"hawb.review.locate.zoom"};
+            locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
+            split:"hawb.review.split", colK:"hawb.review.colK"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -1025,8 +1026,62 @@ function control(t, k){
 /* 长文本框高度跟着内容走：以前按 "\n" 数行数，收发货人整串是一整段没有换行，
    再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。 */
 function autoGrow(el){
+  /* 人拖过的那一列以拖的为准：从前这里每次渲染与每一下输入都按内容重设高度，
+     拖完一打字就弹回去——"能拖"在用户那儿等于"不能自定义"（2026-10-09）。 */
+  const k = el.dataset.k || el.dataset.mk || "";
+  const rec = k ? fieldHeights()[k] : 0;
+  if (rec){ el.style.height = L.fieldHeight(rec, 0) + "px"; return; }
   el.style.height = "auto";
-  el.style.height = (el.scrollHeight + 2) + "px";
+  el.style.height = L.fieldHeight(0, el.scrollHeight + 2) + "px";
+}
+/* 自定义的框高按列记（不分票）：地址那格想一直高一点，不该每张票重拖一次。 */
+function fieldHeights(){
+  let o = {};
+  try{ o = JSON.parse(localStorage.getItem(LS.fieldH) || "{}") || {}; }catch(e){ o = {}; }
+  return (o && typeof o === "object" && !Array.isArray(o)) ? o : {};
+}
+function saveFieldHeight(k, h){
+  const o = fieldHeights();
+  if (h) o[k] = h; else delete o[k];
+  localStorage.setItem(LS.fieldH, JSON.stringify(o));
+}
+/* 原生 resize 不触发任何事件：只能按下时记高度、松开时比对，变了就是人拖的。
+   不这么判的话就得在每次 input 时"猜"——那一猜就把刚拖好的高度又冲掉了。 */
+let FH_DRAG = null;
+document.addEventListener("pointerdown", e => {
+  const el = e.target.closest && e.target.closest("textarea[data-k], textarea[data-mk]");
+  if (el) FH_DRAG = [el, el.offsetHeight];
+});
+document.addEventListener("pointerup", () => {
+  if (!FH_DRAG) return;
+  const el = FH_DRAG[0], h0 = FH_DRAG[1];
+  FH_DRAG = null;
+  const k = el.dataset.k || el.dataset.mk;
+  if (k && el.offsetHeight !== h0){ saveFieldHeight(k, el.offsetHeight); syncFhReset(); }
+});
+/* 恢复的出口：放在待办条 / 主单工具条上，不用双击格子——双击在文本框里是"选词"，
+   拿它当复位会把人正在改的内容顺手弄回自动高度。 */
+function fhResetHtml(){
+  const n = Object.keys(fieldHeights()).length;
+  return n ? `<button class="btn sm" type="button" data-fhreset title="把 ${n} 列的框高恢复成按内容自动撑">框高恢复（${n}）</button>` : "";
+}
+/* 表头那道把手：拖的是「字段名」这一列的宽，整列 40 行一起变（表格是 fixed 布局，
+   一格一格横向拖只会溢出自己的格子，别骗人）。 */
+/* 拖完当场把槽位刷出来：不重画整张表（那会弄丢正在编辑那一格的光标），只补这一小块。 */
+function syncFhReset(){
+  const html = fhResetHtml();
+  document.querySelectorAll(".fhslot").forEach(el => { el.innerHTML = html; });
+}
+function gripColHtml(){
+  return '<div class="grip" id="gripCol" role="separator" aria-orientation="vertical" tabindex="0" '
+    + 'title="按住左右拖：调字段名列的宽窄，整列一起变（方向键同样可以）"></div>';
+}
+function resetFieldHeights(){
+  const n = Object.keys(fieldHeights()).length;
+  localStorage.removeItem(LS.fieldH);
+  document.querySelectorAll("textarea[data-k], textarea[data-mk]").forEach(autoGrow);
+  render();
+  toast(n ? `已恢复 ${n} 列的框高为自动` : "没有自定义过的框高", "ok");
 }
 function statusCell(t, k, fl){
   const l2 = txt(t.raw, k), l3 = airVal(t, k);
@@ -1109,13 +1164,14 @@ function renderMain(){
         <button class="btn" id="mvStage" type="button" title="把现在这 36 列存到服务器上给同事核对：不发公司">暂存主单</button>
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
+        <span class="fhslot">${fhResetHtml()}</span>
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
       </div>
       <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
         主单表没有件重/航路/税号列，<b>18 位 USCI 按公司口径填同主体的 EORI 列</b>；
         CNPJ/RFC/GST/VAT 那类仍不要塞进 EORI，走人工确认。</span></div>
       <table><thead><tr>
-        <th>字段</th><th class="g">公司 AMS 列 · 可改</th><th class="num">状态</th>
+        <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
@@ -1189,12 +1245,13 @@ function renderMain(){
       <span class="hint" id="editedHint">${esc(todoText(t, ef))}</span>
       <button class="btn sm" id="jumpFirst" type="button">跳到首个红旗字段</button>
       <label><input type="checkbox" id="onlyFlag"> 只看有红旗 / 空值的字段</label>
+      <span class="fhslot">${fhResetHtml()}</span>
       <span class="sp"></span>
       <span class="hint">点字段名 → 定位票面</span>
     </div>
     ${chips ? `<div class="chips">${chips}</div>` : ""}
     <table><thead><tr>
-      <th>字段</th><th class="g">航空口径 L3 · 已归一（可改）</th>
+      <th class="kcol">字段${gripColHtml()}</th><th class="g">航空口径 L3 · 已归一（可改）</th>
       <th class="num">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="ft bottom">
@@ -1966,4 +2023,81 @@ $("#dayBox").addEventListener("click", e => {
   setView("desk");                       // 回工作台，再复用同一条打开已归档分单的链路
   openHouse(b.dataset.open);
 });
+/* ── 两道把手：分栏宽窄（票面栏↔字段栏）与字段名列宽 ──────────────────────
+   存本机不存账号：各人屏幕不一样，不该互相将就。拖的时候只改样式，松手才写盘
+   （每帧写 localStorage 会把拖动本身拖慢）。 */
+function applyDeskPrefs(){
+  const wrap = $("#wrap"), vw = Number(localStorage.getItem(LS.split)), kw = Number(localStorage.getItem(LS.colK));
+  if (vw > 0) wrap.style.setProperty("--vw", vw + "%");
+  if (kw > 0) wrap.style.setProperty("--colK", L.colWidthAfter(kw, 150, 420) + "px");
+}
+function bindSplitGrip(){
+  const g = $("#gripView");
+  if (!g) return;
+  let st = null;
+  const put = pct => $("#wrap").style.setProperty("--vw", pct + "%");
+  /* 百分数是相对"整行的内容宽"（不含 .wrap 的左右内边距）——CSS 里那条轨道就是这么算的，
+     量两栏之和会算出偏大的百分数，拖 100px 实际走 130px。 */
+  const geom = () => {
+    const wrap = $("#wrap"), cs = getComputedStyle(wrap);
+    const avail = wrap.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    return [$("#view").getBoundingClientRect().width, avail];
+  };
+  g.addEventListener("pointerdown", e => {
+    e.preventDefault(); const [w, avail] = geom();
+    st = {x: e.clientX, w, avail, v: 0}; g.classList.add("drag"); g.setPointerCapture(e.pointerId);
+  });
+  g.addEventListener("pointermove", e => {
+    if (!st) return;
+    st.v = L.splitPctAfter(st.w + (e.clientX - st.x), st.avail, 260); put(st.v);
+  });
+  g.addEventListener("pointerup", () => {
+    if (!st) return;
+    g.classList.remove("drag");
+    if (st.v) localStorage.setItem(LS.split, st.v);
+    st = null;
+  });
+  g.addEventListener("keydown", e => {
+    const d = e.key === "ArrowLeft" ? -40 : e.key === "ArrowRight" ? 40 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const [w, avail] = geom(), v = L.splitPctAfter(w + d, avail, 260);
+    put(v); localStorage.setItem(LS.split, v);
+  });
+}
+/* 表头里那道是每次渲染新建的，所以监听挂在 document 上按 id 找——直接绑会在换票后失效。 */
+function bindColGrip(){
+  let st = null;
+  const put = w => $("#wrap").style.setProperty("--colK", w + "px");
+  document.addEventListener("pointerdown", e => {
+    const g = e.target.closest && e.target.closest("#gripCol");
+    if (!g) return;
+    e.preventDefault();
+    st = {x: e.clientX, w: g.closest("th").getBoundingClientRect().width, v: 0};
+    g.classList.add("drag"); g.setPointerCapture(e.pointerId);
+  });
+  document.addEventListener("pointermove", e => {
+    if (!st) return;
+    st.v = L.colWidthAfter(st.w + (e.clientX - st.x), 150, 420); put(st.v);
+  });
+  document.addEventListener("pointerup", () => {
+    if (!st) return;
+    document.querySelectorAll("#gripCol.drag").forEach(g => g.classList.remove("drag"));
+    if (st.v) localStorage.setItem(LS.colK, st.v);
+    st = null;
+  });
+  document.addEventListener("keydown", e => {
+    const g = e.target.closest && e.target.closest("#gripCol");
+    if (!g) return;
+    const d = e.key === "ArrowLeft" ? -20 : e.key === "ArrowRight" ? 20 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const w = L.colWidthAfter(g.closest("th").getBoundingClientRect().width + d, 150, 420);
+    put(w); localStorage.setItem(LS.colK, w);
+  });
+}
+document.addEventListener("click", e => {
+  if (e.target.closest && e.target.closest("[data-fhreset]")) resetFieldHeights();
+});
+applyDeskPrefs(); bindSplitGrip(); bindColGrip();
 checkAuth();

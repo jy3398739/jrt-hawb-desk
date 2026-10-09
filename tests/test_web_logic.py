@@ -238,6 +238,37 @@ def test_locate_zoom_mode_decides_the_width_and_never_exceeds_real_pixels():
     assert _eval("L.locateZoom(m, 250, 333, 400)", m="没这一档") == 333, "认不出的档退回自动，别把票面留在没倍数的状态"
 
 
+def test_field_height_prefers_what_the_human_dragged():
+    """长文本格本来就能拖，但 autoGrow 每次渲染与每一下输入都按内容重设高度——
+    拖完一打字就弹回去，所以"能拖"其实等于"不能自定义"（2026-10-09 用户）。
+
+    记过的那一列以人拖的为准，其余照内容撑；上下限都得有：拖成 6px 是看不见，
+    拖成 4000px（或 localStorage 里存进个坏值）是一屏放不下。"""
+    assert _eval("L.fieldHeight(420, 90)") == 420, "人拖过的必须赢"
+    assert _eval("L.fieldHeight(0, 90)") == 90, "没拖过就按内容撑"
+    assert _eval("L.fieldHeight('abc', 90)") == 90, "存进来个坏值不许把框弄没"
+    assert _eval("L.fieldHeight(4000, 90)") == 900, "再高也要留一屏能看见别的字段"
+    assert _eval("L.fieldHeight(6, 90)") == 28, "不许拖到看不见"
+    assert _eval("L.fieldHeight(x, 12)", x=None) == 28, "内容再矮也够放一行字"
+
+
+def test_drag_handles_report_a_usable_share_and_width():
+    """两道把手（票面栏↔字段栏、字段名列↔值列）的算式：拖完不许把任何一侧挤没。
+
+    分栏给的是**整行宽度的百分数**而不是比值：CSS 那边要写进 minmax()，而 Chrome 不接受
+    calc(var(--x) * 1fr)——那条 grid-template-columns 会整条判非法、掉回自动布局，
+    把手那一轨直接缩成 0px（2026-10-09 实测）。百分数在 minmax 里是好的，而且窗口缩放后
+    两侧保持同样的视觉份额。表里那一列给像素，因为它本来就是定宽列。"""
+    assert _eval("L.splitPctAfter(600, 1000, 260)") == 60, "拖到正中就是 60%"
+    assert _eval("L.splitPctAfter(100, 1000, 260)") == 26, "票面栏不许窄于 260px"
+    assert _eval("L.splitPctAfter(950, 1000, 260)") == 74, "字段栏同样要留 260px"
+    assert _eval("L.splitPctAfter(0, 0, 260)") == 50, "还没量到尺寸时退回正中，不许除零"
+    assert _eval("L.colWidthAfter(300, 120, 420)") == 300
+    assert _eval("L.colWidthAfter(30, 120, 420)") == 120, "字段名列挤窄到看不清就不许再窄"
+    assert _eval("L.colWidthAfter(9999, 120, 420)") == 420
+    assert _eval("L.colWidthAfter('', 120, 420)") == 120, "坏值退回默认宽，不是 0 宽"
+
+
 def test_pan_only_offered_when_content_overflows():
     """放大后要能按住拖动看别处（不用去够滚动条）。但内容没超出栏位时不给抓手——
     给了就是骗人：按住拖半天一动不动，比没有还糟。"""

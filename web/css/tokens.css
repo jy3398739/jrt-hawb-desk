@@ -82,4 +82,10 @@
   --hdh:54px;      /* 顶栏：1020-1460px 会折成两排 */
   --todoH:37px;    /* 待办条 */
   --stick:calc(var(--hdh) + 10px);   /* 窄轨/票面栏/字段栏的 sticky top，跟着实测顶栏走 */
+  /* 两道把手改的也是这两个值（拖完由 desk.js 写回 .wrap 上的内联值，存本机）：
+     --vw = 票面栏占整行的百分数（只能存百分数：Chrome 不接受 calc(var() * 1fr)，
+     那条 grid-template-columns 会整条判非法、掉回自动布局；百分数在 minmax 里是好的），
+     --colK = 字段名列宽（表格是 fixed 布局，列宽给像素才准）。 */
+  --vw:54%;
+  --colK:206px;
 }

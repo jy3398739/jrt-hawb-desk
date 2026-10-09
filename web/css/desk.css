@@ -27,11 +27,24 @@ input,textarea{font:inherit;color:inherit}
 .f[hidden]{display:none}
 .f input[type=text],.f input[type=password],.f select{border:1px solid var(--c-line);border-radius:var(--r-md);padding:5px 8px;background:var(--c-surface-2)}
 .f input:focus,.f select:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
-/* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排 */
+/* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排。
+   --vw（票面栏占整行的百分数）与 --colK（字段名列宽）由两道把手写回，存本机；
+   默认值在 tokens.css。 */
 .wrap{display:grid;gap:14px;padding:14px 16px;align-items:start;
-  grid-template-columns:48px 264px minmax(420px,1.18fr) minmax(360px,1fr);
-  grid-template-areas:"rail side view form"}
-#rail{grid-area:rail}#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}
+  grid-template-columns:48px 264px minmax(420px, var(--vw)) 10px minmax(360px, 1fr);
+  grid-template-areas:"rail side view grip form"}
+#rail{grid-area:rail}#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}#gripView{grid-area:grip}
+/* 两道把手共用一条皮肤：一条竖线，hover / 聚焦 / 正在拖的时候亮起来。
+   不给可见形状就没人知道边界能拖——原生 resize 至少还有个三角。 */
+.grip{cursor:col-resize;position:relative;align-self:stretch;min-height:60px;border:0;padding:0;
+  background:transparent;touch-action:none;transition:background var(--dur-fast)}
+.grip::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:2px;height:38px;border-radius:2px;background:var(--c-line-strong);opacity:.45;transition:opacity var(--dur-fast)}
+.grip:hover::after,.grip:focus-visible::after,.grip.drag::after{opacity:1}
+.grip:hover,.grip.drag{background:var(--c-accent-glow);border-radius:var(--r-pill)}
+.grip:focus-visible{outline:2px solid var(--c-focus);outline-offset:2px;background:var(--c-accent-sel)}
+/* 表头里那道：贴在「字段」列右边界，absolute 定位所以不参与表格布局（th 是 sticky，本来就是定位上下文） */
+th .grip{position:absolute;right:-5px;top:0;bottom:0;width:10px;min-height:0;align-self:auto}
 /* 48px 状态窄轨：一天约 30 单，换票不该是"回侧栏滚动找那一行"。
    点状态点直接换票；≡ 展开覆盖式列表。窄轨 sticky 着，跟着 #main 一起留在视野里。
    z-index 给在 .rail 自己身上：sticky 自成层叠上下文，浮层的 z 再大也只在这个上下文里比，
@@ -141,7 +154,9 @@ th.num{text-align:right}
 tr.hit{animation:hitFlash 1.5s var(--ez-out) 1}   /* 从红旗 chip 跳过来的那一行：闪一下告诉人跳到哪了 */
 @keyframes hitFlash{0%,55%{background:var(--c-hit)}100%{background:transparent}}
 td{border-bottom:1px solid var(--c-line-soft);vertical-align:top;padding:0}
-td.k{padding:8px 10px;width:206px;background:var(--c-surface-2)}
+/* 列宽写在 th 上：table-layout:fixed 只认第一行给的宽度，写在 td 上会被忽略 */
+th.kcol{width:var(--colK);position:relative}
+td.k{padding:8px 10px;width:var(--colK);background:var(--c-surface-2)}
 /* .kk/.ky 在定位按钮里是 span（<button> 只能装短语内容），靠 display:block 保持一行一个 */
 td.k .kk{font-weight:var(--w-semi);font-size:var(--f-md);display:block}
 td.k .ky{color:var(--c-text-3);font-size:var(--f-xs);font-family:Consolas,monospace;display:block}
@@ -254,6 +269,8 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .toast.on{opacity:1}.toast.bad{background:var(--c-toast-bad)}.toast.ok{background:var(--c-toast-ok)}
 @media (max-width:1460px){
   .wrap{grid-template-columns:48px 248px 1fr;grid-template-areas:"rail side view" "rail side form"}
+  /* 两栏堆叠时没有"另一侧"可挤，把手跟着藏起来（不藏会被自动摆进隐式格子，凭空多一条缝） */
+  #gripView{display:none}
 }
 @media (max-width:1020px){
   .wrap{grid-template-columns:1fr;grid-template-areas:"rail" "side" "view" "form"}

@@ -180,6 +180,32 @@ const L = {
      宽、高分开问。 */
   canPan(content, pane){ return (content || 0) - (pane || 0) >= 1; },
 
+  /* 格子的自定义尺寸（2026-10-09 用户三样都要：拖过的高度要算数 + 两道把手）。
+     长文本格一直有原生把手，但 autoGrow 每下输入都按内容重设高度，拖完一打字就弹回去——
+     "能拖"在用户那儿等于"不能自定义"，所以记过的那一列必须以人拖的为准。
+     上下限都得有：拖成 6px 是看不见，拖成 4000px（或本机存进个坏值）是一屏放不下别的字段。 */
+  fieldHeight(recorded, contentH){
+    const r = Math.round(Number(recorded));
+    if (r > 0) return Math.min(900, Math.max(28, r));
+    return Math.max(28, Math.round(Number(contentH) || 28));
+  },
+  /* 分栏那道把手存的是"整行宽度的百分数"，不是比值也不是像素：CSS 那边要写进 minmax()，
+     而 Chrome 不接受 calc(var(--x) * 1fr)——整条 grid-template-columns 会被判非法、掉回自动布局，
+     把手那一轨直接缩成 0px（2026-10-09 实测）。百分数在 minmax 里是好的，窗口一缩放两侧
+     保持同样的视觉份额；两侧各留 260px 底线——把票面挤成一条缝、或把字段栏挤成一列竖字，
+     都不叫自定义。 */
+  splitPctAfter(px, avail, min){
+    if (!(avail > 0)) return 50;
+    const lo = min > 0 ? min : 260;
+    const v = Math.min(avail - lo, Math.max(lo, px));
+    return Math.round(v / avail * 1000) / 10;
+  },
+  colWidthAfter(px, lo, hi){
+    const v = Math.round(Number(px));
+    if (!(v > 0)) return lo;
+    return Math.min(hi, Math.max(lo, v));
+  },
+
   /* 点字段定位后放多大：各人的手感不一样（2026-10-09 用户要的选择权）——
      auto 按命中行高算（约占窗格 1/3），fixed 用人填的，off 干脆不动。
      三条边界都得管：都不许超过页图真实像素（超过只是把糊图撑大）；填坏了退回 100 而不是

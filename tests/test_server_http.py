@@ -1174,6 +1174,33 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
     assert wire and "autoGrow(inp)" in wire.group(1), "边打字没跟着长高"
 
 
+def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
+    """2026-10-09 用户三样都要：拖过的高度要算数、票面栏↔字段栏那道缝能拖、字段名列的宽能拖。
+
+    第一条是关键：长文本格一直有原生把手，但 autoGrow 每下输入都按内容重设高度，
+    拖完一打字就弹回去 —— "能拖"在用户那儿等于"不能自定义"。"""
+    css = web_src.part("css/desk.css")
+    js = web_src.part("js/desk.js")
+    page = web_src.part("index.html")
+    assert "resize:vertical" in css, "长文本格没有原生拖拽把手"
+    assert re.search(r"function autoGrow\(el\)\{.*L\.fieldHeight\(", js, re.S), \
+        "autoGrow 还在自己定高度：人拖完一打字就弹回去"
+    assert "localStorage.setItem(LS.fieldH" in js and "localStorage.getItem(LS.fieldH" in js, \
+        "拖出来的高度没存本机：换张票、刷新一次就没了"
+    assert "pointerdown" in js and "pointerup" in js, \
+        "原生 resize 不触发任何事件，只能靠按下/松开前后比对高度才知道人拖过了"
+    assert "data-fhreset" in js, "要有一个明确的「恢复自动高度」出口（双击会和选词打架）"
+    # 两道把手：一个在网格里（分栏），一个在表头里（列宽，那张表是 desk.js 现画的）
+    assert 'id="gripView"' in page, "分栏那道把手没进页面"
+    assert 'id="gripCol"' in js, "表头那道把手没进字段表"
+    assert 'role="separator"' in page and 'role="separator"' in js, "拖把手得让键盘与读屏器也知道它是分隔条"
+    assert "minmax(420px, var(--vw))" in css, "网格还在写死 1.18fr：拖了不生效"
+    assert "* 1fr" not in css, "Chrome 不接受 calc(var() * 1fr)：整条 grid-template-columns 会掉回自动布局"
+    assert "var(--colK" in css, "字段名列还是死宽度，表头那道把手没接到东西上"
+    assert re.search(r"th\.kcol\{width:var\(--colK\)", css), \
+        "列宽只写在 td 上：table-layout:fixed 只认第一行（表头）给的宽度，拖了不会变"
+
+
 def test_the_word_for_stage_means_only_the_server_tier():
     """「暂存」现在只有一个意思：存到服务器上给同事看（需求二那一档）。
 
