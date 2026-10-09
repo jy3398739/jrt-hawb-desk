@@ -250,6 +250,10 @@ def test_field_height_prefers_what_the_human_dragged():
     assert _eval("L.fieldHeight(4000, 90)") == 900, "再高也要留一屏能看见别的字段"
     assert _eval("L.fieldHeight(6, 90)") == 28, "不许拖到看不见"
     assert _eval("L.fieldHeight(x, 12)", x=None) == 28, "内容再矮也够放一行字"
+    # 自动撑那一支单独封顶：CSS 里那道 max-height 会连人拖的一起卡住（原生 resize 尊重 max-height，
+    # 拖到 320 就再也拖不动了），所以封顶要挪到这里分两种人说。
+    assert _eval("L.fieldHeight(0, 999)") == 320, "没人拖过的框按内容撑要有上限：一条超长整串不许把卡片撑爆"
+    assert _eval("L.fieldHeight(500, 999)") == 500, "人拖到 500 就该是 500：自动那一档的上限不许管他"
 
 
 def test_drag_handles_report_a_usable_share_and_width():

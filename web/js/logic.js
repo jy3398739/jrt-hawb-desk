@@ -187,7 +187,7 @@ const L = {
   fieldHeight(recorded, contentH){
     const r = Math.round(Number(recorded));
     if (r > 0) return Math.min(900, Math.max(28, r));
-    return Math.max(28, Math.round(Number(contentH) || 28));
+    return Math.min(320, Math.max(28, Math.round(Number(contentH) || 28)));
   },
   /* 分栏那道把手存的是"整行宽度的百分数"，不是比值也不是像素：CSS 那边要写进 minmax()，
      而 Chrome 不接受 calc(var(--x) * 1fr)——整条 grid-template-columns 会被判非法、掉回自动布局，

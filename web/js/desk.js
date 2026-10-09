@@ -1020,12 +1020,20 @@ function renderDrafts(){
 }
 function control(t, k){
   const v = airVal(t, k);
-  if (LONG.has(k)) return `<textarea data-k="${k}">${esc(v)}</textarea>`;
-  return `<input data-k="${k}" value="${esc(v)}"` + (NUM[k] ? ` inputmode="decimal"` : "") + `>`;
+  /* 一律 textarea：原生斜角只长在 textarea 上，短字段从前用 input 标签就没有可拖的角
+     （2026-10-09 用户："可以自由拖拽改变大小的"）。单行那些标 .one：挡回车、按内容长高。 */
+  const one = LONG.has(k) ? "" : ' class="one"';
+  return `<textarea data-k="${k}" rows="1"${one}` + (NUM[k] ? ` inputmode="decimal"` : "") + `>${esc(v)}</textarea>`;
 }
+/* 单行那些换成了 textarea，就得把回车挡住：这个值原样写进公司系统，换行混进 MAWB 号或件重
+   就是脏数据，而且在单行框里换行看不见（改完的人以为只有一行）。 */
+function blockEnter(e){ if (e.key === "Enter" && e.target.classList.contains("one")) e.preventDefault(); }
 /* 长文本框高度跟着内容走：以前按 "\n" 数行数，收发货人整串是一整段没有换行，
    再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。 */
 function autoGrow(el){
+  /* 宽不是单格的属性（斜角拖那一下改的是整列），所以每次量高度前先把 inline 宽交还给列：
+     留着它，这一格就从此钉死在自己那个宽度上，别人再调列宽也调不到它。 */
+  el.style.width = "";
   /* 人拖过的那一列以拖的为准：从前这里每次渲染与每一下输入都按内容重设高度，
      拖完一打字就弹回去——"能拖"在用户那儿等于"不能自定义"（2026-10-09）。 */
   const k = el.dataset.k || el.dataset.mk || "";
@@ -1045,19 +1053,29 @@ function saveFieldHeight(k, h){
   if (h) o[k] = h; else delete o[k];
   localStorage.setItem(LS.fieldH, JSON.stringify(o));
 }
-/* 原生 resize 不触发任何事件：只能按下时记高度、松开时比对，变了就是人拖的。
-   不这么判的话就得在每次 input 时"猜"——那一猜就把刚拖好的高度又冲掉了。 */
+/* 原生 resize 不触发任何事件：只能按下时把宽高与栏位尺寸一起记下、松开时比对，变了就是人拖的。
+   斜角拖的看起来是"这一格"，但值是一整列：宽那一下换算成整列份额（票面栏让路），随后把 inline 宽擦掉——
+   留着它这一格从此不跟列宽变，下次调宽就把它丢在原处（2026-10-09 用户要"可以自由拖拽改变大小的"）。 */
 let FH_DRAG = null;
 document.addEventListener("pointerdown", e => {
   const el = e.target.closest && e.target.closest("textarea[data-k], textarea[data-mk]");
-  if (el) FH_DRAG = [el, el.offsetHeight];
+  if (el) FH_DRAG = [el, el.offsetHeight, el.offsetWidth, deskGeom()];
 });
 document.addEventListener("pointerup", () => {
   if (!FH_DRAG) return;
-  const el = FH_DRAG[0], h0 = FH_DRAG[1];
+  const el = FH_DRAG[0], h0 = FH_DRAG[1], w0 = FH_DRAG[2], geo = FH_DRAG[3];
   FH_DRAG = null;
   const k = el.dataset.k || el.dataset.mk;
-  if (k && el.offsetHeight !== h0){ saveFieldHeight(k, el.offsetHeight); syncFhReset(); }
+  if (!k) return;
+  let touched = false;
+  if (el.offsetHeight !== h0){ saveFieldHeight(k, el.offsetHeight); touched = true; }
+  const dw = el.offsetWidth - w0;
+  if (dw){
+    el.style.width = "";
+    saveDeskShare(L.boxWidthPct(geo[0], dw, geo[1], 260));
+    touched = true;
+  }
+  if (touched) syncFhReset();
 });
 /* 恢复的出口：放在待办条 / 主单工具条上，不用双击格子——双击在文本框里是"选词"，
    拿它当复位会把人正在改的内容顺手弄回自动高度。 */
@@ -1139,8 +1157,7 @@ function renderMain(){
       const miss = missed.includes(k);
       rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
-        <td class="c v${k in MV.edit ? " edited" : ""}">${MV_LONG.has(k)
-          ? `<textarea data-mk="${k}">${esc(v)}</textarea>` : `<input data-mk="${k}" value="${esc(v)}">`}${edgeGripHtml()}</td>
+        <td class="c v${k in MV.edit ? " edited" : ""}"><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea>${edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
           : (v ? `<span class="badge same">有值</span>` : `<span class="badge">资料没提</span>`)}</td></tr>`;
@@ -1178,10 +1195,11 @@ function renderMain(){
         主单表没有件重/航路/税号列，<b>18 位 USCI 按公司口径填同主体的 EORI 列</b>；
         CNPJ/RFC/GST/VAT 那类仍不要塞进 EORI，走人工确认。</span></div>
       <table><thead><tr>
-        <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num">状态</th>
+        <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num scol">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
+      inp.addEventListener("keydown", blockEnter);
       autoGrow(inp);
     });
     el.querySelectorAll("[data-mack]").forEach(b => b.addEventListener("click", () => {
@@ -1259,7 +1277,7 @@ function renderMain(){
     ${chips ? `<div class="chips">${chips}</div>` : ""}
     <table><thead><tr>
       <th class="kcol">字段${gripColHtml()}</th><th class="g">航空口径 L3 · 已归一（可改）</th>
-      <th class="num">状态</th>
+      <th class="num scol">状态</th>
     </tr></thead><tbody>${rows}</tbody></table>
     <div class="ft bottom">
       <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器上给同事看：不发公司，缺号也能存">暂存本票</button>
@@ -1322,6 +1340,7 @@ function wireMain(t){
     };
     inp.addEventListener("input", apply);
     inp.addEventListener("blur", apply);
+    inp.addEventListener("keydown", blockEnter);
   });
   $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();

@@ -154,8 +154,10 @@ th.num{text-align:right}
 tr.hit{animation:hitFlash 1.5s var(--ez-out) 1}   /* 从红旗 chip 跳过来的那一行：闪一下告诉人跳到哪了 */
 @keyframes hitFlash{0%,55%{background:var(--c-hit)}100%{background:transparent}}
 td{border-bottom:1px solid var(--c-line-soft);vertical-align:top;padding:0}
-/* 列宽写在 th 上：table-layout:fixed 只认第一行给的宽度，写在 td 上会被忽略 */
-th.kcol{width:var(--colK);position:relative}
+/* 列宽写在 th 上：table-layout:fixed 只认第一行给的宽度，写在 td 上会被忽略。
+   别再往这一格写 position:relative——全局 th 是 sticky（sticky 本身就是定位上下文，
+   表头里那道把手照样贴得住），写了就把吸顶顶掉：第一格滚走、右边两格还粘着。 */
+th.kcol{width:var(--colK)}
 td.k{padding:8px 10px;width:var(--colK);background:var(--c-surface-2)}
 /* .kk/.ky 在定位按钮里是 span（<button> 只能装短语内容），靠 display:block 保持一行一个 */
 td.k .kk{font-weight:var(--w-semi);font-size:var(--f-md);display:block}
@@ -166,7 +168,10 @@ tr.flag td.k{box-shadow:inset 3px 0 0 var(--c-warn)}
 tr.grp td{background:var(--c-neutral);padding:6px 12px;font-weight:var(--w-bold);font-size:var(--f-sm);color:var(--c-text-2);letter-spacing:1px}
 td.v textarea,td.v input{width:100%;border:1px solid transparent;background:transparent;border-radius:var(--r-md);
   padding:6px 7px;resize:vertical;font-size:var(--f-md);line-height:1.45;min-height:32px}
-td.v textarea{max-height:320px;overflow-y:auto}
+/* 一个斜角同时管宽高。这里的 900 只是"别把页面撑爆"的硬边界，不是给人拖的天花板：
+   原生 resize 尊重 max-height，写 320 就会把人拖高卡在半路（2026-10-09）。
+   「没拖过的框按内容撑」那道上限在 logic.js 的 fieldHeight 里（320）。 */
+td.v textarea{resize:both;max-height:900px;overflow-y:auto}
 /* 值格右边界那道宽度把手：走 td 那 8px 内边距的空档，不压 textarea 的原生拖角
    （原生只管高度，而且 input 根本没有把手——一半的值格是 input，不能只有长文本能拖宽）。
    平时不亮，指针进这一行 / 聚焦 / 正在拖的时候才现形：40 行每行一条实线就是栅栏。 */
@@ -181,6 +186,9 @@ tr:hover .edg::after,.edg:hover::after,.edg:focus-visible::after,.edg.drag::afte
 td.v textarea:hover,td.v input:hover{border-color:var(--c-line-strong);background:var(--c-surface)}
 td.v textarea:focus,td.v input:focus{outline:2px solid var(--c-accent-line);outline-offset:-1px;border-color:var(--c-accent-line);
   background:var(--c-surface);box-shadow:0 0 0 3px var(--c-focus-ring)}
+/* 状态列的宽必须写在表头：table-layout:fixed 只认第一行给的宽度（写在 td.s 上不生效，
+   那样它就和值列平分剩余空间，值框白窄一半）。 */
+th.scol{width:120px}
 td.s{width:120px;padding:8px 10px;text-align:right}
 .note{font-size:var(--f-xs);margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .note .q{color:var(--c-warn-text)}.note .b{color:var(--c-bad-text)}.note .e{color:var(--c-accent)}

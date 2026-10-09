@@ -1166,7 +1166,9 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
         "#main 变滚动容器后表头吸顶参照要归零，否则 th 会缩到卡片中间"
     assert re.search(r"td\.v textarea\{[^}]*max-height", css), "长文本框没封顶：一条超长整串能把卡片撑爆"
     ctl = re.search(r"function control\(t, k\)\{(.*?)\n\}", html, re.S)
-    assert ctl and "rows=" not in ctl.group(1), "control 又按换行数 rows 了——整段不换行的长文本会缩成一行"
+    assert ctl and 'rows="1"' in ctl.group(1), "值框要有斜角就得是 textarea，而它默认两行高：短字段得写死 rows=1"
+    assert ctl and "rows=" not in re.sub(r'rows="1"', "", ctl.group(1)), \
+        "control 又按换行数算 rows 了——整段不换行的长文本会缩成一行（只许写死那一档）"
     assert re.search(r"function autoGrow\(el\)\{", html), "autoGrow 没了"
     assert re.search(r'\$\("#main"\)\.querySelectorAll\("textarea"\)\.forEach\(autoGrow\)', html), \
         "渲染后没给文本框量高：打开时还是一行"
@@ -1199,6 +1201,11 @@ def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
     assert "var(--colK" in css, "字段名列还是死宽度，表头那道把手没接到东西上"
     assert re.search(r"th\.kcol\{width:var\(--colK\)", css), \
         "列宽只写在 td 上：table-layout:fixed 只认第一行（表头）给的宽度，拖了不会变"
+    # 同一格还要留着全局 th 的 sticky：给它写 position:relative 会把 sticky 顶掉，
+    # 于是「字段」那一格跟着内容滚走、右边两格还粘着（2026-10-09 浏览器截图里露出来的）
+    kcol = re.search(r"th\.kcol\{([^}]*)\}", css)
+    assert kcol and "position" not in kcol.group(1), \
+        "th.kcol 里别再写 position：它会盖掉全局 th 的 sticky，表头第一格滚走只剩两格"
 
 
 def test_the_value_box_itself_has_a_width_handle():
@@ -1220,6 +1227,38 @@ def test_the_value_box_itself_has_a_width_handle():
     assert js.count("saveDeskShare(") >= 3, "值格把手没和分栏把手共用同一份份额偏好"
     assert '"--vw"' in js, "份额没写回 CSS 变量，拖了不改变布局"
     assert 'role="separator"' in js, "把手得让键盘与读屏器知道它是分隔条"
+
+
+def test_every_value_box_has_a_corner_driving_both_width_and_height():
+    """2026-10-09 用户："可以自由拖拽改变大小的"——一个斜角同时管宽和高，别让人去找页面上别的把手。
+
+    前提是所有值格都得有斜角：原生 resize 只长在 textarea 上，短字段从前是 <input>，
+    所以短字段一并换成单行 textarea。两件事跟着必须做对：
+    数字列换框后要留住 inputmode（不然手机上弹出全键盘），
+    单行框要挡住回车（那值原样写进公司系统，换行进去就是脏数据）。"""
+    css = web_src.part("css/desk.css")
+    js = web_src.part("js/desk.js")
+    ctl = re.search(r"function control\(t, k\)\{(.*?)\n\}", js, re.S)
+    assert ctl, "control 找不到了"
+    assert "<input" not in ctl.group(1), "还有值格是 input：它没有右下角斜角，「自由拖拽」就只覆盖长文本那一半"
+    assert "<input data-mk" not in js, "主单表的值格还是 input：那张表要能拖的斜角同样没有"
+    assert 'inputmode="decimal"' in ctl.group(1), "换成交换框后数字列的输入提示丢了"
+    assert 'class="one"' in ctl.group(1), "短字段得标成单行框，否则挡回车与样式都没抓手"
+    assert re.search(r"td\.v textarea\{[^}]*resize:both", css), \
+        "斜角还是只管高度：宽拖不动，用户说的「自由拖拽」没成立"
+    assert re.search(r"td\.v textarea\{[^}]*max-height:900px", css), \
+        "CSS 那道封顶写回 320 会连人拖的一起卡住：原生 resize 尊重 max-height，拖不动就是不成立"
+    # 拖完那一下：宽交回整列（票面栏让路），inline 宽必须擦掉，否则这一格从此不跟列宽走
+    up = re.search(r"document\.addEventListener\(\"pointerup\", \(\) => \{(.*?)\n\}\);", js, re.S)
+    assert up and 'el.style.width = ""' in up.group(1), \
+        "松开那一步没擦 inline 宽：那一格从此钉在自己的宽度上，再调列宽调不到它"
+    assert up and "saveDeskShare(L.boxWidthPct(" in up.group(1), "斜角拖出来的宽没换算成整列份额"
+    assert "function blockEnter(" in js and js.count('addEventListener("keydown", blockEnter') >= 2, \
+        "单行框没挡回车：换行会一路写进公司系统"
+    # 状态列的宽从前只写在 td.s 上：fixed 表格不认（同一批坑的第 25 条），它和值列平分剩余空间，
+    # 值框白白窄一半、拖 120px 只长 60px。宽要写在表头那一格上。
+    assert "th.scol{width:120px}" in css, "状态列的宽没写进表头：它白占一半剩余空间，值框窄一半"
+    assert js.count('class="num scol"') >= 2, "两张字段表的表头要都带上 scol，只改一张另一张还是窄的"
 
 
 def test_the_word_for_stage_means_only_the_server_tier():
