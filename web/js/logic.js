@@ -180,6 +180,26 @@ const L = {
      宽、高分开问。 */
   canPan(content, pane){ return (content || 0) - (pane || 0) >= 1; },
 
+  /* 点字段定位后放多大：各人的手感不一样（2026-10-09 用户要的选择权）——
+     auto 按命中行高算（约占窗格 1/3），fixed 用人填的，off 干脆不动。
+     三条边界都得管：都不许超过页图真实像素（超过只是把糊图撑大）；填坏了退回 100 而不是
+     把 NaN 写进 style；认不出的档退回 auto——把票面留在"没倍数"的状态比退回默认更糟。
+     返回 null 的意思就是"别碰宽度"。 */
+  autoZoomPct(paneH, boxH100){
+    if (!(paneH > 0 && boxH100 > 0)) return 100;
+    return Math.min(500, Math.max(100, Math.round(paneH * 100 / (3 * boxH100))));
+  },
+  locateZoom(mode, fixedPct, autoPct, maxPct){
+    const cap = maxPct > 0 ? maxPct : 100;
+    if (mode === "off") return null;
+    if (mode === "fixed"){
+      const f = Math.round(Number(fixedPct));
+      if (!(f > 0)) return 100;
+      return Math.min(Math.max(100, f), cap);
+    }
+    return Math.min(autoPct > 0 ? autoPct : 100, cap);
+  },
+
   /* 滚轮一格一格调倍率：乘法步进（±15%）比固定 ±25 自然——小倍率时一跳 25% 太猛，
      大倍率时 25% 又太细；而且来回滚一格要能回到原值。 */
   zoomStep(z, dir){

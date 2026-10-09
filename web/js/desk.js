@@ -56,7 +56,8 @@ const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm"
 const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
 const SUBMIT_URL = BASE + "/submit";
 
-const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate"};
+const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate",
+            locateZoom:"hawb.review.locate.zoom"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -645,17 +646,39 @@ async function showLocPage(page, seq){
   const im = $("#pvImg");
   if (im.complete && im.naturalWidth) locFit(); else im.onload = locFit;
 }
-/* 自动放大：让命中行高到约占窗格 1/3，再把第一条命中滚到正中。倍数即 #pvPageBox 的宽度%。 */
+/* 点字段后放不放大、放多大是各人的手感（2026-10-09 用户要的选择权）：只存这台浏览器，
+   不该由谁替同事定。默认 auto 就是这功能上线以来的行为。 */
+function zoomPref(){
+  let p = {};
+  try{ p = JSON.parse(localStorage.getItem(LS.locateZoom) || "{}") || {}; }catch(e){ p = {}; }
+  return {mode: ["auto", "fixed", "off"].indexOf(p.mode) > -1 ? p.mode : "auto",
+          pct: +p.pct > 0 ? Math.round(+p.pct) : 250};
+}
+function saveZoomPref(p){ localStorage.setItem(LS.locateZoom, JSON.stringify({mode:p.mode, pct:p.pct})); syncZoomCtl(p); }
+/* 控件跟着偏好走：只有"固定倍数"那一档填比例有意义，输入框随之启用/禁用。 */
+function syncZoomCtl(p){
+  const z = p || zoomPref();
+  $("#pvLocZoom").value = z.mode;
+  $("#pvLocPct").value = z.pct;
+  $("#pvLocPct").disabled = z.mode !== "fixed";
+}
+function locCapPct(){
+  const im = $("#pvImg"), pane = $("#pvBody");
+  return (im && im.naturalWidth && pane.clientWidth) ? L.maxZoomPct(im.naturalWidth, pane.clientWidth) : 100;
+}
+/* 点字段后放不放大、放多大由人（见 zoomPref）。null（"不放大"那一档）落到 100%：
+   不是"留着上一次放大后的倍数"，那样开关就只挡得住第一次。
+   跳页、高亮、把命中行滚到正中照做——定位的价值是"告诉你这格印在哪儿"。 */
 function locFit(){
   const im = $("#pvImg"), page = $("#pvPageBox"), pane = $("#pvBody");
   if (!im || !page || !im.naturalHeight) return;
   const first = page.querySelector(".bbox");
-  let z = 100;
-  if (first){
-    const bh100 = im.naturalHeight * parseFloat(first.style.height) / 100;   // 100% 宽时该行的高（px）
-    if (bh100 > 0) z = Math.round(Math.min(500, Math.max(100, pane.clientHeight * 100 / (3 * bh100))));
-  }
-  page.style.width = z + "%";
+  const bh100 = first ? im.naturalHeight * parseFloat(first.style.height) / 100 : 0;   // 100% 宽时该行的高（px）
+  const p = zoomPref();
+  const cap = L.maxZoomPct(im.naturalWidth, pane.clientWidth);
+  const z = L.locateZoom(p.mode, p.pct, L.autoZoomPct(pane.clientHeight, bh100), cap);
+  $("#pvLocPct").max = cap;      // 上限先摆在框子上，别等人填了 9999 才告诉他会被收
+  page.style.width = (z || 100) + "%";
   if (first){
     const pr = page.getBoundingClientRect(), fr = first.getBoundingClientRect(), br = pane.getBoundingClientRect();
     /* 巡航用 scrollTo：一次调用同时给两个方向，浏览器自己合成一段滚动。
@@ -669,6 +692,7 @@ function locFit(){
 function pvSetTools(){
   $("#pvLoc").hidden = !LOC.on;
   $("#pvZoom").hidden = true; $("#pvPdf").hidden = true;
+  if (LOC.on) syncZoomCtl();          // 进定位模式就把控件对到存好的偏好上
 }
 function exitLocate(){
   LOC.on = false; LOC.key = ""; LOC.ll = null; LOC.hits = [];
@@ -1313,6 +1337,19 @@ $("#pvDl").addEventListener("click", downloadSource);
 $("#pvLocExit").addEventListener("click", exitLocate);
 $("#pvLocPrev").addEventListener("click", () => showLocPage(LOC.page - 1, ++_pvSeq));
 $("#pvLocNext").addEventListener("click", () => showLocPage(LOC.page + 1, ++_pvSeq));
+/* 换档/改比例都当场重画当前这张票：改完还要再点一次字段才生效，人就以为这控件没起作用 */
+$("#pvLocZoom").addEventListener("change", e => {
+  const p = zoomPref();
+  saveZoomPref({mode: e.target.value, pct: p.pct});
+  locFit();
+});
+$("#pvLocPct").addEventListener("change", e => {
+  const p = zoomPref(), want = Math.round(+e.target.value || 0), cap = locCapPct();
+  const used = L.locateZoom("fixed", want, 0, cap);
+  saveZoomPref({mode: p.mode, pct: used});
+  locFit();
+  if (used < want) toast(`已按这张票面图的真实分辨率限制在 ${used}%（填的 ${want}% 只会糊）`, "warn");
+});
 $("#pvNew").addEventListener("click", () => {
   const u = (LOC.on && LOC.url) || PREVIEW.url;
   if (!u){ toast("还没有可打开的票面", "bad"); return; }

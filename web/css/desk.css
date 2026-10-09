@@ -231,6 +231,11 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
   display:inline-block;min-height:28px;padding:0}
 .pvtools #pvLoc{display:flex;gap:6px;align-items:center}
 .pvtools #pvLoc[hidden]{display:none}
+/* 定位那一行现在有三样（档位 + 比例 + 页码），比例框按内容收窄，别把"返回原视图"挤到第二行 */
+.pvtools #pvLoc .f{font-size:var(--f-xs)}
+.pvtools #pvLocPct{width:62px;padding:4px 6px;border:1px solid var(--c-line);border-radius:var(--r-md);
+  background:var(--c-surface-2);font-size:var(--f-sm)}
+.pvtools #pvLocPct:disabled{opacity:.45}
 .pv .page{position:relative;display:inline-block;text-align:left}
 .pv .page img{display:block;width:100%}
 .pv .lyr{position:absolute;left:0;top:0;width:100%;height:100%}

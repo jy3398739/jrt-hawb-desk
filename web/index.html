@@ -132,6 +132,10 @@
         <button class="btn sm" id="pvLocPrev" title="上一页">‹</button>
         <span class="hint" id="pvLocPage"></span>
         <button class="btn sm" id="pvLocNext" title="下一页">›</button>
+        <label class="f" title="点字段定位时放不放大、放多大：只记在这台浏览器上，各人各设，不影响同事">定位时<select id="pvLocZoom" aria-label="定位放大方式">
+          <option value="auto">自动放大</option><option value="fixed">固定倍数</option><option value="off">不放大</option></select></label>
+        <label class="f" id="pvLocPctWrap" title="固定倍数：命中行按这个百分比显示；超过这张票面图的真实分辨率会自动落到上限">
+          <input id="pvLocPct" type="number" aria-label="定位放大比例" min="100" step="10" value="250"><span class="hint">%</span></label>
         <button class="btn sm" id="pvLocExit" title="回到正常票面浏览">返回原视图</button>
       </span>
       <span class="sp"></span>

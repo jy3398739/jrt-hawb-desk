@@ -214,6 +214,30 @@ def test_desk_binds_the_wheel_on_our_pane_only():
     assert "passive: false" in js, "passive 监听里 preventDefault 会被忽略，滚轮还是去滚页面"
 
 
+def test_auto_zoom_pct_targets_a_third_of_the_pane_and_stays_in_bounds():
+    """自动那一档：让命中行高约占窗格的 1/3（2026-10-01 定的手感），倍数就是页宽%。
+    算式从前埋在 locFit 里没法测，抽出来才能钉住上下界。"""
+    assert _eval("L.autoZoomPct(600, 60)") == 333, "600 高的窗格、行高 60px → 333%"
+    assert _eval("L.autoZoomPct(600, 300)") == 100, "行本来就够高，不该缩到比适应宽度还小"
+    assert _eval("L.autoZoomPct(600, 2)") == 500, "行极小时也要有上限，别一路放到糊"
+    assert _eval("L.autoZoomPct(600, 0)") == 100, "量不到行高就退回适应宽度，别返回 Infinity"
+    assert _eval("L.autoZoomPct(0, 60)") == 100, "窗格还没布局好（高 0）时同样退回 100"
+
+
+def test_locate_zoom_mode_decides_the_width_and_never_exceeds_real_pixels():
+    """点字段后放不放大、放多大，是每个人的手感差异（2026-10-09 用户要的开关）：
+    auto 用算出来的、fixed 用人填的、off 干脆不动（返回 null = 宽度一个字都不改）。
+    两条边界都得管：都不许超过页图真实像素（超过只是把糊图撑大），填坏了退回 100 而不是把 NaN 写进 style。"""
+    assert _eval("L.locateZoom(m, 250, 333, 400)", m="fixed") == 250
+    assert _eval("L.locateZoom(m, 600, 333, 400)", m="fixed") == 400, "超过真实像素要落到上限"
+    assert _eval("L.locateZoom(m, 250, 333, 400)", m="auto") == 333
+    assert _eval("L.locateZoom(m, 250, 500, 400)", m="auto") == 400, "自动那一档同样受上限管"
+    assert _eval("L.locateZoom(m, 250, 333, 400)", m="off") is None, "不放大就是别碰宽度"
+    assert _eval("L.locateZoom(m, 'abc', 333, 400)", m="fixed") == 100, "填了不是数的东西就退回适应宽度"
+    assert _eval("L.locateZoom(m, 40, 333, 400)", m="fixed") == 100, "比栏位还窄没有意义"
+    assert _eval("L.locateZoom(m, 250, 333, 400)", m="没这一档") == 333, "认不出的档退回自动，别把票面留在没倍数的状态"
+
+
 def test_pan_only_offered_when_content_overflows():
     """放大后要能按住拖动看别处（不用去够滚动条）。但内容没超出栏位时不给抓手——
     给了就是骗人：按住拖半天一动不动，比没有还糟。"""

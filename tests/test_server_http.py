@@ -1104,14 +1104,46 @@ def test_desk_field_click_locates_value_on_the_ticket():
         "bbox 覆盖层断了：0-1000 归一坐标要换算成百分比"
     assert "X-Ticket-Pages" in show.group(1), "没读服务端报的总页数，多页票翻不动"
     fit = re.search(r"function locFit\(\)\{(.*?)\n\}", html, re.S)
-    assert fit and "pane.clientHeight * 100 / (3 * bh100)" in fit.group(1) and 'style.width = z + "%"' in fit.group(1), \
-        "自动放大断了：命中行要占到窗格约三分之一高"
+    assert fit and "L.locateZoom(" in fit.group(1) and "L.autoZoomPct(" in fit.group(1), \
+        "放大倍数不再由 locFit 自己算：要走偏好（L.locateZoom）与那一档的算式（L.autoZoomPct）"
+    assert fit and re.search(r"page\.style\.width = \(z \|\| 100\)", fit.group(1)), \
+        "「不放大」那一档要回到适应宽度：留着上一次放大后的倍数，开关就只挡得住第一次"
+    assert fit and "pane.clientHeight" in fit.group(1) and "im.naturalWidth" in fit.group(1), \
+        "算倍数要的两个量（窗格高、页图真实宽）没传给 logic.js 那套算式"
     assert re.search(r'normFace = |function normFace', html), "匹配归一（NFKC+空白压合）没了"
     assert ".normalize(\"NFKC\")" in html, "全角归一走 NFKC，和 fidelity 的 _FW 同口径"
     assert 'id="pvLocExit"' in html and '$("#pvLocExit").addEventListener("click", exitLocate)' in html, \
         "没有「返回原视图」，制单员就困在定位模式里了"
     rp = re.search(r"function renderPreview\(\)\{(.*?)\n\}", html, re.S)
     assert rp and "exitLocate()" in rp.group(1), "切票不退出定位模式，正常预览会被页图卡住"
+
+
+def test_locate_zoom_has_a_switch_and_a_custom_ratio_per_browser():
+    """有人点字段后要放大才看得清，有人嫌每次都被拽走 —— 2026-10-09 用户要的是给选择权，
+    而且比例能自己填。这份偏好是"手感"，所以存浏览器不存账号：换人不用替别人决定。
+
+    盯四件事：三档都在定位那条工具条里（跟着它一起显隐）、偏好真的读写 localStorage、
+    上限走页图真实像素那条判据、改一下当前这张票立刻重画（不用重新点字段）。"""
+    page = web_src.part("index.html")
+    js = web_src.part("js/desk.js")
+    bar = page[page.index('id="pvLoc"'):page.index("返回原视图")]
+    assert 'id="pvLocZoom"' in bar and 'id="pvLocPct"' in bar, \
+        "档位与比例那两项不在定位工具条里（放别处就跟着票面一起看不见）"
+    for v in ('value="auto"', 'value="fixed"', 'value="off"'):
+        assert v in bar, f"定位放大少一档：{v}"
+    assert 'type="number"' in bar and 'aria-label="定位放大比例"' in bar, "比例得是能填的数，还要有可读名字"
+    assert "LS.locateZoom" in js and 'locateZoom:"hawb.review.locate.zoom"' in js, "偏好键没定义"
+    assert re.search(r"localStorage\.setItem\(LS\.locateZoom", js), \
+        "偏好只存在内存里：刷新一次、换张票就回到默认，等于没有开关"
+    assert re.search(r"localStorage\.getItem\(LS\.locateZoom", js), "存了却没人读，控件跟偏好对不上"
+    assert "L.maxZoomPct(" in js[js.index("function locFit()"):js.index("function pvSetTools()")], \
+        "上限没走页图真实像素那条判据，填多大就糊多大"
+    assert re.search(r'\$\("#pvLocZoom"\)\.addEventListener\("change"', js), \
+        "换档没接监听：改了要当前这张票立刻重画，不能等下次点字段"
+    assert re.search(r'\$\("#pvLocPct"\)\.addEventListener\("(input|change)"', js), \
+        "填了比例没接事件，等于只能看不能改"
+    assert '$("#pvLocPct").max = cap' in js, \
+        "上限没写进输入框：人要填完才知道被收，不如填之前就看得见能到多少"
 
 
 def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
