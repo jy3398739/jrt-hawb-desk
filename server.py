@@ -22,7 +22,7 @@
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
   POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器**不发公司**
-  POST /master/submit      需登录会话；主单回传公司(mawb2)的唯一出口；没录入员复核过要带 acked_no_review
+  POST /master/submit      需登录会话；主单**提交发送**公司(mawb3)的唯一出口；没录入员复核过要带 acked_no_review
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
   GET  /staged/{stem}      需登录会话；一份暂存（模型原样 + 人工最新值 + 每次谁改了哪几列）
@@ -361,10 +361,11 @@ def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
 
 @app.post("/master/submit")
 def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
-    """把人工核对过的主单回传公司（j9 mawb2）。这是主单侧唯一对外写出口，只有人工点才发。
+    """把人工核对过的主单**提交发送**给公司（j9 mawb3，落库状态 1）。主单侧唯一对外写出口，只有人工点才发。
 
     门与错误码与分单同构：红旗未清/未署名 → 400（红旗在服务端按当前值重算，前端藏旗无效）；
-    公司侧 SEND_STATUS 非 0/2（已发送锁定）→ 409 且不发写请求；接口不通/没配 → 502，绝不写台账。
+    公司侧 SEND_STATUS 非 0（已提交发送或外围已发送成功，公司拒改）→ 409 且不发写请求；
+    接口不通/没配 → 502，绝不写台账。
     署名同样取登录会话，不认前端传的名字。"""
     body.reviewer = str(user.get("name") or "")
     try:

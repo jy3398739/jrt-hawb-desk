@@ -3,7 +3,7 @@
 
 与分单的关系（2026-09-28 用户定案「主单是主单，分单是分单」）：共用**引擎件**——转录形状、
 VLM 调用与重试、保真回查、红旗/提交门/台账范式；不共用字段表——主单不过 `to_air` 的 IATA 归一，
-也不进 `output/raw|air|qc`、Excel、数据库。解析结果就是 `mawb2/` 要的 `AMS_RECORD`，
+也不进 `output/raw|air|qc`、Excel、数据库。解析结果就是 `mawb3/`（提交发送）要的 `AMS_RECORD`，
 人工核对后可提交回公司。
 
 花钱口径：每次检索都自动解析（用户定案），但缓存按**资料指纹** `text_md5` 失效——公司改了
@@ -151,7 +151,7 @@ _COL_SET = set(MASTER_COLS)
 def missed_cols(ams: dict, transcript: dict) -> list:
     """L1 里明明有「列名: 值」、结果却是空 → 模型漏取，不是"资料里没有"。
 
-    这两件事必须分开说：混在一起，复核人只能对着一屏空格子猜；而 mawb2 是整表写回，
+    这两件事必须分开说：混在一起，复核人只能对着一屏空格子猜；而公司写口是整表写回，
     漏取的那一列提交后会被写成 NULL，等于用一次提交把公司库里已有的值抹掉。"""
     have: dict[str, str] = {}
     for x in (transcript or {}).get("lines") or []:
@@ -265,7 +265,7 @@ def ensure(mawb: str, mawb_order: dict, force: bool = False) -> dict:
 
 
 def submit_master(payload: dict) -> dict:
-    """把人工核对过的主单回传公司（mawb2）。门与分单同构：署名 + 红旗清零或逐条确认留痕，
+    """把人工核对过的主单**提交发送**给公司（mawb3，落库状态 1）。门与分单同构：署名 + 红旗清零或逐条确认留痕，
     而且**红旗在服务端按当前值重算**——前端把旗藏了也提不出去。"""
     p = payload or {}
     mawb = str(p.get("mawb") or "").strip()
@@ -284,7 +284,7 @@ def submit_master(payload: dict) -> dict:
     if not reviewed and not p.get("acked_no_review"):
         raise MasterNeedsAck(f"主单 {mawb} 没有录入员复核过的暂存记录："
                              "确认「未经录入员复核，仍要回传公司」后再提交")
-    # 只发调用方给过的列（clean_ams 会丢掉没给的）：mawb2 是整表写回，
+    # 只发调用方给过的列（clean_ams 会丢掉没给的）：公司写口是整表写回，
     # "这次没碰"要由 company_api 用库里的现值补齐，"人工清空"才是显式 null。
     res = company_api.submit_master({"mawb": mawb, "ams": mf.clean_ams(ams)})
     store.mark_master_submitted(mawb, reviewer, receipt=res, acked_flags=acked,

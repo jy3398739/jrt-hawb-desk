@@ -5,6 +5,7 @@ import json
 import re
 from types import SimpleNamespace
 
+import company_api
 import config
 import fidelity
 import vlm_extract
@@ -112,47 +113,64 @@ def test_validate_master_flags_company_400_lines():
 
 
 def test_validate_master_reports_tax_with_nowhere_to_go():
-    """主单表没有税号列：资料里印着 USCI/VAT 而列面里一份都没有时要出声，交人工定夺。"""
+    """主单表没有税号列：资料里印着 USCI/VAT 而列面里一份都没有时要出声。
+    2026-10-09 IT 定了落点（统一进 EORI，多个号拼一格），提示就要教人怎么填，
+    不能再停在"无处落点，交人工定夺"——那等于把一条已经定了的事挂成待办。"""
     ams = {c: None for c in MASTER_COLS}
     ams["MAWB_NO"] = "176-62400004"
     warns = validate_master(ams, build_transcript(ORDER))
     assert any("税号" in w and ("USCI" in w or "VAT" in w) for w in warns), warns
+    assert any("EORI" in w and "/" in w for w in warns), f"要说清落点与拼法: {warns}"
 
 
-def test_validate_master_accepts_usci_in_the_party_eori_column():
-    """2026-09-29 用户定案：主单表没税号列，中国的统一社会信用代码（USCI）就放同主体的 EORI 列。
-    所以 18 位 USCI 出现在 EORI 里不是形态异常，资料里那条 USCI 也不再报"无处落点"；
-    但用户只给了 USCI 这一条，VAT/CNPJ 那类照旧要出声——别把口径悄悄放大成"什么号都能塞"。"""
+def test_validate_master_accepts_tax_numbers_joined_in_the_eori_column():
+    """2026-10-09 IT 定案：公司列面没有税号格，税号统一放 EORI，同主体多个号用 / 拼在一格。
+    所以 USCI 与 VAT 一起出现在 EORI 里是合规写法，两号都不该再报"无处落点"。"""
     ams = {c: None for c in MASTER_COLS}
-    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "911201117706402073"})
+    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "911201117706402073 / 300057757900003"})
     warns = validate_master(ams, build_transcript(ORDER))
     assert not any("SHIPPER_INFO_EORI" in w for w in warns), warns
-    assert not any("911201117706402073" in w for w in warns), \
-        f"USCI 已落到 EORI，不该再报无处放: {warns}"
-    assert any("VAT" in w for w in warns), f"非 USCI 的税号仍要出声: {warns}"
+    assert not any("911201117706402073" in w for w in warns), f"USCI 已落到 EORI，不该再报: {warns}"
+    assert not any("300057757900003" in w and "EORI" not in w for w in warns), \
+        f"VAT 也已经在这一格里，不该再报无处落点: {warns}"
 
 
 def test_validate_master_still_flags_odd_eori_values():
-    """放行只针对"18 位 USCI"这一种形态：短号、带标签、位数不对的一律还是异常，
-    否则模型把任何东西写进 EORI 都会被当成合规。"""
-    for bad in ("91120111770640207", "USCI 911201117706402073", "12345"):
+    """这一格现在什么都往里放，形态检查只能退一步守"像不像号码"：
+    带标签词、成句的散文、短得不成样子的都要报。位数不再当判据——
+    列面 widened 之后 17 位与 15 位都可能是某个国家的正经税号，按位数拦会把对的挡掉。"""
+    for bad in ("USCI 911201117706402073", "12345", "911201117706402073 / 123",
+                "SEE INVOICE / 911201117706402073", "税号见发票"):
         ams = {c: None for c in MASTER_COLS}
         ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": bad})
         assert any("SHIPPER_INFO_EORI" in w for w in validate_master(ams)), f"{bad} 该报形态异常"
 
 
-def test_master_prompt_sends_usci_into_the_party_eori_column():
+def test_cnpj_with_its_own_slash_is_not_mistaken_for_two_numbers():
+    """巴西 CNPJ 印成 07.454.234/0001-10：那根斜杠是号码的一部分。
+    我们的拼串分隔符必须带空格（" / "），否则一个 CNPJ 会被当成两个号拆开重拼。"""
+    ams = {c: None for c in MASTER_COLS}
+    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "07.454.234/0001-10"})
+    assert not any("SHIPPER_INFO_EORI" in w for w in validate_master(ams)), "带点的 CNPJ 是合法号码"
+    merged = company_api.merge_ids("IT03268900267", "07.454.234/0001-10")
+    assert merged == "IT03268900267 / 07.454.234/0001-10", merged
+    assert company_api.merge_ids(merged, "07.454.234/0001-10") == merged, \
+        f"再拼一次不许把 CNPJ 拆开：{company_api.merge_ids(merged, '07.454.234/0001-10')}"
+
+
+def test_master_prompt_sends_every_tax_number_into_the_party_eori_column():
     """口径改了，提示词必须跟着改（提示词进缓存指纹，旧解析会自动失效重跑）。
-    要有一条把 USCI 明确**放进** EORI 的话，且原来"USCI…没有落点"那句必须消失；
-    非 USCI 的税号仍然禁止塞 EORI。"""
+    2026-10-09 IT 定案：所有税号统一进 EORI，同主体多个号用 / 拼一格——
+    原来那句"CNPJ/RFC/GST/VAT 不要塞进 EORI"必须消失，留着它模型会继续留空、人会继续白等红旗。"""
     head = vlm_extract.MASTER_PROMPT_HEAD
     lines = head.splitlines()
     assert any("USCI" in ln and "EORI" in ln and re.search(r"(填进|放进|写入|落到)", ln)
-               for ln in lines), f"缺一条把 USCI 指向 EORI 的口径: {lines}"
+               for ln in lines), f"缺一条把税号指向 EORI 的口径: {lines}"
     assert not any("USCI" in ln and "没有落点" in ln for ln in lines), \
         "旧口径那句（USCI 没有落点）还在，模型会继续留空"
-    assert any(("CNPJ" in ln or "VAT" in ln) and "EORI" in ln and "不要" in ln
-               for ln in lines), "非 USCI 的税号仍然不许塞进 EORI"
+    assert not any("不要塞进 EORI" in ln or "除 USCI 外" in ln for ln in lines), \
+        f"那句「别的税号不许进 EORI」还在，模型会继续留空: {lines}"
+    assert any("EORI" in ln and "/" in ln for ln in lines), "要写明多个号怎么落在一格（用 / 拼）"
 
 
 def test_validate_master_flags_hs_with_label_left():

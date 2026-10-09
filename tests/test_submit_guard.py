@@ -12,6 +12,7 @@ from pathlib import Path
 
 import company_api
 import config
+import j9_fake
 import store
 
 
@@ -50,12 +51,10 @@ def _stub(sent, rows):
         sent.append({"path": path, "body": body})
         if path.endswith("/hawb"):
             return {"code": 0, "data": rows()}
-        if path.endswith("/hawb2"):
-            return {"code": 0, "success": True, "action": "insert", "rows": 1}
         if path.endswith("/mawb/"):
             return {"code": 0, "data": rows()}
-        if path.endswith("/mawb2/"):
-            return {"code": 0, "success": True, "action": "update", "rows": 1}
+        if j9_fake.is_write(path):
+            return j9_fake.write_ok(path, action="insert" if "hawb" in path else "update")
         raise AssertionError("未知路径 " + path)
 
     company_api._j9_post = fake
@@ -86,7 +85,7 @@ def test_house_submit_refuses_when_the_row_should_already_exist():
             raise AssertionError("预读没读到却继续写了公司")
         except company_api.CompanyPreReadFailed as e:
             assert "没读到" in str(e) or "先不要提交" in str(e)
-        assert not [s for s in sent if s["path"].endswith("/hawb2")], "一个写请求都不许发"
+        assert not j9_fake.writes(sent), "一个写请求都不许发"
     finally:
         undo()
         _restore(old)
@@ -103,7 +102,7 @@ def test_house_submit_still_inserts_a_brand_new_row():
     try:
         out = company_api.submit_order(_payload())
         assert out["accepted"] is True and out["action"] == "insert"
-        assert any(s["path"].endswith("/hawb2") for s in sent)
+        assert any(j9_fake.is_send(s["path"]) for s in sent), "首次录入也要真走提交发送口（3）"
     finally:
         undo()
         _restore(old)
@@ -118,7 +117,7 @@ def test_house_submit_merges_the_read_row_when_it_exists():
     undo = _stub(sent, lambda: [dict(HOUSE_ROW)])
     try:
         company_api.submit_order(_payload())
-        rec = [s for s in sent if s["path"].endswith("/hawb2")][0]["body"]["HAWB_RECORD"]
+        rec = j9_fake.writes(sent)[0]["body"]["HAWB_RECORD"]
         assert rec["CONSIGNEE_INFO_EORI"] == "PL554289446200000", "读到没改的列要原样带回"
         assert rec["ORGIN_NAME"] == "BJS", "人工值覆盖读到旧值"
     finally:
@@ -136,10 +135,10 @@ def test_double_click_submits_to_the_company_only_once():
     undo = _stub(sent, lambda: [dict(HOUSE_ROW)])
     try:
         first = company_api.submit_order(_payload())
-        n_writes = len([s for s in sent if s["path"].endswith("/hawb2")])
+        n_writes = len(j9_fake.writes(sent))
         second = company_api.submit_order(_payload())
         assert n_writes == 1
-        assert len([s for s in sent if s["path"].endswith("/hawb2")]) == 1, "第二次不该再写公司"
+        assert len(j9_fake.writes(sent)) == 1, "第二次不该再写公司"
         assert second.get("idempotent") is True and second["action"] == first["action"]
     finally:
         undo()
@@ -148,7 +147,7 @@ def test_double_click_submits_to_the_company_only_once():
 
 
 def test_a_real_change_is_not_swallowed_by_the_idempotency_lock():
-    """改了值再提交是正常业务（SEND_STATUS 0/2 可反复改），幂等锁不能把它当重复点吞掉。"""
+    """改了值再提交是正常业务（公司侧状态 0 可反复改），幂等锁不能把它当重复点吞掉。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_p0_"))
     old = _iso(tmp)
     sent = []
@@ -159,7 +158,7 @@ def test_a_real_change_is_not_swallowed_by_the_idempotency_lock():
         changed["air"]["DEST_NAME"] = "MXP"
         out = company_api.submit_order(changed)
         assert out.get("idempotent") is not True
-        writes = [s for s in sent if s["path"].endswith("/hawb2")]
+        writes = j9_fake.writes(sent)
         assert len(writes) == 2 and writes[-1]["body"]["HAWB_RECORD"]["DEST_NAME"] == "MXP"
     finally:
         undo()
@@ -181,7 +180,7 @@ def test_master_submit_refuses_when_the_record_should_exist():
             raise AssertionError("预读没读到却继续写了公司主单")
         except company_api.CompanyPreReadFailed:
             pass
-        assert not [s for s in sent if s["path"].endswith("/mawb2/")], "一个写请求都不许发"
+        assert not j9_fake.writes(sent), "一个写请求都不许发"
     finally:
         undo()
         _restore(old)

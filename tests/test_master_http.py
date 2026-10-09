@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import auth
 import company_api
 import config
+import j9_fake
 import master_pipeline as mp
 import server
 import store
@@ -74,10 +75,10 @@ def _stub_live(sent=None, master_rows=None):
         (sent if sent is not None else []).append({"path": path, "body": body})
         if path.endswith("/mawb/"):
             return {"code": 0, "data": master_rows if master_rows is not None else [MASTER_ROW]}
-        if path.endswith("/mawb2/"):
-            return {"code": 0, "success": True, "action": "update", "rows": 1}
         if path.endswith("/hawb"):
             return {"code": 0, "data": []}
+        if j9_fake.is_write(path):
+            return j9_fake.write_ok(path)
         raise AssertionError("未知路径 " + path)
 
     def fake_extract(transcript, **_kw):
@@ -246,7 +247,7 @@ def test_master_submit_blocks_flags_and_passes_after_ack():
                                                 "ams": bad, "acked_flags": flags,
                                                 "acked_no_review": True})
             assert r2.status_code == 200, r2.text
-            assert any(s["path"].endswith("/mawb2/") for s in sent), "确认无误后才真正回传"
+            assert any(j9_fake.is_send(s["path"]) for s in sent), "确认无误后才真正回传（走 mawb3）"
             led = json.loads((tmp / "master_submitted.json").read_text(encoding="utf-8"))
             assert led["17662400004"]["acked_flags"] == flags
             assert led["17662400004"]["no_inputter_review"] is True, \

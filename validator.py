@@ -125,11 +125,23 @@ _MASTER_EORI = ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI", "NOTIFY_INFO_EORI")
 _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
 
 
+# EORI 这一格现在什么都往里放（税号统一落点，IT 2026-10-09），形态判据退一步只守"像不像号码"：
+# 一格可写多个号（" / " 分隔），每段去掉标点后要匹配 EORI/VAT、纯数字税号（11-18 位）或 18 位 USCI。
+# 位数不再当判据——列面放宽后 15 位、17 位都可能是某个国家的正经税号，按位数拦会把对的挡掉。
+_EORI_SEG = re.compile(r"^(?:[A-Z]{2}[A-Z0-9]{6,15}|\d{11,18}|[0-9A-Z]{18})$")
+
+
+def _eori_cell_ok(value: str) -> bool:
+    segs = [re.sub(r"[^A-Z0-9]", "", s) for s in str(value).upper().split()]
+    segs = [s for s in segs if s]
+    return bool(segs) and all(_EORI_SEG.match(s) for s in segs)
+
+
 def validate_master(ams: dict, transcript: dict | None = None) -> list:
     """主单可提交列的红旗。
 
-    主单表**没有税号列**：按公司口径（2026-09-29 用户定案）中国的 18 位 USCI 就放同主体的
-    EORI 列；CNPJ/RFC/GST/VAT 那类印在资料里而列面无处放时要报"无处落点"交人工定夺，不许塞进 EORI。
+    主单表**没有税号列**：按公司口径（2026-10-09 IT 定案）所有税号统一放同主体的 EORI 列，
+    一个主体有多个号（EORI 与 VAT 并存那种）就用 " / " 拼在同一格，两个都留。
     限长 50 那九列是公司文档写死的 400 硬线，提前报出来比让人撞接口强。"""
     d = ams or {}
     warns: list[str] = []
@@ -171,10 +183,9 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
 
     for k in _MASTER_EORI:
         v = str(d.get(k, "") or "").strip()
-        if v and not re.fullmatch(r"[A-Za-z]{2}[A-Za-z0-9]{6,15}", v) \
-                and not re.fullmatch(r"[0-9A-Z]{18}", v.upper()):
-            warns.append(f"{k} 形态异常: {v!r}（EORI 要么是两位国家字母开头的号码，"
-                         "要么是按公司口径填进来的 18 位 USCI；CNPJ/VAT 那类不该出现在这一列）")
+        if v and not _eori_cell_ok(v):
+            warns.append(f"{k} 形态异常: {v!r}（这一格放税号：两位国家字母开头的号码、"
+                         "纯数字税号或 18 位 USCI；多个号用 / 隔开，别写标签词或整句话）")
 
     if transcript:
         text = transcript.get("full_text") or " ".join(
@@ -186,6 +197,6 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
             if label.upper().startswith("EORI") or not num or num in seen or num in have:
                 continue
             seen.add(num)
-            warns.append(f"资料里有税号 {label} {num}，主单表没有税号列：USCI 填同主体的 EORI 列，"
-                         "其它号（CNPJ/RFC/GST/VAT）先与公司确认落点，别塞进 EORI")
+            warns.append(f"资料里有税号 {label} {num}，主单表没有税号列：填进同主体的 EORI 列，"
+                         "那一格已有号就用 / 拼在一起（两个都留）")
     return warns

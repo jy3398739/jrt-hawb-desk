@@ -389,12 +389,13 @@ def test_desk_page_carries_merged_mawb_search_and_entry_for_all():
     assert '$("#btnMawb").hidden = !ME' in html, "入口对所有登录角色可见，只在未登录时藏"
 
 
-def test_desk_master_hint_matches_the_usci_into_eori_ruling():
+def test_desk_master_hint_matches_the_tax_into_eori_ruling():
     """界面提示原来写"别把 USCI 塞进 EORI"，与 2026-09-29 用户定案（USCI 就放同主体 EORI）相反，
-    会把复核的人往错方向带。措辞要跟口径一致。"""
+    会把复核的人往错方向带。2026-10-09 IT 又把它放宽成"税号统一放 EORI"（见上一条用例），
+    措辞要跟口径一致——留着旧那句，人会对着一条本不该存在的红旗白等。"""
     html = web_src.desk()
     assert "别把 USCI/CNPJ 那类税号塞进 EORI" not in html, "旧口径那句要撤掉"
-    assert "同主体的 EORI" in html and "USCI" in html, "要写清 USCI 落 EORI、别的税号仍不塞"
+    assert "同主体的 EORI" in html and "USCI" in html, "要写清税号落 EORI"
 
 
 def test_house_list_under_master_moves_to_a_full_width_strip():
@@ -416,13 +417,28 @@ def test_house_list_under_master_moves_to_a_full_width_strip():
 
 def test_send_status_wording_keeps_our_submit_and_company_send_apart():
     """"待发送"被读成"我这下没提交成功"（用户被 999-95764373 问住的那里）：j9 的 SEND_STATUS
-    说的是公司有没有把分单发给航司，与本台有没有提交回公司是两件事，措辞不能共用一个"发送"。"""
+    说的是公司有没有把分单发给航司，与本台有没有提交回公司是两件事，措辞不能共用一个"发送"。
+
+    2026-10-09 文档把状态字典讲死了，我们从前有两档是说错的：1 不是"已发送"而是"已提交发送、
+    还在等外围程序取数"，2 才是"外围发送成功"且**锁死不能再改**（从前写成"已改·待重发"，
+    等于鼓励人去覆盖一条已经发成功的记录）。"""
     html = web_src.desk()
     assert '"待发送"' not in html, "0 不能叫「待发送」——提交回公司那一刻它已经是成功状态了"
     tab = _fn(html, "mstTable")
     assert "公司发送状态" in tab, "表头点名主语是公司，不是本台"
-    assert "待公司发送" in html and "公司已发送" in html, "状态值要带主语"
+    assert "公司暂存" in html, "0 要说清是公司在等我们提交发送，不是已经在路上"
+    assert "已提交发送" in html and "等外围" in html, "1 还没发出去，别写成「公司已发送」"
+    assert "已发送成功" in html and "锁定" in html, "2 才是发出去了，而且改不动"
+    assert "已改·待公司重发" not in html and "待公司重发" not in html, "旧措辞会让人以为 2 还能改"
     assert "o.submitted_here" in tab, "本台没提交过的分单要写明白，不能只留一个「—」让人猜"
+
+
+def test_party_id_hint_says_tax_numbers_share_the_eori_cell():
+    """IT 2026-10-09 定案：公司列面没有税号列，税号统一放 EORI，同主体多个号拼在一格。
+    旧那句"CNPJ/RFC/GST/VAT 不要塞进 EORI 走人工确认"作废——留着它，人会对着红旗白等。"""
+    html = web_src.desk()
+    assert "仍不要塞进 EORI" not in html, "旧口径那句要撤掉"
+    assert "税号" in html and "EORI" in html and "拼" in html, "要写清多个号怎么落在一格"
 
 
 def test_mock_rows_also_carry_submitted_here():

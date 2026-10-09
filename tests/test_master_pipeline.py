@@ -10,6 +10,7 @@ from pathlib import Path
 
 import company_api
 import config
+import j9_fake
 import master_pipeline as mp
 import vlm_extract
 import vlm_extract
@@ -241,8 +242,8 @@ def _patch_j9(sent, master_rows):
         sent.append({"path": path, "body": body, "key": key})
         if path.endswith("/mawb/"):
             return {"code": 0, "data": master_rows}
-        if path.endswith("/mawb2/"):
-            return {"code": 0, "success": True, "action": "update", "rows": 1}
+        if j9_fake.is_write(path):
+            return j9_fake.write_ok(path)
         raise AssertionError("未知路径 " + path)
 
     company_api._j9_post = fake
@@ -263,7 +264,7 @@ def test_submit_master_reads_then_sends_only_the_36_columns():
     sent = []
     undo_cfg = _live()
     restore = _patch_j9(sent, [{"MASTER_NO": "176-62400004",
-                               "AMS_RECORD": dict(AMS_OUT, HMY_ID=12, SEND_STATUS=2,
+                               "AMS_RECORD": dict(AMS_OUT, HMY_ID=12, SEND_STATUS=0,
                                                   CONSIGNEE_INFO_COMP_NAME="OLD NAME")}])
     try:
         out = mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐",
@@ -289,23 +290,24 @@ def test_submit_master_refuses_locked_record_without_writing():
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
     old = _use_tmp(tmp)
-    sent = []
     undo_cfg = _live()
-    restore = _patch_j9(sent, [{"MASTER_NO": "176-62400004",
-                               "AMS_RECORD": dict(AMS_OUT, SEND_STATUS=1)}])
-    try:
+    for st in (1, 2):
+        sent = []
+        restore = _patch_j9(sent, [{"MASTER_NO": "176-62400004",
+                                    "AMS_RECORD": dict(AMS_OUT, SEND_STATUS=st)}])
         try:
-            mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": dict(AMS_OUT),
-                              "acked_no_review": True})
-            raise AssertionError("SEND_STATUS=1 的主单居然放行了")
-        except company_api.CompanyLocked as e:
-            assert "SEND_STATUS" in str(e)
-        assert len(sent) == 1, "闸门拦下时绝不能发出 mawb2 写请求"
-        assert not (tmp / "master_submitted.json").exists()
-    finally:
-        restore()
-        config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = undo_cfg
-        _restore(old, tmp)
+            try:
+                mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": dict(AMS_OUT),
+                                  "acked_no_review": True})
+                raise AssertionError(f"SEND_STATUS={st} 的主单居然放行了")
+            except company_api.CompanyLocked as e:
+                assert str(st) in str(e), f"要说清是哪一档：{e}"
+            assert len(sent) == 1, f"闸门拦下时绝不能发出写请求（SEND_STATUS={st}）"
+        finally:
+            restore()
+    assert not (tmp / "master_submitted.json").exists(), "两条被拦的都该没落台账"
+    config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = undo_cfg
+    _restore(old, tmp)
 
 
 def test_submit_master_gate_blocks_uncleared_flags():

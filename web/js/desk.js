@@ -63,7 +63,7 @@ const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
 /* MV = 「主单」视图：公司主单检索 → 自动解析（L1 原文 / 36 列可编辑 / 红旗）→ 人工确认后
-   按 mawb2 回传公司。它不是分单票据：字段面、红旗判据、提交接口都是主单那一套。 */
+   按 mawb3 提交发送回公司。它不是分单票据：字段面、红旗判据、提交接口都是主单那一套。 */
 let MV = null;
 let MST_LAST = null;             // 最近一次主单检索的原始响应，「送入主单核对」用它，不必再打一次公司接口
 let MV_POLL = null;             // 主单核对区那个轮询的句柄（退出视图要停）
@@ -202,7 +202,7 @@ function awbFilled(t){
 function isMissingAwbFlag(f){
   return /缺失|均为空|都(?:为空|缺失)/.test(f) && (f.includes("MAWB_NO") || f.includes("HAWB_NO"));
 }
-/* 与后端 hawb2json.clean_tax 同口径：去空白转大写，摘开头标签词（VAT#/TAX ID/USCI…） */
+/* 与后端 codes.clean_tax 同口径：去空白转大写，摘开头标签词（VAT#/TAX ID/USCI…） */
 function cleanTaxJs(v){
   let out = String(v || "").replace(/\s+/g, "").toUpperCase();
   for (let i = 0; i < 2; i++){
@@ -1124,7 +1124,7 @@ function statusCell(t, k, fl){
 function renderMain(){
   const el = $("#main"), t = current();
   el.classList.remove("has-todo");     // 只有分单核对区有置顶待办条
-  /* 主单视图：36 列可编辑 + 红旗逐条确认 → 提交回公司（mawb2）。列名/中文名/分组由后端
+  /* 主单视图：36 列可编辑 + 红旗逐条确认 → 提交发送回公司（mawb3）。列名/中文名/分组由后端
      fields 表给（单一真源），红旗在提交时由服务端按当前值重算——前端只负责让人看清并确认。 */
   if (MV){
     const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
@@ -1192,8 +1192,8 @@ function renderMain(){
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
       </div>
       <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
-        主单表没有件重/航路/税号列，<b>18 位 USCI 按公司口径填同主体的 EORI 列</b>；
-        CNPJ/RFC/GST/VAT 那类仍不要塞进 EORI，走人工确认。</span></div>
+        主单表没有件重/航路/税号列，<b>税号按公司口径统一填同主体的 EORI 列</b>；
+        同一主体有多个号（EORI 与 VAT 并存那种）就用 <b>/</b> 拼在同一格，两个都留。</span></div>
       <table><thead><tr>
         <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num scol">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>`;
@@ -1591,7 +1591,11 @@ function mstCard(j, mawb){
     : '<span class="hint">公司侧没有这条主单的资料</span>';
   return '<div class="t2">主单 ' + esc(mawb) + ' · ' + st + '　' + src + '　' + use + '</div>';
 }
-const SEND_TXT = {0:"待公司发送", 1:"公司已发送（锁定）", 2:"已改·待公司重发"};
+/* 公司侧 SEND_STATUS 字典（2026-10-09 IT 文档）：0=暂存（公司在等我们点提交发送）、
+   1=已提交发送（还没发出去，等外围程序取数）、2=外围已发送成功。
+   1 与 2 都锁死不能再改——从前把 1 写成"已发送"、2 写成"已改·待重发"，
+   人会以为发出去了（其实没有），还会去覆盖一条已经发成功的记录。 */
+const SEND_TXT = {0:"公司暂存（未发送）", 1:"已提交发送·等外围", 2:"公司已发送成功（锁定）"};
 /* 名下分单表里"公司还不认识"的那几行，来源是检索响应里的 pending（服务器从盘上现算）。
    从前这里是自己数浏览器状态（pendingUnder 读 S.tickets + localStorage），那份名单只对
    当前这个人、这台机器成立——制单员上午传的票，录入员下午查同一张主单仍是"没有分单"。 */
