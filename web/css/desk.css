@@ -302,6 +302,9 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 /* 表头那根 sticky 的 top 是给"整页滚"准备的（要让表头停在顶栏下面）。
    窗口里滚的是 .statsbody，再套那个偏移就等于把表头往下推 ~97px，压在第一行数据上。 */
 .statsbody th{top:0}
+/* 统计「逐张」的两个号列：各自不许断行，宽度按字符数给足（数字是等宽的，天然对齐）。
+   不给这条就会在列被挤窄时断在号中间，一屏看下来全是锯齿。 */
+.statsbody .tno{white-space:nowrap;width:13ch}
 .acctlist{overflow:auto;padding:4px 0}
 .arow{display:flex;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--c-line-soft);font-size:var(--f-md);
   transition:background var(--dur-fast)}

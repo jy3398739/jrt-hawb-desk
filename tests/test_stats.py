@@ -7,6 +7,7 @@
 """
 import contextlib
 import json
+import re
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -343,9 +344,13 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
         "统计页在自己重算合计：与服务器同一套算术写两遍迟早对不上"
     # 导出走服务器，页面与导出同源
     assert '"/stats/export"' in js, "要能导出同一份数"
-    # 逐张表：第一列按主单号+分单号报（票名挪到悬停提示里），模型那一列删掉。
-    # 删的只是页面这一列——分组轴「按模型」与 Excel 的模型列留着，横评还得靠它们。
-    assert "主单号 · 分单号" in js, "逐张表还在用文件名当第一列"
+    # 逐张表：两个号各占一列（挤在一格里会被列宽撕成"半行 + 孤零零一行"，竖看全是锯齿），
+    # 模型那一列删掉。删的只是页面这一列——分组轴「按模型」与 Excel 的模型列留着，横评还得靠它们。
+    assert "<th>主单号</th><th>分单号</th>" in js, "两个号没拆成两列"
+    assert "主单号 · 分单号" not in js, "还在用一格塞两个号（点号一断行就成锯齿）"
+    assert 'class="tno"' in js, "号列没挂上不许断行的类"
+    css = web_src.part("css/desk.css")
+    assert re.search(r"\.tno\{[^}]*white-space:nowrap", css), ".tno 没真的禁止断行"
     assert "<th>票名</th><th>模型</th>" not in js, "老的两列（票名/模型）还在"
     i = js.index('class="t2">逐张</div>')
     per = js[i:i + 1400]

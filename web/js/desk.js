@@ -1918,17 +1918,17 @@ function renderStats(){
       + "</tbody></table>";
   }
   if (ST.rows.length){
-    /* 第一列报"主单号 · 分单号"而不是文件名（2026-10-09 用户）：拿着票名去公司系统对还得先查一遍是谁。
-       两个号一个都没解析出来时才退回票名——整列都写"缺号"反而认不出是哪张。
+    /* 两个号各占一列（2026-10-09 用户："挤在一格里眼花缭乱"）：连成一格时列一窄就断在点号后面，
+       每格变成"半行 + 孤零零一行"，竖着看全是锯齿。拆开后各自不许断行、宽度按字符数给足，
+       等宽数字天然对齐。一个号都没解析出来时才退回票名——整列都写"缺号"反而认不出是哪张。
        票名与原始文件名留在悬停提示里：找回那张 PDF 全靠它。模型那一列删了（要横评模型看上面的分组轴）。 */
     html += '<div class="t2">逐张</div><table class="list compact"><thead><tr>'
-      + '<th>主单号 · 分单号</th><th>上传人</th><th>暂存人</th><th class="num">可比</th>'
+      + '<th>主单号</th><th>分单号</th><th>上传人</th><th>暂存人</th><th class="num">可比</th>'
       + '<th class="num">改动</th><th>制单员改的</th><th>录入员改的</th></tr></thead><tbody>'
       + ST.rows.map(r => {
-        const no = (r.mawb || r.hawb)
-          ? esc(r.mawb || "缺主单号") + " · " + esc(r.hawb || "缺分单号") : esc(r.stem);
+        const m = r.mawb ? esc(r.mawb) : (r.hawb ? "—" : esc(r.stem));
         return `<tr class="${r.legacy ? "hit" : ""}">
-        <td title="${esc((r.stem || "") + (r.source_name && r.source_name !== r.stem ? " · " + r.source_name : ""))}">${no}</td>
+        <td class="tno" title="${esc((r.stem || "") + (r.source_name && r.source_name !== r.stem ? " · " + r.source_name : ""))}">${m}</td><td class="tno">${esc(r.hawb || "—")}</td>
         <td>${esc((r.uploader || "—") + (r.uploader_role ? "（" + L.roleCn(r.uploader_role) + "）" : ""))}</td>
         <td>${esc(r.stager || "—")}</td>
         <td class="num">${r.legacy ? "—" : r.comparable}</td>
