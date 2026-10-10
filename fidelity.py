@@ -13,11 +13,9 @@ SHORT_FIELDS = ["HAWB_NO", "ORIGIN_NAME", "TO1", "TO2", "TO3", "DEST_NAME",
                 "SHIPPER_INFO_CITY", "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE",
                 "SHIPPER_INFO_POSTAL", "SHIPPER_INFO_TEL", "SHIPPER_INFO_FAX",
                 "SHIPPER_INFO_EORI", "SHIPPER_INFO_AEO", "SHIPPER_INFO_EMAIL",
-                "SHIPPER_INFO_TAX_ID",
                 "CONSIGNEE_INFO_CITTY", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE",
                 "CONSIGNEE_INFO_POSTAL", "CONSIGNEE_INFO_TEL", "CONSIGNEE_INFO_FAX",
-                "CONSIGNEE_INFO_EORI", "CONSIGNEE_INFO_AEO", "CONSIGNEE_INFO_EMAIL",
-                "CONSIGNEE_INFO_TAX_ID"]
+                "CONSIGNEE_INFO_EORI", "CONSIGNEE_INFO_AEO", "CONSIGNEE_INFO_EMAIL"]
 
 _FW = {ord("，"): ",", ord("："): ":", ord("；"): ";", ord("（"): "(", ord("）"): ")",
        ord("　"): " "}
@@ -105,8 +103,9 @@ _HS_LABEL_RE = re.compile(r"\bHS\s*(?:CODES?\s*)?[:：]", re.I)
 
 def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
     """反向核查税号漏抄：票面印着带标签的税号（USCI/CNPJ/VAT NO/TAX ID…），
-    L2 三十九个字段里却一处都找不到。返回 [(标签, 号码)]。税号早先没有落点，模型按
-    "不是电话不是 EORI"的规则直接丢弃，正向保真（L2⊆L1）永远抓不到这种"少抄"。"""
+    L2 三十八个字段里却一处都找不到。返回 [(标签, 号码)]。税号早先没有落点，模型按
+    "不是电话不是 EORI"的规则直接丢弃，正向保真（L2⊆L1）永远抓不到这种"少抄"；
+    2026-10-10 起落点就是同主体的 *_INFO_EORI，所以这里的"找得到"看的是全部字段值。"""
     text = _norm(transcript.get("full_text") or
                  " ".join(x["text"] for x in transcript.get("lines", [])))
     captured = _alnum(" ".join(str(v) for v in raw.values() if v))
@@ -213,6 +212,14 @@ def _date_ok(ct: tuple, cands: set, text: str) -> bool:
     return (None, mo, d) in cands and str(y) in text
 
 
+def _alnum_hit(val: str, nlines: list[str], nfull: str) -> bool:
+    """号码回查：先在单行里找（去标点比），找不到再按跨行拼接找。"""
+    target = _alnum(val)
+    if bool(target) and any(target in _alnum(t) for t in nlines):
+        return True
+    return len(target) >= 6 and target in _alnum(nfull)
+
+
 def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
                     long: list | None = None, hs_field: str = "GOODS_HS_CODE",
                     tax: bool = True) -> dict:
@@ -239,10 +246,12 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
             ok = (len(digits) == 11 and digits in full_digits) or (
                 len(digits) == 11 and digits[:3] in full_digits and digits[3:] in full_digits)
         elif kind == "alnum":
-            target = _alnum(val)
-            ok = bool(target) and any(target and target in _alnum(t) for t in nlines)
-            if not ok and len(target) >= 6:  # 号码跨行
-                ok = target in _alnum(nfull)
+            ok = _alnum_hit(val, nlines, nfull)
+        elif kind == "ids":
+            # 识别号一格可能装两个号（" / " 拼，见 codes.merge_ids），票面却分两处印：
+            # 逐段回查，每段都要有出处——整串拿去比原文永远比不中，假红旗会淹掉真红旗。
+            segs = codes.split_ids(val)
+            ok = bool(segs) and all(_alnum_hit(s, nlines, nfull) for s in segs)
         else:
             nval = _norm(val)
             hit = _find_lines(nval, nlines)
@@ -263,8 +272,9 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
 
     check("MAWB_NO", "mawb")
     for f in (SHORT_FIELDS if short is None else short):
-        check(f, "alnum" if f.endswith(("_TEL", "_FAX", "_EORI", "_POSTAL", "_TAX_ID"))
-              or f in ("HAWB_NO",) else "text")
+        check(f, "ids" if f.endswith("_EORI")
+              else "alnum" if f.endswith(("_TEL", "_FAX", "_POSTAL")) or f == "HAWB_NO"
+              else "text")
     for f in (LONG_FIELDS if long is None else long):
         check(f, "long")
 
@@ -292,7 +302,8 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
             checked += 1
             failed.append({"field": "TAX_ID", "value": val,
                            "reason": f"{label} 税号漏抄：票面有 {val}，"
-                                     f"需核票填 SHIPPER_INFO_TAX_ID 或 CONSIGNEE_INFO_TAX_ID"})
+                                     f"需核票填 SHIPPER_INFO_EORI 或 CONSIGNEE_INFO_EORI"
+                                     f"（识别号只有 EORI 这一格，已有号就用 / 拼在一起两个都留）"})
 
     for cand in find_missing_hs(raw, transcript, field=hs_field):
         checked += 1

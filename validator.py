@@ -4,12 +4,43 @@
 """
 import re
 
-from codes import TEL_COUNTRY_CODES, TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax
+from codes import TEL_COUNTRY_CODES, TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax, split_ids
 from master_fields import MASTER_LIMIT50
 
 def _alnum_upper(v) -> str:
     """税号/电话比对用：去掉所有分隔符再比，票面 00.280.273/0001-37 与 00280273000137 是同一个号。"""
     return re.sub(r"[^0-9A-Za-z]", "", str(v or "")).upper()
+
+
+# 主单 EORI 格的形状（分单侧的判据见下面 `_id_cell_warns`，那条更松）：两位国家字母开头的
+# 海关号/VAT、纯数字税号（11-18 位）、带点斜横线的巴西 CNPJ（去掉标点也是纯数字）。
+# 一格可能装多个号（" / " 拼），所以逐段判；位数本身不当判据——列面放宽后 15 位、17 位
+# 都可能是某个国家的正经税号，按位数拦会把对的挡掉。
+_EORI_SEG = re.compile(r"^(?:[A-Z]{2}[A-Z0-9]{6,15}|\d{11,18}|[0-9A-Z]{18})$")
+_CN_VALUES = ("CN", "CHINA", "中国")
+
+
+def _id_cell_warns(col: str, value: str, country: str = "", tel: str = "") -> list:
+    """识别号格的形态判据，L2 与 L3 共用一份（列面并成一格之后，两处再各写一套必然走偏）。
+
+    只报这四条，各有各的来处：与电话同值=电话栏吞了税号（串栏）；混进标签=模型把 `VAT#`
+    连着抄（L3 会摘，但报出来让复核的人看得见）；CN 不是 18 位=多半被截断；过短=不像是号。
+    这里**故意不按形状再拦一道**：这一格现在装的是各国自己的税号，英国 VAT 就常是
+    9 位纯数字，按形状拦会把对的挡掉（票面查无此号的毛病由保真回查管）。"""
+    warns, cu, up_c = [], _alnum_upper(tel), str(country or "").strip().upper()
+    for seg in split_ids(value):
+        v = _alnum_upper(seg)
+        if not v:
+            continue
+        if v == cu and cu:
+            warns.append(f"{col} 与电话同值，疑似电话栏吞了税号: {seg!r}")
+        elif TAX_PREFIX_RE.match(seg):
+            warns.append(f"{col} 混进了标签，只填号码本身（航空口径已自动摘掉）: {seg!r}")
+        elif up_c in _CN_VALUES and len(v) != 18:
+            warns.append(f"{col} 中国 USCI 应为 18 位，现 {len(v)} 位: {seg!r}")
+        elif len(v) < 8:
+            warns.append(f"{col} 形态异常(过短): {seg!r}")
+    return warns
 
 
 def validate_raw(d: dict) -> list:
@@ -75,29 +106,11 @@ def validate_raw(d: dict) -> list:
                         warns.append(f"{pfx} 电话区号 +{cc}({iso}) 与国家 {country} 不一致，疑似电话串边")
                     break
 
-    # 6) EORI 形态粗检（2字母+多位字母数字）
-    for k in ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI"):
-        v = str(d.get(k, "")).strip()
-        if v and not re.fullmatch(r"[A-Za-z]{2}[A-Za-z0-9]{6,15}", v):
-            warns.append(f"{k} 形态异常: {v!r}")
-
-    # 7) 税号：长度对不上多半是被截断，与电话同值必是串栏
+    # 6) 识别号格（EORI，税号也在这一格里）形态粗检
     for pfx in ("SHIPPER", "CONSIGNEE"):
-        k = pfx + "_INFO_TAX_ID"
-        v = _alnum_upper(d.get(k, ""))
-        if not v:
-            continue
-        country = str(d.get(pfx + "_INFO_COUNTRY", "")).strip().upper()
-        tel = _alnum_upper(d.get(pfx + "_INFO_TEL", ""))
-        if v == tel:
-            warns.append(f"{k} 与电话同值，疑似电话栏吞了税号")
-        elif TAX_PREFIX_RE.match(str(d.get(k, "")).strip()):
-            # 票面标签被连着号码一起抄进来了，L3 会自动摘掉；这里报出来是让复核的人看得见
-            warns.append(f"{k} 混进了标签，只填号码本身（航空口径已自动摘掉）: {str(d.get(k))!r}")
-        elif country in ("CN", "CHINA", "中国") and len(v) != 18:
-            warns.append(f"{k} 中国 USCI 应为 18 位，现 {len(v)} 位: {str(d.get(k))!r}")
-        elif len(v) < 8:
-            warns.append(f"{k} 形态异常(过短): {str(d.get(k))!r}")
+        k = pfx + "_INFO_EORI"
+        warns.extend(_id_cell_warns(k, d.get(k, ""),
+                                    d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
 
     return warns
 
@@ -113,6 +126,11 @@ def validate_air(d: dict) -> list:
         v = str(d.get(k, "")).strip()
         if v and not re.fullmatch(r"[A-Z]{3}", v):
             warns.append(f"{k} 未转成 IATA 三字码: {v!r}（码表缺项，需补 CITY_IATA）")
+    # 识别号格：人工在审核台改过的那一格也归 L3 口径管（税号今天就在这一格里）
+    for pfx in ("SHIPPER", "CONSIGNEE"):
+        k = pfx + "_INFO_EORI"
+        warns.extend(_id_cell_warns(k, d.get(k, ""),
+                                    d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
     return warns
 
 
@@ -123,12 +141,6 @@ _MASTER_GROUPS = (("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
                   ("NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_TEL"))
 _MASTER_EORI = ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI", "NOTIFY_INFO_EORI")
 _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
-
-
-# EORI 这一格现在什么都往里放（税号统一落点，IT 2026-10-09），形态判据退一步只守"像不像号码"：
-# 一格可写多个号（" / " 分隔），每段去掉标点后要匹配 EORI/VAT、纯数字税号（11-18 位）或 18 位 USCI。
-# 位数不再当判据——列面放宽后 15 位、17 位都可能是某个国家的正经税号，按位数拦会把对的挡掉。
-_EORI_SEG = re.compile(r"^(?:[A-Z]{2}[A-Z0-9]{6,15}|\d{11,18}|[0-9A-Z]{18})$")
 
 
 def _eori_cell_ok(value: str) -> bool:

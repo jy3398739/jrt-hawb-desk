@@ -22,6 +22,7 @@ import time
 import urllib.error
 import urllib.request
 
+import codes
 import config
 import fieldspec
 import master_fields as mf
@@ -35,30 +36,14 @@ _LIST_REPR_RE = re.compile(r"^\[.*\]$", re.S)
 _COLUMN_REMAP = {"ORIGIN_NAME": "ORGIN_NAME", "CONSIGNEE_INFO_CITTY": "CONSIGNEE_INFO_CITY"}
 
 # 提交体该有哪些列（IT 2026-10-09：全部字段都要带上，没值的空着——缺键与"本来就是空"必须分得开）。
-# 服务端自己维护的三列与它没有的两列（HS 编码、税号）不在其内；税号另有去处，见 merge_ids。
+# 服务端自己维护的三列与它没有的 HS 编码不在其内。税号列 2026-10-10 已从列面删除，
+# 老记录里残留的 `*_INFO_TAX_ID` 由 order_record 并进 EORI 格（见 codes.merge_ids）。
 _HAWB_SKIP = ("SEND_STATUS", "CREATE_TIME", "GOODS_HS_CODE")
 HAWB_SUBMIT_COLS = tuple(_COLUMN_REMAP.get(k, k) for k, _lab, _g in fieldspec.DESK_FIELDS
-                         if k not in _HAWB_SKIP and not k.endswith("_TAX_ID"))
+                         if k not in _HAWB_SKIP)
 
 # 空数字格必须发 null 而不是 ""：公司那边 `PIECES 必须为整数` 会把整条退回。
 _HAWB_NUM = tuple(k for k in ("PIECES", "WEIGHT", "SLAC"))
-
-# 拼串的分隔符必须带空格：CNPJ 自己就印成 07.454.234/0001-10，裸斜杠会把一个号码拆成两段。
-_ID_SPLIT = re.compile(r"\s+/\s+")
-
-
-def merge_ids(*vals):
-    """公司列面没有税号格，IT 定案：税号统一进 EORI，同主体多个号拼在一格（" / "）。
-
-    先拆再拼：暂存能反复写，下一次读回来的 EORI 就已经是拼好的那串——不拆的话
-    每暂存一次就多挂一段，第三次变成 "A / B / B / B"。"""
-    out = []
-    for v in vals:
-        for part in _ID_SPLIT.split(str(v or "").strip()):
-            part = part.strip()
-            if part and part not in out:
-                out.append(part)
-    return " / ".join(out)
 
 # 幂等锁的有效期：j9 没有幂等键，重复提交=再来一次整表写回，所以同内容只认这几十秒内的重复点。
 GUARD_TTL = 90
@@ -338,6 +323,30 @@ def stage_master(payload: dict) -> dict:
     return _master_write(payload, False)
 
 
+def order_record(mawb: str, hawb: str, air: dict, existing: dict | None) -> dict:
+    """拼整表写回的 `HAWB_RECORD`：公司读回来的原值打底 → 我方解析值覆盖 → 没给的列补 null 占位。
+
+    先读后写是因为公司做整表更新：这一趟没带上的列会被写成 NULL，把别人手工填的值抹掉。
+    税号一律落在同主体的 EORI 格（公司列面没有税号格，IT 2026-10-09 定案）：历史 air 与老暂存里
+    还带着已删除的 `*_INFO_TAX_ID`，不并这一步就等于把核对过的号静默丢掉。"""
+    record = dict(existing) if existing else {}
+    record["MAWB_NO"], record["HAWB_NO"] = mawb, hawb
+    air = air or {}
+    for k, v in air.items():
+        col = _COLUMN_REMAP.get(k, k)
+        if col not in HAWB_SUBMIT_COLS:
+            continue   # 分单表没有的列（HS 编码）与服务端自己维护的列
+        record[col] = v
+    for pfx in ("SHIPPER", "CONSIGNEE"):
+        col = pfx + "_INFO_EORI"
+        record[col] = codes.merge_ids(record.get(col), air.get(pfx + "_INFO_TAX_ID")) or None
+    for col in HAWB_SUBMIT_COLS:
+        record.setdefault(col, None)      # 没给值的列也要占位：缺键与"本来就是空"必须分得开
+        if col in _HAWB_NUM and record[col] == "":
+            record[col] = None            # 空数字格发 null——空串会被公司判「必须为整数」整条退回
+    return record
+
+
 def _order_write(payload: dict, send: bool) -> dict:
     """分单写公司：`send=True` 走 `hawb3`（提交发送，落 1），`send=False` 走 `hawb2`（暂存，落 0）。
     mock 只回带 mode 的回执；live 先读后写。"""
@@ -361,22 +370,7 @@ def _order_write(payload: dict, send: bool) -> dict:
         raise CompanyPreReadFailed(
             f"没读到分单 {hawb} 在公司的当前值（本机记录显示已提交过），先不要提交")
     _gate(existing.get("SEND_STATUS") if existing is not None else None, hawb)
-    record = dict(existing) if existing else {"MAWB_NO": mawb, "HAWB_NO": hawb}
-    record["MAWB_NO"], record["HAWB_NO"] = mawb, hawb
-    air = (payload or {}).get("air") or {}
-    for k, v in air.items():
-        col = _COLUMN_REMAP.get(k, k)
-        if col not in HAWB_SUBMIT_COLS:
-            continue   # 分单表没有的列（HS 编码、税号）与服务端自己维护的列
-        record[col] = v
-    # 公司列面没有税号格：税号统一进 EORI，两个号都留、拼在一格（IT 2026-10-09 定案）
-    for pfx in ("SHIPPER", "CONSIGNEE"):
-        col = pfx + "_INFO_EORI"
-        record[col] = merge_ids(record.get(col), air.get(pfx + "_INFO_TAX_ID")) or None
-    for col in HAWB_SUBMIT_COLS:
-        record.setdefault(col, None)      # 没给值的列也要占位：缺键与"本来就是空"必须分得开
-        if col in _HAWB_NUM and record[col] == "":
-            record[col] = None            # 空数字格发 null——空串会被公司判「必须为整数」整条退回
+    record = order_record(mawb, hawb, (payload or {}).get("air") or {}, existing)
     receipt = _post_guarded(store.number_key(mawb, hawb) + ("#send" if send else "#stage"), record,
                             "/api/v1/j9/hawb3" if send else "/api/v1/j9/hawb2", "HAWB_RECORD",
                             config.COMPANY_HAWB_KEY)

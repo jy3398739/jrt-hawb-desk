@@ -35,7 +35,25 @@ def test_l3_has_no_iata_warnings():
     """L3 出口必须全是三字码：码表缺项在这里被抓住，而不是等业务方发现。"""
     bad = []
     for p in sorted((FIX / "expected").glob("*.json")):
-        w = validate_air(_read(p))
+        w = [x for x in validate_air(_read(p)) if "三字码" in x]
         if w:
             bad.append(f"{p.name}: {w}")
     assert not bad, "L3 存在未映射的地名（补 codes.CITY_IATA 后 --update-baseline）：\n    " + "\n    ".join(bad)
+
+
+# 识别号格（EORI，今天税号也住这里）的形态红旗：补码表消不掉，只能人工核票改那一格，
+# 所以它不归上一条"零告警"的闸门管。冻一张已知清单在这里：多出一格就得是有意为之，
+# 而不是某次改动把号弄坏了没人看见。
+KNOWN_BAD_ID_CELLS = {
+    "94fe2613ad9be1ca6d2a3958421348e.json": ["SHIPPER_INFO_EORI"],   # 票面 NOTICE/CN/SHP/T/USCI… 整段被塞进格子
+}
+
+
+def test_l3_id_cell_warnings_are_the_known_list():
+    found = {}
+    for p in sorted((FIX / "expected").glob("*.json")):
+        cols = [x.split()[0] for x in validate_air(_read(p)) if "EORI" in x]
+        if cols:
+            found[p.name] = sorted(cols)
+    assert found == KNOWN_BAD_ID_CELLS, (
+        f"识别号格红旗与已知清单不一致：新增={ {k: v for k, v in found.items() if KNOWN_BAD_ID_CELLS.get(k) != v} }")

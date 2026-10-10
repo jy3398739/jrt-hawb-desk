@@ -5,7 +5,7 @@ import json
 import re
 from types import SimpleNamespace
 
-import company_api
+import codes
 import config
 import fidelity
 import vlm_extract
@@ -152,10 +152,10 @@ def test_cnpj_with_its_own_slash_is_not_mistaken_for_two_numbers():
     ams = {c: None for c in MASTER_COLS}
     ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "07.454.234/0001-10"})
     assert not any("SHIPPER_INFO_EORI" in w for w in validate_master(ams)), "带点的 CNPJ 是合法号码"
-    merged = company_api.merge_ids("IT03268900267", "07.454.234/0001-10")
+    merged = codes.merge_ids("IT03268900267", "07.454.234/0001-10")
     assert merged == "IT03268900267 / 07.454.234/0001-10", merged
-    assert company_api.merge_ids(merged, "07.454.234/0001-10") == merged, \
-        f"再拼一次不许把 CNPJ 拆开：{company_api.merge_ids(merged, '07.454.234/0001-10')}"
+    assert codes.merge_ids(merged, "07.454.234/0001-10") == merged, \
+        f"再拼一次不许把 CNPJ 拆开：{codes.merge_ids(merged, '07.454.234/0001-10')}"
 
 
 def test_master_prompt_sends_every_tax_number_into_the_party_eori_column():

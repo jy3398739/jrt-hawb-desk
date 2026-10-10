@@ -157,31 +157,69 @@ def test_recheck_backfills_flags_without_calling_model():
                                  {"i": 2, "text": "Executed on 20-Sep-26"}],
                        "full_text": "HAWB TAO7268550 Executed on 20-Sep-26"})
         store.save_qc("TAO7268550", {"channel": "excel", "elapsed": 12.5,
+                                     "model": "intern-s2-official", "model_choice": "intern-s2",
+                                     "uploader": "admin", "uploader_role": "admin",
+                                     "processed_at": "2026-09-26T10:00:00",
                                      "needs_review": False, "flags": []})
         assert run_batch.recheck_all() == 1
         qc = store.load_qc()["TAO7268550"]
         assert qc["needs_review"] and any("签发日期" in f for f in qc["flags"]), qc["flags"]
         # 重检不跑模型，通道与耗时只能沿用旧记录：丢了的话 Excel/库里两列会变空白
         assert qc["channel"] == "excel" and qc["elapsed"] == 12.5, qc
+        # 模型与"哪天谁经手的"同理：重检只改判据，不改历史。processed_at 一旦被刷成今天，
+        # 今日台账会把所有老票都算成今天经手（字段契约变更后正是靠重检迁移，这一刷就毁了台账）
+        assert qc["model"] == "intern-s2-official" and qc["model_choice"] == "intern-s2", qc
+        assert qc["uploader"] == "admin" and qc["uploader_role"] == "admin", qc
+        assert qc["processed_at"] == "2026-09-26T10:00:00", qc
 
 
 def test_recheck_recomputes_l3_and_backfills_new_columns():
-    """字段契约加列后跑 --recheck：老结果补齐新键，L3 由 L2 纯函数重算（把粘在地址上的税号摘出来）。
+    """字段契约变更后跑 --recheck：老结果补齐新键，L3 由 L2 纯函数重算
+    （把粘在地址上的税号摘出来、落进同主体的 EORI 格，2026-10-10 定案）。
     不这么办的话老票的税号永远留在地址串里，而重跑一遍又是一次额度。"""
     with _sandbox():
         old = {"MAWB_NO": "999-30825351", "HAWB_NO": "999-30825351",
                "SHIPPER_INFO_COMP_NAME": "BEIJING ORIENTAL SCIENCE & TECHNOLOGY",
                "SHIPPER_INFO_COMP_ADDRESS": "BEI-SI-HUAN ROAD, HAIDIAN DISTRICT, USCI:9111010880211232X4",
-               "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_CITY": "BEIJING"}   # 37 键时代，根本没有 TAX_ID
+               "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_CITY": "BEIJING"}   # 老契约时代的结果
         _write_ticket("999_30825351", old,
                       {"lines": [{"i": 1, "text": old["SHIPPER_INFO_COMP_ADDRESS"]}], "full_text": ""})
         run_batch.recheck_all()
         raw = json.loads((config.OUTPUT_RAW_DIR / "999_30825351.json").read_text(encoding="utf-8"))
         air = json.loads((config.OUTPUT_AIR_DIR / "999_30825351.json").read_text(encoding="utf-8"))
-        assert len(raw) == len(codes.TARGET_KEYS_OUT) and raw["SHIPPER_INFO_TAX_ID"] == "", \
+        assert len(raw) == len(codes.TARGET_KEYS_OUT) and raw["SHIPPER_INFO_EORI"] == "", \
             "老结果要补齐新列；L2 是照抄口径，号仍在地址串里"
-        assert air["SHIPPER_INFO_TAX_ID"] == "9111010880211232X4", air
+        assert not [k for r in (raw, air) for k in r if k.endswith("_TAX_ID")], \
+            "已删的税号列不该被重算造出来"
+        assert air["SHIPPER_INFO_EORI"] == "9111010880211232X4", air
         assert "USCI" not in air["SHIPPER_INFO_COMP_ADDRESS"], air["SHIPPER_INFO_COMP_ADDRESS"]
+
+
+def test_recheck_carries_a_legacy_tax_column_over_into_the_air_eori():
+    """归档里的 L2 有不少还带着已删除的 `*_INFO_TAX_ID`（本机 11 份），而且地址串里往往
+    已经没有这个号了——老口径是模型把号单独立到那一列的。
+    所以 --recheck 必须先把老键交给 L3 再落盘：修剪成 38 列后重算等于把号两头都弄丢，
+    下一次提交给公司的 EORI 就是空的。"""
+    with _sandbox():
+        old = {k: "" for k in codes.TARGET_KEYS_OUT}
+        old.update({"MAWB_NO": "999-30825351", "HAWB_NO": "TSN10359645",
+                    "SHIPPER_INFO_COMP_NAME": "PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
+                    "SHIPPER_INFO_COMP_ADDRESS": "NO 21 HONGYUAN ROAD, TIANJIN 300385 CN",
+                    "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_CITY": "TIANJIN",
+                    "SHIPPER_INFO_TAX_ID": "911201117706402073"})
+        _write_ticket("TSN10359645", old,
+                      {"lines": [{"i": 1, "text": "NO 21 HONGYUAN ROAD, TIANJIN 300385 CN"},
+                                 {"i": 2, "text": "USCI: 911201117706402073"}], "full_text": ""})
+        run_batch.recheck_all()
+        raw = json.loads((config.OUTPUT_RAW_DIR / "TSN10359645.json").read_text(encoding="utf-8"))
+        air = json.loads((config.OUTPUT_AIR_DIR / "TSN10359645.json").read_text(encoding="utf-8"))
+        assert set(codes.TARGET_KEYS_OUT) <= set(raw), "契约键要补齐"
+        assert raw["SHIPPER_INFO_TAX_ID"] == "911201117706402073", "重检不许把老列的值剪掉"
+        assert air["SHIPPER_INFO_EORI"] == "911201117706402073", air
+        # 再跑一遍还是同一个结果：号不能"第一次重检就丢"，运维手滑多跑一次不该弄坏数据
+        run_batch.recheck_all()
+        again = json.loads((config.OUTPUT_AIR_DIR / "TSN10359645.json").read_text(encoding="utf-8"))
+        assert again["SHIPPER_INFO_EORI"] == "911201117706402073", again
 
 
 def test_recheck_flags_ticket_without_transcript():

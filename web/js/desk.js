@@ -26,10 +26,9 @@ const FIELDS = [
   ["SHIPPER_INFO_COUNTRY","国家","ship"],
   ["SHIPPER_INFO_TEL","电话","ship"],
   ["SHIPPER_INFO_FAX","传真","ship"],
-  ["SHIPPER_INFO_EORI","EORI","ship"],
+  ["SHIPPER_INFO_EORI","EORI / 税号","ship"],
   ["SHIPPER_INFO_AEO","AEO","ship"],
   ["SHIPPER_INFO_EMAIL","邮箱","ship"],
-  ["SHIPPER_INFO_TAX_ID","税号 USCI/CNPJ","ship"],
   ["CONSIGNEE_INFO","收货人整串","cons"],
   ["CONSIGNEE_INFO_COMP_NAME","公司名称","cons"],
   ["CONSIGNEE_INFO_COMP_ADDRESS","详细地址","cons"],
@@ -39,10 +38,9 @@ const FIELDS = [
   ["CONSIGNEE_INFO_COUNTRY","国家","cons"],
   ["CONSIGNEE_INFO_TEL","电话","cons"],
   ["CONSIGNEE_INFO_FAX","传真","cons"],
-  ["CONSIGNEE_INFO_EORI","EORI","cons"],
+  ["CONSIGNEE_INFO_EORI","EORI / 税号","cons"],
   ["CONSIGNEE_INFO_AEO","AEO","cons"],
-  ["CONSIGNEE_INFO_EMAIL","邮箱","cons"],
-  ["CONSIGNEE_INFO_TAX_ID","税号 USCI/CNPJ","cons"]
+  ["CONSIGNEE_INFO_EMAIL","邮箱","cons"]
 ];
 const KEYS = FIELDS.map(f => f[0]);
 const GROUPS = {id:"单号",route:"航路",cargo:"货物与日期",ship:"发货人 SHIPPER",cons:"收货人 CONSIGNEE"};
@@ -155,12 +153,14 @@ function checks(k, l2, l3){
   if (/_TEL$|_FAX$/.test(k)){
     if (a && !/^\+\d{6,}$/.test(a.replace(/[\s().-]/g, ""))) out.push(["电话/传真未归一成 +数字", "warn"]);
   }
-  if (k.endsWith("_TAX_ID")){
-    if (a){
-      if (/^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]/.test(a))
-        out.push(["税号混进了标签，只填号码本身", "warn"]);
-      else if (a.replace(/[^0-9A-Za-z]/g, "").length < 8) out.push(["税号过短，疑似截断", "warn"]);
-    }
+  if (k.endsWith("_EORI")){
+    /* 识别号只剩这一格：海关号与税号同住，一格可能用 " / " 装两个号，所以逐段判
+       （分隔符两侧必须带空格——CNPJ 自己就含斜杠）。 */
+    const segs = a.split(/\s+\/\s+/).filter(s => s);
+    if (segs.some(s => /^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]/.test(s)))
+      out.push(["识别号混进了标签，只填号码本身", "warn"]);
+    if (segs.some(s => s.replace(/[^0-9A-Za-z]/g, "").length < 8))
+      out.push(["识别号过短，疑似截断", "warn"]);
   }
   if (k === "CREATE_TIME"){
     if (a && !/^\d{4}-\d{2}-\d{2}$/.test(a)) out.push(["签发日期要 YYYY-MM-DD", "warn"]);
@@ -193,7 +193,7 @@ function flagNote(f){
 
 /* 缺号类红旗按"当前值"动态判定：制单员手填主/分单号后，那条"XX_NO 缺失/均为空"就该消，
    否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。
-   税号"混进了标签（航空口径已自动摘掉）"同理：值已被系统洗干净且未被人工改掉，纯提示不该卡提交。 */
+   识别号"混进了标签（航空口径已自动摘掉）"同理：值已被系统洗干净且未被人工改掉，纯提示不该卡提交。 */
 function awbFilled(t){
   const rev = reviewed(t);
   return { MAWB_NO: String(rev.MAWB_NO || "").trim() !== "",
@@ -214,10 +214,10 @@ function cleanTaxJs(v){
 }
 function isTaxLabelFlag(f){
   return f.includes("混进了标签") && f.includes("已自动摘掉") &&
-         (f.includes("SHIPPER_INFO_TAX_ID") || f.includes("CONSIGNEE_INFO_TAX_ID"));
+         (f.includes("SHIPPER_INFO_EORI") || f.includes("CONSIGNEE_INFO_EORI"));
 }
 function taxFlagCleared(t, f){
-  const k = f.includes("SHIPPER_INFO_TAX_ID") ? "SHIPPER_INFO_TAX_ID" : "CONSIGNEE_INFO_TAX_ID";
+  const k = f.includes("SHIPPER_INFO_EORI") ? "SHIPPER_INFO_EORI" : "CONSIGNEE_INFO_EORI";
   const m = f.match(/: '(.*)'$/);
   if (!m) return false;
   const rev = reviewed(t);

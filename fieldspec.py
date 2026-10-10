@@ -39,16 +39,14 @@ DESK_FIELDS = [
     ("SHIPPER_INFO_COMP_ADDRESS", "详细地址", "ship"), ("SHIPPER_INFO_CITY", "城市", "ship"),
     ("SHIPPER_INFO_STATE", "州 / 省", "ship"), ("SHIPPER_INFO_POSTAL", "邮编", "ship"),
     ("SHIPPER_INFO_COUNTRY", "国家", "ship"), ("SHIPPER_INFO_TEL", "电话", "ship"),
-    ("SHIPPER_INFO_FAX", "传真", "ship"), ("SHIPPER_INFO_EORI", "EORI", "ship"),
+    ("SHIPPER_INFO_FAX", "传真", "ship"), ("SHIPPER_INFO_EORI", "EORI / 税号", "ship"),
     ("SHIPPER_INFO_AEO", "AEO", "ship"), ("SHIPPER_INFO_EMAIL", "邮箱", "ship"),
-    ("SHIPPER_INFO_TAX_ID", "税号 USCI/CNPJ", "ship"),
     ("CONSIGNEE_INFO", "收货人整串", "cons"), ("CONSIGNEE_INFO_COMP_NAME", "公司名称", "cons"),
     ("CONSIGNEE_INFO_COMP_ADDRESS", "详细地址", "cons"), ("CONSIGNEE_INFO_CITTY", "城市", "cons"),
     ("CONSIGNEE_INFO_STATE", "州 / 省", "cons"), ("CONSIGNEE_INFO_POSTAL", "邮编", "cons"),
     ("CONSIGNEE_INFO_COUNTRY", "国家", "cons"), ("CONSIGNEE_INFO_TEL", "电话", "cons"),
-    ("CONSIGNEE_INFO_FAX", "传真", "cons"), ("CONSIGNEE_INFO_EORI", "EORI", "cons"),
+    ("CONSIGNEE_INFO_FAX", "传真", "cons"), ("CONSIGNEE_INFO_EORI", "EORI / 税号", "cons"),
     ("CONSIGNEE_INFO_AEO", "AEO", "cons"), ("CONSIGNEE_INFO_EMAIL", "邮箱", "cons"),
-    ("CONSIGNEE_INFO_TAX_ID", "税号 USCI/CNPJ", "cons"),
 ]
 
 HEAD = """/* 由 fieldspec.py 生成，改字段只改那一处，然后跑：python deploy/gen_fields.py

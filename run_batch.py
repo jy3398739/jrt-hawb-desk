@@ -30,8 +30,12 @@ def recheck_all() -> int:
     flagged = 0
     for f in files:
         stored = json.loads(f.read_text(encoding="utf-8"))
-        # 字段契约加列时老结果补齐键位：缺的键填空串，值仍在票面原文里（如税号曾粘在地址上）
-        raw = {k: stored.get(k, "") for k in codes.TARGET_KEYS_OUT}
+        # 字段契约加列时老结果补齐键位：缺的键填空串，值仍在票面原文里（如税号曾粘在地址上）。
+        # 契约里已经没有的老键**原样留着**（2026-10-10 删掉的 `*_INFO_TAX_ID` 就是）：那是当年的
+        # 解析结果，剪掉等于把号从台账里抹了，而 L3 正要靠它把号并进 EORI 格。
+        raw = dict(stored)
+        for k in codes.TARGET_KEYS_OUT:
+            raw.setdefault(k, "")
         air = to_air.to_air(raw)                     # L3 是 L2 的纯函数，重算即可，不碰模型
         store.save_result(f.stem, raw, air)
         tr_p = config.TRANSCRIPT_DIR / f.name
@@ -49,8 +53,13 @@ def recheck_all() -> int:
              "transcript": transcript, "warns": warns, "fidelity": fid,
              "archive": archive, "qc": None, "error": ""}
         qc = r["qc"] = build_qc(Path((archive or {}).get("source_name") or f.stem), r)
-        qc["channel"] = (old_qc.get(f.stem) or {}).get("channel", "")
-        qc["elapsed"] = (old_qc.get(f.stem) or {}).get("elapsed", 0.0)
+        # 重检只改判据，不改历史：这几样记的都是"解析那一刻"（哪个模型、谁传的、哪天经手的、跑了多久）。
+        # 尤其 processed_at ——刷成今天会把所有老票都塞进「今日台账」，而字段契约变更后恰恰要靠重检迁移。
+        old = old_qc.get(f.stem) or {}
+        for k in ("channel", "elapsed", "model", "model_choice", "uploader",
+                  "uploader_role", "processed_at"):
+            if old.get(k) not in (None, ""):
+                qc[k] = old[k]
         store.save_qc(f.stem, qc)
         flagged += qc["needs_review"]
         print(f"{f.stem:46s} {'⚠ ' + str(len(qc['flags'])) + ' 条红旗' if qc['flags'] else '干净'}")

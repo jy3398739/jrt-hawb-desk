@@ -12,14 +12,16 @@ TARGET_KEYS = ("MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_N
                "TO1", "TO2", "TO3", "DEST_NAME", "GOODS_INFO", "GOODS_HS_CODE",
                "PIECES", "WEIGHT", "SLAC", "CREATE_TIME", "SEND_STATUS")
 
-# 列面 = 基础若干 + 发货人 12 项 + 收货人 12 项 (CITTY 为库表原拼写, 勿"修正")
-# TAX_ID 是票面税号（中国 USCI/统一社会信用代码、巴西 CNPJ、RFC、VAT NO、TAX ID）的唯一落点：
-# 它按规则既不能进 TEL 也不能进 EORI，37 字段时代没有归处，模型直接丢弃且质检看不出来。
+# 列面 = 基础若干 + 发货人 11 项 + 收货人 11 项 (CITTY 为库表原拼写, 勿"修正")
+# 2026-10-10 业主定案：`*_INFO_TAX_ID` 两列**删除**，票面税号（中国 USCI/统一社会信用代码、
+# 巴西 CNPJ、RFC、VAT NO、TAX ID）一律落进同主体的 `*_INFO_EORI` 那一格，多个号用 " / " 拼。
+# 公司 AMS 列面本来就没有税号格（v1.8.0 起提交前就是这么并的），所以这一改只是把"两个地方"
+# 收成"一个地方"，不再出现"票面有税号、EORI 空着、号在另一列"的第三种状态。
 # GOODS_HS_CODE 是货物描述里 HS CODE(S) 的唯一落点；GOODS_INFO 保持照抄不动（保真口径）。
 TARGET_KEYS_OUT = TARGET_KEYS[:2] + ("SHIPPER_INFO", "CONSIGNEE_INFO") + TARGET_KEYS[4:16] + \
     tuple(p + s for p in ("SHIPPER_INFO_", "CONSIGNEE_INFO_")
           for s in ("COMP_NAME", "COMP_ADDRESS", "CITY" if p == "SHIPPER_INFO_" else "CITTY",
-                    "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "AEO", "EMAIL", "TAX_ID"))
+                    "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "AEO", "EMAIL"))
 
 # 票面税号标签 -> 号码。只认带标签的，绝不拿裸数字猜（18 位纯数字也可能是货值/账号）。
 # EORI 是 2026-09-26 八票逐格对台实测补的：欧票把海关号印成 `EORI IT03268900267`，
@@ -42,6 +44,29 @@ def clean_tax(v) -> str:
             break
         out = stripped
     return out
+
+# 一格装多个识别号的分隔符：**两侧必须带空格**。巴西 CNPJ 自己就含斜杠
+# （07.454.234/0001-10），用裸斜杠当隔符会把一个号码切成两段、再拼回去永久坏掉。
+_ID_SPLIT = re.compile(r"\s+/\s+")
+
+
+def merge_ids(*vals) -> str:
+    """把同主体的多个识别号并成一格（EORI 与税号今天共用这一格）。
+    先拆再拼：暂存会反复写同一格，下一次读回来的就已经是拼好的那串——不拆的话
+    每写一次多挂一段，第三次变成 "A / B / B / B"。"""
+    out = []
+    for v in vals:
+        for part in _ID_SPLIT.split(str(v or "").strip()):
+            part = part.strip()
+            if part and part not in out:
+                out.append(part)
+    return " / ".join(out)
+
+
+def split_ids(v) -> list:
+    """拆开一格里的多个号（形态检查要逐段判）。"""
+    return [x.strip() for x in _ID_SPLIT.split(str(v or "").strip()) if x.strip()]
+
 
 # ------- 第二遍(航空运输要求)规范化参考表: 国家两位码 / 城市 IATA 三字码 ------
 COUNTRY_ISO2 = {

@@ -191,13 +191,22 @@ def to_air(d: dict) -> dict:
         # 地址剥离/解析用国家全称（地址尾部两字母码已被 _fix_addr_country 换成全称）
         country_full0 = country_full(country0) or str(country0 or "")
 
-        # 税号：L2 已单列则照抄；模型把 "USCI: 91..." 连号留在地址或整串里时摘出来单独成列
-        taken = {_alnum0(x) for x in (tel0, fax0, eori0, d.get(pfx + "_INFO_POSTAL", ""))}
-        tax = codes.clean_tax(d.get(pfx + "_INFO_TAX_ID", ""))
+        # 识别号只有一个格子：EORI。海关号（SE5563646560）、中国 USCI、巴西 CNPJ、VAT/GST/TAX ID
+        # 全往这里并（2026-10-10 定案，`*_INFO_TAX_ID` 两列已删）。模型三种毛病都要兜住：
+        # 连着标签一起抄（"VAT#769638661"）、把号留在地址或整串里、同一主体给两个号。
+        # 同一个号不许在同一格里出现两遍——所以已知的 EORI 段也算 taken，地址里再出现只清列不重拼。
+        ids = [codes.clean_tax(x) for x in codes.split_ids(eori0)]
+        legacy = codes.clean_tax(d.get(pfx + "_INFO_TAX_ID", ""))   # 老 raw 重算时还带着这一列
+        if legacy:
+            ids.append(legacy)
+        taken = {_alnum0(x) for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", ""))} | \
+            {_alnum0(x) for x in ids}
         addr, pulled = _pull_tax(addr, "", taken)
         if not pulled:      # 只留在合并串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
             _, pulled = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
-        out[pfx + "_INFO_TAX_ID"] = tax or pulled
+        if pulled:
+            ids.append(pulled)
+        out[pfx + "_INFO_EORI"] = codes.merge_ids(*ids)
 
         if not (name or addr):
             continue
