@@ -34,16 +34,17 @@ def _model(**over):
 
 @contextlib.contextmanager
 def _world():
-    """只摆这台服务器上的落盘文件，不碰真 output/：stats 读的就是这几个目录。"""
+    """只摆这台服务器上的落盘文件，不碰真 output/：stats 读的就是这几个目录（作废本也算）。"""
     old = (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
            config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR, config.SUBMIT_LEDGER, config.ARCHIVE_DIR,
-           auth.USERS_FILE)
+           auth.USERS_FILE, config.VOID_LEDGER)
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         config.STAGED_DIR, config.OUTPUT_AIR_DIR = tmp / "staged", tmp / "air"
         config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR = tmp / "raw", tmp / "qc"
         config.TRANSCRIPT_DIR, config.ARCHIVE_DIR = tmp / "transcript", tmp / "archive"
         config.SUBMIT_LEDGER = tmp / "submitted.json"
+        config.VOID_LEDGER = tmp / "voided.json"
         auth.USERS_FILE = tmp / "users.json"
         for p in (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
                   config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR, config.ARCHIVE_DIR):
@@ -53,7 +54,24 @@ def _world():
         finally:
             (config.STAGED_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR,
              config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR, config.ARCHIVE_DIR,
-             config.SUBMIT_LEDGER, auth.USERS_FILE) = old
+             config.SUBMIT_LEDGER, auth.USERS_FILE, config.VOID_LEDGER) = old
+
+
+def test_voided_tickets_are_out_of_the_rate():
+    """作废的票不再参与正确率——这正是「作废」这个键存在的意义：测试数据留在表里，
+    数就永远是被污染的那一个。但只跳过统计，不动提交台账与原件（作废≠没发生过）。"""
+    with _world():
+        _parsed("K1", {"ORIGIN_NAME": "SHA"})
+        store.stage_ticket("K1", _model(ORIGIN_NAME="SHA"), "宛平", "inputter")
+        _parsed("K2", {"ORIGIN_NAME": "BJS"})
+        store.stage_ticket("K2", _model(ORIGIN_NAME="BJS"), "宛平", "inputter")
+        assert len(stats.collect()) == 2, "先把两张都算上的前提钉住，否则下面那条断言是空的"
+        store.void_row("hawb", "K2", "admin")
+        rows = stats.collect()
+        assert [r["stem"] for r in rows] == ["K1"], "作废的票该从正确率的分母里出去"
+        assert store.load_staged("K2"), "作废不许顺手删掉同事的暂存记录"
+        assert stats.summary(rows)["tickets"] == 1
+
 
 
 def _parsed(stem, model, uploader="马殿齐", role="reviewer", when=TODAY,

@@ -1943,6 +1943,7 @@ function setView(v){
     b.setAttribute("aria-selected", String(VIEW.cur === k));
   });
   syncCards();
+  dayConfirm = "";                      // 换页就把「确认作废？」问句收掉：回来得重新点一次，不会留着等人误点
   if (VIEW.cur === "day") loadDay();
 }
 const todayStr = () => {
@@ -1964,32 +1965,63 @@ async function loadDay(){
     box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
   }
 }
+/* 今日台账：分单与主单合一张表（行上带 kind），作废是"从台账与统计里收起来"的软闸门。
+   dayConfirm 只活在内存里：刷新页面就该问第二遍，记进 localStorage 反而会把上一轮的确认
+   留到下一次误点。 */
+let dayOnlyVoid = false, dayConfirm = "";
+const KIND_CN = {hawb: "分单", mawb: "主单"};
+function voidCell(r){
+  const k = r.kind + "|" + (r.kind === "mawb" ? r.mawb : r.stem);
+  if (r.voided)
+    return '<button class="btn sm" type="button" data-undo="' + esc(k) + '" title="当初作废：' +
+           esc(r.voided.by || "?") + " " + esc(r.voided.at || "") + '">恢复</button>';
+  if (dayConfirm === k)
+    return '<span class="vq">作废这一行？原件、暂存与提交记录都不动</span>' +
+           '<button class="btn sm danger" type="button" data-void="' + esc(k) + '">确认作废</button>' +
+           '<button class="btn sm" type="button" data-vno="1">取消</button>';
+  return '<button class="btn sm gh" type="button" data-void="' + esc(k) +
+         '" title="从台账与统计里收起来，随时能恢复；票面原件、暂存与提交台账一律不动">作废</button>';
+}
 function renderDay(){
   const s = L.daySummary(VIEW.rows);
   $("#dayCnt").textContent = `${s.total} 张 · 已提交 ${s.submitted} · 待提交 ${s.pending}`
-    + (s.failed ? ` · 失败 ${s.failed}` : "") + (s.flags ? ` · 红旗 ${s.flags} 条` : "");
-  if (!VIEW.rows.length){
-    $("#dayBox").innerHTML = '<div class="empty">这一天这台机器没经手过票。换个日期，或点「刷新」。</div>';
+    + (s.failed ? ` · 失败 ${s.failed}` : "") + (s.flags ? ` · 红旗 ${s.flags} 条` : "")
+    + (s.voided ? ` · 已作废 ${s.voided}` : "");
+  const rows = L.dayVisible(VIEW.rows, dayOnlyVoid);
+  if (!rows.length){
+    $("#dayBox").innerHTML = VIEW.rows.length
+      ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。" : "这一天的票都被作废了。勾上「只看作废」翻回来。")
+        + '</div>'
+      : '<div class="empty">这一天这台机器没经手过票。换个日期，或点「刷新」。</div>';
     return;
   }
-  const rows = VIEW.rows.map(r => `<tr class="${r.failed ? "flag" : ""}">
-    <td>${r.has_original
-      ? `<button type="button" class="lk" data-open="${esc(r.stem)}" title="回到工作台接着核这张票">${esc(r.hawb || r.stem)}</button>`
-      : esc(r.hawb || "没取到分单号")}</td>
-    <td>${esc(r.mawb || "—")}</td>
-    <td>${r.failed ? '<span class="badge miss">解析失败</span>'
-      : r.submitted ? '<span class="badge same">已提交</span>' : '<span class="badge warn">未提交</span>'}</td>
-    <td>${r.flags ? `<span class="badge warn">红旗 ${r.flags}</span>` : '<span class="badge">无</span>'}</td>
-    <td>${r.submitted ? esc(r.submitted.reviewer + " · " + r.submitted.at +
+  const html = rows.map(r => {
+    const m = r.kind === "mawb";
+    const no = m
+      ? `<button type="button" class="lk" data-mopen="${esc(r.mawb)}" title="回工作台按这个主单号检索并打开核对区">${esc(r.mawb)}</button>`
+      : r.has_original
+        ? `<button type="button" class="lk" data-open="${esc(r.stem)}" title="回到工作台接着核这张票">${esc(r.hawb || r.stem)}</button>`
+        : esc(r.hawb || (m ? r.mawb : "没取到分单号"));
+    const st = r.failed ? '<span class="badge miss">解析失败</span>'
+      : r.submitted ? '<span class="badge same">已提交</span>' : '<span class="badge warn">未提交</span>';
+    return `<tr class="${r.failed ? "flag" : ""}${r.voided ? " voided" : ""}">
+      <td class="kcol"><span class="kind k${esc(r.kind)}">${KIND_CN[r.kind] || esc(r.kind)}</span></td>
+      <td>${no}</td>
+      <td>${m ? '<span class="hint">本行就是主单</span>' : esc(r.mawb || "—")}</td>
+      <td>${st}${m && !r.failed ? ` <span class="hint">${r.filled}/${r.cols_total} 列</span>` : ""}</td>
+      <td>${r.flags ? `<span class="badge warn">红旗 ${r.flags}</span>` : '<span class="badge">无</span>'}</td>
+      <td>${r.submitted ? esc(r.submitted.reviewer + " · " + r.submitted.at +
                              (r.submitted.action ? " · " + r.submitted.action : "")) : "—"}</td>
-    <td>${esc((r.channel || "—") + " · " + (r.elapsed || 0) + "s")}</td>
-    <td>${r.has_original
-      ? `<a href="${BASE}/source/${encodeURIComponent(r.stem)}" target="_blank" rel="noopener">看原件</a>`
-      : '<span class="hint">没归档原件</span>'}</td></tr>`).join("");
+      <td>${esc((r.channel || "—") + " · " + (r.elapsed || 0) + "s")}</td>
+      <td>${r.has_original
+        ? `<a href="${BASE}${m ? "/mawb/source/" + encodeURIComponent(r.mawb) : "/source/" + encodeURIComponent(r.stem)}" target="_blank" rel="noopener">看原件</a>`
+        : '<span class="hint">没归档原件</span>'}</td>
+      <td class="kcol">${voidCell(r)}</td></tr>`;
+  }).join("");
   $("#dayBox").innerHTML = `<table><thead><tr>
-      <th>分单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
-      <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th></tr></thead>
-      <tbody>${rows}</tbody></table>
+      <th class="kcol">类型</th><th>单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
+      <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th><th class="kcol">作废</th></tr></thead>
+      <tbody>${html}</tbody></table>
       <p class="hint hintp">「公司发送状态」要按主单去公司系统查（限流 10 次/秒）：点顶栏「主单检索」查那张主单下的全部票。</p>`;
 }
 /* 统计页：数全部来自 /stats 的 summary（Python 一处算），这里只排版与换算百分号。
@@ -2093,10 +2125,44 @@ $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/e
 ["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));
 $("#dayGo").addEventListener("click", loadDay);
 $("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(); });
+$("#dayOnlyVoid").addEventListener("change", e => { dayOnlyVoid = e.target.checked; dayConfirm = ""; renderDay(); });
+async function postVoid(k, on){
+  const i = k.indexOf("|");
+  const body = {kind: k.slice(0, i), key: k.slice(i + 1), void: on};
+  dayConfirm = "";
+  try{
+    const r = await fetch(BASE + "/void", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({detail:"返回不是 JSON（HTTP " + r.status + "）"}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    toast(on ? "已作废：这一行从台账与统计里收起来了（原件、暂存与提交记录都没动）"
+             : "已恢复：这一行回到台账", "ok");
+  }catch(err){
+    toast((on ? "作废失败：" : "恢复失败：") + err.message, "bad");
+  }
+  loadDay();      // 以服务端为准重画：作废本落在服务器上，别人那一屏也要跟着变
+}
 $("#dayBox").addEventListener("click", e => {
-  const b = e.target.closest("[data-open]"); if (!b) return;
-  setView("desk");                       // 回工作台，再复用同一条打开已归档分单的链路
-  openHouse(b.dataset.open);
+  const o = e.target.closest("[data-open]");
+  if (o){ setView("desk"); openHouse(o.dataset.open); return; }
+  const m = e.target.closest("[data-mopen]");
+  if (m){                                  // 主单行：回工作台按这个号检索，核对区自己会出来
+    setView("desk");
+    const box = $("#mstNo");
+    box.value = m.dataset.mopen;
+    box.scrollIntoView({behavior: "smooth", block: "center"});
+    mstSearch();
+    return;
+  }
+  const v = e.target.closest("[data-void]");
+  if (v){                                  // 第一下只把这一行变成「确认作废？」，不发请求（防误点）
+    if (dayConfirm !== v.dataset.void){ dayConfirm = v.dataset.void; renderDay(); return; }
+    postVoid(v.dataset.void, true); return;
+  }
+  const n = e.target.closest("[data-vno]");
+  if (n){ dayConfirm = ""; renderDay(); return; }
+  const u = e.target.closest("[data-undo]");
+  if (u){ postVoid(u.dataset.undo, false); }
 });
 /* ── 三道把手：分栏宽窄（票面栏↔字段栏）、字段名列宽、值格自己的宽 ──────────
    存本机不存账号：各人屏幕不一样，不该互相将就。拖的时候只改样式，松手才写盘

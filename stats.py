@@ -136,10 +136,15 @@ def _stems() -> list:
 
 
 def collect(date_from: str = "", date_to: str = "") -> list:
-    """时间窗内每张有人工结果的票一行（from/to 含端点，按 yyyy-mm-dd 比）。"""
+    """时间窗内每张有人工结果的票一行（from/to 含端点，按 yyyy-mm-dd 比）。
+    作废的票整张跳过：这些数要拿去回答"能不能不经过人直接喂平台"，
+    把人已判定不作数的测试票留在分母里，数就永远是被污染的那一个。"""
     led = store.ledger()
+    voided = store.voided_map()
     rows = []
     for stem in _stems():
+        if "hawb|" + stem in voided:
+            continue
         row = ticket_row(stem, entry=led.get(stem) or {})
         if not row:
             continue

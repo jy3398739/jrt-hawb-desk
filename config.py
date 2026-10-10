@@ -325,6 +325,11 @@ SUBMIT_LEDGER = Path(os.getenv("SUBMIT_LEDGER", str(BASE_DIR / "output" / "submi
 # 提交幂等锁：j9 没有幂等键，重复点一次就是第二次整表写回，所以同内容的重复提交在锁定期内
 # 直接回上次回执。一锁一文件（键的哈希命名），跨进程也认；测试要隔离它就跟台账一起指到临时目录。
 SUBMIT_GUARD_DIR = Path(os.getenv("SUBMIT_GUARD_DIR", str(BASE_DIR / "output" / "submit_guard")))
+# 作废本（`hawb|stem` / `mawb|归一化主单号` → 谁、什么时候）：台账上点「作废」只往这里写一行，
+# **不动提交台账、不动暂存、不动归档原件**——"这张票回传过公司"的凭据不能从表里点一下就没了。
+# 为什么不并进 submitted.json：那本台账一条=一次真回传，往里塞"不作数"的标记会让它的语义变脏，
+# 而索引与检索都只认它。单独一本，读的人一眼分得清"发过"与"发过但人说不作数了"。
+VOID_LEDGER = Path(os.getenv("VOID_LEDGER", str(BASE_DIR / "output" / "voided.json")))
 # 主单(MAWB)原件落盘处：按归一化主单号建子目录，里面放公司给的主单 PDF/电子单。
 # 公司主单原件接口待 IT——先支持人工放入同一目录跑通录入员"对票面核对"，真接口到位后
 # 由 company_api 把取回的主单原件缓存进这里，路由与前端一行都不用改。

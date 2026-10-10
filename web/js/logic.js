@@ -21,8 +21,12 @@ const L = {
 
   /* 今日台账的报数口径：pending 是"还没回公司"的张数（含解析失败的），
      制单员每天说的"还剩几张没发"就是这个数，别把它算成 total-submitted-failed。 */
+  /* 台账的数。作废的行不进 N/M/K/F —— 清完测试数据数就该跟着变，否则那个数永远是被污染的；
+     作废的张数单独报一个 voided，给「只看作废」那颗开关用。
+     筛与算都只在这一处：渲染里再判一遍 truthy，迟早和这里对不上（这条口径有用例钉着）。 */
   daySummary(rows){
-    const rs = rows || [];
+    const all = rows || [];
+    const rs = all.filter(r => !r.voided);
     let submitted = 0, failed = 0, flags = 0;
     rs.forEach(r => {
       if (r.submitted) submitted++;
@@ -30,7 +34,11 @@ const L = {
       flags += r.flags || 0;
     });
     return {total: rs.length, submitted: submitted, pending: rs.length - submitted,
-            failed: failed, flags: flags};
+            failed: failed, flags: flags, voided: all.length - rs.length};
+  },
+
+  dayVisible(rows, onlyVoided){
+    return (rows || []).filter(r => !!r.voided === !!onlyVoided);
   },
 
   /* 打开主单 / 重新解析之后，把本机草稿并回当前解析。

@@ -24,25 +24,34 @@ TODAY = date.today().isoformat()
 @contextlib.contextmanager
 def _sandbox():
     """输出目录、暂存目录、台账与账号表全挪进临时目录：这一页读的是本机磁盘，不能碰真 output/，
-    更不能依赖运维机上那份可能已改过 admin123 的 users.json。"""
+    更不能依赖运维机上那份可能已改过 admin123 的 users.json。
+    主单那一半（缓存 + 提交台账 + 作废本）同理——台账现在两种票都出。"""
     old = (config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
-           config.ARCHIVE_DIR, config.SUBMIT_LEDGER, config.STAGED_DIR, auth.USERS_FILE)
+           config.ARCHIVE_DIR, config.SUBMIT_LEDGER, config.STAGED_DIR, auth.USERS_FILE,
+           config.MASTER_DIR, config.MASTER_LEDGER, config.VOID_LEDGER, config.MAWB_SOURCE_DIR)
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR = tmp / "raw", tmp / "air"
         config.OUTPUT_QC_DIR, config.ARCHIVE_DIR = tmp / "qc", tmp / "archive"
         config.STAGED_DIR = tmp / "staged"
         config.SUBMIT_LEDGER = tmp / "submitted.json"
+        config.MASTER_DIR = tmp / "master"
+        config.MASTER_LEDGER = tmp / "master_submitted.json"
+        config.VOID_LEDGER = tmp / "voided.json"
+        config.MAWB_SOURCE_DIR = tmp / "mawb_source"
         auth.USERS_FILE = tmp / "users.json"
         for p in (config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
-                  config.ARCHIVE_DIR, config.STAGED_DIR):
+                  config.ARCHIVE_DIR, config.STAGED_DIR, config.MASTER_DIR,
+                  config.MAWB_SOURCE_DIR):
             p.mkdir()
         try:
             yield tmp
         finally:
             (config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
-             config.ARCHIVE_DIR, config.SUBMIT_LEDGER, config.STAGED_DIR,
-             auth.USERS_FILE) = old
+             config.ARCHIVE_DIR, config.SUBMIT_LEDGER, config.STAGED_DIR, auth.USERS_FILE,
+             config.MASTER_DIR, config.MASTER_LEDGER, config.VOID_LEDGER,
+             config.MAWB_SOURCE_DIR) = old
+
 
 
 def _ticket(stem, mawb="999-95764373", hawb="JRT28643", when=TODAY, flags=None, error=""):
@@ -87,6 +96,132 @@ def test_broken_qc_record_does_not_take_down_the_page():
         assert [r["stem"] for r in rows] == ["好票"], "一条坏记录把整页拖挂，等于这页没法用"
 
 
+def _master(mawb="999-90273120", when=TODAY, state="done", flags=None, ams=None):
+    """写一条主单解析记录（缓存形态与 master_pipeline 真写的一致：按主单号一份、覆盖式）。"""
+    import master_pipeline
+    ams = ams if ams is not None else {"MAWB_NO": mawb}
+    return master_pipeline._write({
+        "mawb": mawb, "state": state, "started_at": when + "T10:05:00",
+        "updated_at": when + "T10:05:12", "elapsed": 7.2, "model": "qwen3.8-flash",
+        "ams": ams, "ams_model": ams, "transcript": {"full_text": "主单资料"},
+        "qc": {"flags": flags or [], "needs_review": bool(flags or [])},
+        "error": "" if state != "failed" else "ReadTimeout: 主单解析超时"})
+
+
+def test_voiding_a_row_marks_it_and_touches_nothing_else():
+    """作废只是打一个戳。提交台账、归档原件、索引一律不动——
+    「这张票回传过公司」的凭据不能从台账上点一下就没了，否则以后出了争议连查都没处查。"""
+    with _sandbox():
+        _ticket("V1", mawb="999-95764373", hawb="HV1")
+        (config.ARCHIVE_DIR / "V1").mkdir()
+        store.mark_submitted("V1", "999-95764373", "HV1", "马殿齐", receipt={"accepted": 1})
+        e = store.void_row("hawb", "V1", "admin")
+        assert e["by"] == "admin" and e["at"], e
+        row = [r for r in store.day_rows(TODAY) if r["stem"] == "V1"][0]
+        assert row["voided"]["by"] == "admin", "戳要回到行上，前端才知道这行该收起来、还能恢复"
+        assert row["submitted"]["reviewer"] == "马殿齐", "作废不该把提交记录一起抹了"
+        assert store.ledger().get("V1"), "提交台账是唯一的回传凭据，作废不许动它"
+        assert (config.ARCHIVE_DIR / "V1").is_dir(), "票面原件归档也不该动"
+        assert store.submitted_by_mawb("999-95764373"), "作废的票在主单检索里仍要查得到"
+        assert store.lookup_stem("999-95764373", "HV1") == "V1", "索引也照旧：作废≠这张票没存在过"
+
+
+def test_void_is_idempotent_and_reversible():
+    """同一行反复作废只留最后一次（谁、何时）；恢复要真的干净退出，不留半条记录。"""
+    with _sandbox():
+        _ticket("V2")
+        first = store.void_row("hawb", "V2", "张三")
+        again = store.void_row("hawb", "V2", "李四")
+        assert list(store.voided_map()).count("hawb|V2") == 1, "同一行只该有一条作废记录"
+        assert store.voided_map()["hawb|V2"]["by"] == "李四" and again["at"] >= first["at"]
+        assert store.unvoid_row("hawb", "V2") is True
+        assert "hawb|V2" not in store.voided_map()
+        assert store.unvoid_row("hawb", "V2") is False, "没作废过的行，恢复要如实说没有"
+        assert [r for r in store.day_rows(TODAY) if r["stem"] == "V2"][0]["voided"] is None
+
+
+def test_master_tickets_join_the_day_ledger_with_their_own_columns():
+    """主单在这台机器上也是「检索即解析、能暂存能提交」的一条票，以前台账里完全看不见它。
+    现在两种行合一张表、按时间排，靠 kind 分列；主单行没有分单号，那几列老实给空而不是硬凑。"""
+    with _sandbox():
+        _ticket("H1", mawb="999-90273120", hawb="HM1", when=TODAY)
+        _master("999-90273120", when=TODAY, flags=["航班日期没填"])
+        rows = {r["kind"]: r for r in store.day_rows(TODAY)}
+        assert set(rows) == {"hawb", "mawb"}, "台账现在两种票都该出"
+        m = rows["mawb"]
+        assert m["mawb"] == "999-90273120" and m["hawb"] == "", "主单行不该凭空造一个分单号"
+        assert m["cols_total"] == 36 and m["filled"] == 1, m
+        assert m["flags"] == 1 and m["state"] == "parsed" and m["failed"] is False
+        assert m["model"] == "qwen3.8-flash" and m["stem"] == ""
+        assert rows["hawb"]["voided"] is None and rows["hawb"]["kind"] == "hawb"
+
+
+def test_master_row_state_follows_stage_then_submit():
+    """主单行的状态要和分单一样说得清走到哪一步：解析过 → 暂存过 → 提交过（提交以台账为准）。"""
+    import master_pipeline
+    with _sandbox():
+        _master("999-90273120")
+        assert {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]["state"] == "parsed"
+        master_pipeline.stage_master("999-90273120", {"MAWB_NO": "999-90273120", "ORIGIN": "SHA"},
+                                     "刘明", "inputter")
+        m = {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]
+        assert m["state"] == "staged" and m["stager"] == "刘明" and m["edited"] == 1, m
+        store.mark_master_submitted("999-90273120", "刘明",
+                                    receipt={"accepted": 1, "action": "updated"})
+        m = {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]
+        assert m["state"] == "submitted" and m["submitted"]["reviewer"] == "刘明", m
+        assert m["submitted"]["action"] == "updated"
+
+
+def test_failed_master_is_a_row_too():
+    """解析失败的主单同样要出现在台账上（分单失败一直有行）——不然「今天哪条没出来」看不出来。"""
+    with _sandbox():
+        _master("999-90273120", state="failed")
+        m = {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]
+        assert m["failed"] is True and m["state"] == "failed" and "超时" in m["error"]
+
+
+def test_void_route_is_open_to_any_logged_in_role_and_validates():
+    """作废是软闸门：登录就能点（弹二次确认、留痕），不做成"仅管理员"——
+    掐掉制单员手边的清理入口，他们会改成不删、把测试数据一直留在台账里。"""
+    with _sandbox():
+        _ticket("E1"); _master("999-90273120")
+        anon = TestClient(server.app)
+        assert anon.post("/void", json={"kind": "hawb", "key": "E1"}).status_code == 401, \
+            "作废没要登录"
+        admin = TestClient(server.app)
+        admin.post("/login", json={"name": "admin", "password": "admin123"})
+        r = admin.post("/void", json={"kind": "hawb", "key": "E1"})
+        assert r.status_code == 200 and r.json()["voided"]["by"] == "admin", r.text
+        assert admin.post("/void", json={"kind": "别的", "key": "E1"}).status_code == 400
+        assert admin.post("/void", json={"kind": "hawb", "key": "  "}).status_code == 400
+        assert admin.post("/void", json={"kind": "hawb", "key": "带\n换行"}).status_code == 400, \
+            "key 会写进 json 台账，控制字符要挡在门口"
+        back = admin.post("/void", json={"kind": "hawb", "key": "E1", "void": False})
+        assert back.status_code == 200 and back.json()["voided"] is None
+        assert "hawb|E1" not in store.voided_map()
+        auth.set_password("马殿齐", "pw-12345", "reviewer")
+        rev = TestClient(server.app)
+        assert rev.post("/login", json={"name": "马殿齐", "password": "pw-12345"}).status_code == 200
+        assert rev.post("/void", json={"kind": "mawb", "key": "999-90273120"}).status_code == 200, \
+            "制单员也能作废（留痕记的是他）"
+        assert store.voided_map()["mawb|99990273120"]["by"] == "马殿齐"
+
+
+def test_desk_day_table_shows_the_type_and_lets_anyone_void_a_row():
+    """接线：类型列、作废与恢复按钮、「只看作废」开关，一个都不能少——
+    只加后端不加显示，用户看到的还是那张删不掉的表。"""
+    page, js = web_src.part("index.html"), web_src.part("js/desk.js")
+    assert 'id="dayOnlyVoid"' in page, "缺「只看作废」开关"
+    assert 'data-void="' in js and 'data-undo="' in js, "作废/恢复按钮没接上"
+    assert '"/void"' in js, "作废没打后端"
+    assert "L.dayVisible" in js, "筛作废要交给 logic 一处算，别在渲染里再判一遍"
+    assert "kind" in js and ("主单" in js and "分单" in js), "类型列要说人话，不能显示 hawb/mawb"
+    # 二次确认：点第一下只把这一行变成「确认作废？」，不直接发请求（防误点，也不弹浏览器原生框）
+    assert "confirmVoid" in js or "confirm" in js, "作废要有二次确认，一键就删等于没有确认"
+    assert "作废" in js and "恢复" in js
+
+
 def test_day_route_requires_login_and_checks_the_date():
     with _sandbox():
         _ticket("票一", when=TODAY)
@@ -104,15 +239,23 @@ def test_day_route_requires_login_and_checks_the_date():
 
 def test_day_counts_are_one_arithmetic_source():
     """「今天 N 张 · 已提交 M · 待提交 K · 失败 F」这句是制单员每天报数的口径，
-    算错一次就没人再信这一页；所以放 logic.js 由 node 断输入输出。"""
+    算错一次就没人再信这一页；所以放 logic.js 由 node 断输入输出。
+    作废的行不算进 N/M/K/F（否则清完测试数据数还是老的），单独报一个 voided 供「只看作废」用。"""
     rows = [{"submitted": {"reviewer": "马殿齐"}, "failed": False, "flags": 2},
             {"submitted": None, "failed": False, "flags": 0},
             {"submitted": None, "failed": True, "flags": 0},
-            {"submitted": {"reviewer": "宛平"}, "failed": False, "flags": 1}]
+            {"submitted": {"reviewer": "宛平"}, "failed": False, "flags": 1},
+            {"submitted": {"reviewer": "宛平"}, "failed": False, "flags": 9,
+             "voided": {"by": "admin", "at": "x"}}]
     assert web_src.logic("L.daySummary(rs)", rs=rows) == {
-        "total": 4, "submitted": 2, "pending": 2, "failed": 1, "flags": 3}
+        "total": 4, "submitted": 2, "pending": 2, "failed": 1, "flags": 3, "voided": 1}
     assert web_src.logic("L.daySummary(rs)", rs=[]) == {
-        "total": 0, "submitted": 0, "pending": 0, "failed": 0, "flags": 0}
+        "total": 0, "submitted": 0, "pending": 0, "failed": 0, "flags": 0, "voided": 0}
+    # 台账只显示没作废的那些（前端一处筛，别在渲染里再判一遍 truthy）
+    assert web_src.logic("L.dayVisible(rs, onlyVoided)", rs=rows, onlyVoided=True) == [rows[4]]
+    assert [r["flags"] for r in
+            web_src.logic("L.dayVisible(rs, onlyVoided)", rs=rows, onlyVoided=False)] == [2, 0, 0, 1]
+
 
 
 def test_desk_has_a_day_ledger_view_switching_without_leaving_the_workbench():

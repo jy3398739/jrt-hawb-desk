@@ -113,6 +113,16 @@ th .grip{position:absolute;right:-5px;top:0;bottom:0;width:10px;min-height:0;ali
 .seg .btn{border:0;border-radius:0;background:var(--c-surface);color:var(--c-text-2);min-height:30px;padding:2px 12px}
 .seg .btn.on{background:var(--c-accent);color:var(--c-inverse);font-weight:var(--w-semi)}
 .btn.gh{border-style:dashed;color:var(--c-text-2);background:transparent}
+/* 台账的「确认作废」：破坏性动作要长得像破坏性动作（文字用 --c-bad-text，不是那支点用的 --c-bad） */
+.btn.danger{border-color:var(--c-bad-line);color:var(--c-bad-text)}
+.btn.danger:hover:not(:disabled){background:var(--c-bad-bg);border-color:var(--c-bad)}
+/* 台账：类型徽标与作废行。作废行只是灰一档、单号划道线，不藏成"像没这张票"——
+   谁作废的、什么时候，都得还能在这行上看见（这是它区别于"删掉"的全部意义）。 */
+.kind{font-size:var(--f-xs);padding:1px 6px;border-radius:var(--r-sm);background:var(--c-neutral);color:var(--c-text-2);white-space:nowrap}
+.kind.kmawb{background:var(--c-accent-soft);color:var(--c-accent)}
+tr.voided td{color:var(--c-text-3)}
+tr.voided .lk{text-decoration:line-through}
+.vq{font-size:var(--f-sm);color:var(--c-warn-text);margin-right:6px}
 .list{max-height:calc(100vh - 250px);overflow:auto}
 /* 票行 / 还原 / 字段名 / 分单号 / 红旗跳转从前是带 cursor:pointer 的 div、span、a：
    键盘 Tab 到不了、回车不触发、读屏器念不出"这里可以点"。换成 <button> 后把 UA 默认外观抹掉，

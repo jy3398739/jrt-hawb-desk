@@ -267,6 +267,127 @@ def master_ledger() -> dict:
     return _load_ledger(config.MASTER_LEDGER)
 
 
+# === 作废本：台账上那一行「不作数」 ===
+# 只写这一个文件，其余一律不动：提交台账、暂存、归档原件、复合键索引全都原样留着。
+# 为什么不往 submitted.json 里加个字段：那本台账的语义是「这张票发过公司」，
+# 掺进「人说不作数」会让每个读它的人（含索引与检索）都得多问一句这条算不算。
+_VOID_LOCK = threading.Lock()
+_VOID_KINDS = ("hawb", "mawb")
+_VOID_BAD = re.compile(r"[\x00-\x1f|\\\"']")
+
+
+def void_key(kind: str, key: str) -> str:
+    """作废本的键 = `hawb|<stem>` 或 `mawb|<归一化主单号>`（与主单缓存文件名同一个形状）。
+    校验放在这里：这个串要写进 json，控制字符、竖线（分两段用）和引号都挡在门口。"""
+    k = str(kind or "").strip().lower()
+    if k not in _VOID_KINDS:
+        raise ValueError(f"作废的票种只能是 {'/'.join(_VOID_KINDS)}，收到「{kind}」")
+    v = norm_no(str(key or "").strip()) if k == "mawb" else str(key or "").strip()
+    if not v or len(v) > 160 or _VOID_BAD.search(v):
+        raise ValueError(f"作废的单号不合法：「{key}」")
+    return k + "|" + v
+
+
+def voided_map() -> dict:
+    """当前所有作废条目（键 → 谁、何时）。纯读。"""
+    return _load_ledger(config.VOID_LEDGER)
+
+
+def void_row(kind: str, key: str, by: str) -> dict:
+    """打作废戳（重复打只覆盖成最后一次，不会多出一条）。"""
+    kk = void_key(kind, key)
+    with _VOID_LOCK:
+        data = voided_map()
+        entry = {"kind": kind, "key": kk.split("|", 1)[1], "by": str(by or ""),
+                 "at": datetime.datetime.now().isoformat(timespec="seconds")}
+        data[kk] = entry
+        _write_ledger(data, config.VOID_LEDGER)
+    return entry
+
+
+def unvoid_row(kind: str, key: str) -> bool:
+    """撤掉作废戳。本来就没有 → False（恢复要说实话，不能把"没作废"报成"已恢复"）。"""
+    kk = void_key(kind, key)
+    with _VOID_LOCK:
+        data = voided_map()
+        if kk not in data:
+            return False
+        data.pop(kk)
+        _write_ledger(data, config.VOID_LEDGER)
+    return True
+
+
+def _void_of(v: dict, kind: str, key: str):
+    """这一行的作废信息（没有则 None）。主单按归一化号找，与写入端同一套归一。"""
+    k = kind + "|" + (norm_no(str(key or "")) if kind == "mawb" else str(key or ""))
+    return v.get(k) or None
+
+
+def master_rows(date: str = None) -> list:
+    """本机解析过的主单，一行一张，给今日台账用。
+
+    主单缓存是**按主单号覆盖存的一份**（不像分单那样一天一批的质检记录），所以"哪天经手的"
+    取它最后一次动过的时间（重解析/暂存/提交都会刷新）——重算会把这张主单挪到当天，
+    这是这份数据的固有形状。列面只有 36 列的填充数与红旗数，别的都在主单核对页里看。"""
+    if not config.MASTER_DIR.exists():
+        return []
+    import master_fields as mfields
+    total = len(mfields.MASTER_FIELDS)
+    led = master_ledger()
+    voided = voided_map()
+    rows = []
+    for f in sorted(config.MASTER_DIR.glob("*.json")):
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except Exception:
+            continue                       # 一条坏缓存不该拖挂整页（与 ticket_rows 同口径）
+        mawb = str(rec.get("mawb") or "").strip()
+        when = str(rec.get("updated_at") or rec.get("started_at") or "")
+        if date and not when.startswith(date):
+            continue
+        e = led.get(norm_no(mawb)) or {}
+        events = rec.get("events") or []
+        last = events[-1] if events else {}
+        ams = rec.get("ams_final") if isinstance(rec.get("ams_final"), dict) and rec.get("ams_final") \
+            else (rec.get("ams") if isinstance(rec.get("ams"), dict) else {})
+        failed = rec.get("state") == "failed"
+        if failed:
+            state = "failed"
+        elif e:
+            state = "submitted"
+        elif events:
+            state = "staged"
+        else:
+            state = "parsed"
+        rows.append({"kind": "mawb", "stem": "", "source_name": mawb,
+                     "channel": "master", "elapsed": rec.get("elapsed"),
+                     "processed_at": when, "state": state,
+                     "uploader": str(last.get("by") or ""), "uploader_role": str(last.get("role") or ""),
+                     "model": rec.get("model") or "", "mawb": mawb, "hawb": "",
+                     "filled": sum(1 for c, _, _ in mfields.MASTER_FIELDS
+                                   if str(ams.get(c) or "").strip()),
+                     "cols_total": total,
+                     "flags": len(((rec.get("qc") or {}).get("flags")) or []),
+                     "needs_review": bool((rec.get("qc") or {}).get("needs_review")),
+                     "failed": failed, "error": rec.get("error") or "",
+                     "stager": str(last.get("by") or ""), "stager_role": str(last.get("role") or ""),
+                     "staged_at": str(last.get("at") or ""),
+                     "edited": len(last.get("edits") or {}) if last else 0,
+                     "reviewed_by_inputter": reviewed_by_inputter(rec),
+                     "submitted": ({"reviewer": e.get("reviewer") or "", "at": e.get("submitted_at") or "",
+                                    "action": e.get("action") or ""} if e else None),
+                     "has_original": (config.MAWB_SOURCE_DIR / master_pipeline_key(mawb)).is_dir()
+                     if master_pipeline_key(mawb) else False,
+                     "voided": _void_of(voided, "mawb", mawb)})
+    return rows
+
+
+def master_pipeline_key(mawb: str) -> str:
+    """主单原件目录名（与 master_pipeline.key_for 同一个归一）；这里单独包一层是为了不 import 回环。"""
+    return mawb_source_key(mawb)
+
+
+
 def number_index() -> dict:
     """派生：复合键 → {stem, mawb, hawb}。只含已提交集，号天然齐全。
     每次从台账现算（台账是本地小 JSON，几十~几千条，读一遍毫秒级）；量大再上内存缓存。"""
@@ -315,6 +436,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
     if not config.OUTPUT_QC_DIR.exists():
         return []
     led = _load_ledger()
+    voided = voided_map()
     found = []
     for f in sorted(config.OUTPUT_QC_DIR.glob("*.json")):
         try:
@@ -348,7 +470,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
         row_mawb = e.get("mawb") or air.get("MAWB_NO", "") or st.get("mawb", "")
         if want_mawb and norm_no(row_mawb) != want_mawb:
             continue
-        rows.append({"stem": stem, "source_name": rec.get("source_name") or stem,
+        rows.append({"kind": "hawb", "stem": stem, "source_name": rec.get("source_name") or stem,
                      "channel": rec.get("channel") or "", "elapsed": rec.get("elapsed"),
                      "processed_at": rec.get("processed_at") or "",
                      "state": state_of,
@@ -367,13 +489,20 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
                      "reviewed_by_inputter": reviewed_by_inputter(st) if st else False,
                      "submitted": ({"reviewer": e.get("reviewer") or "", "at": e.get("submitted_at") or "",
                                     "action": e.get("company_action") or ""} if e else None),
-                     "has_original": (config.ARCHIVE_DIR / stem).is_dir()})
+                     "has_original": (config.ARCHIVE_DIR / stem).is_dir(),
+                     "voided": _void_of(voided, "hawb", stem)})
     return rows
 
 
 def day_rows(date: str) -> list:
-    """某一天经手过的票。今日台账那一页读的就是它（`ticket_rows` 的按天视图）。"""
-    return ticket_rows(date=date)
+    """某一天经手过的票，**分单与主单合一张表按时间排**（今日台账那一页读的就是它）。
+
+    两种行的形状不同：主单没有分单号、也没有"改了几列"以外的那些列，缺的老实给空串，
+    前端按 kind 决定这一格显示什么——而不是后端替它编一个值。"""
+    out = ticket_rows(date=date) + master_rows(date)
+    out.sort(key=lambda r: str(r.get("processed_at") or ""))
+    return out
+
 
 
 # === 暂存：人工核对结果落服务器，但不发公司 ===

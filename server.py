@@ -26,6 +26,9 @@
   POST /master/submit      需登录会话；主单**提交发送**公司(mawb3)的唯一出口；没录入员复核过要带 acked_no_review
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
+  GET  /day                需登录会话；今日台账（分单+主单合一张表，按天），可带 ?date=
+  POST /void               需登录会话；台账行作废/恢复 body={"kind":"hawb|mawb","key":..,"void":true|false}
+                           只写 output/voided.json 一个戳，提交台账、暂存、归档原件与索引一律不动
   GET  /staged/{stem}      需登录会话；一份暂存（模型原样 + 人工最新值 + 每次谁改了哪几列）
   GET  /stats              仅管理员；?from=&to=&group_by=model|role|user|field → 解析正确率（模型那版 vs 人定下的那版）
   GET  /stats/export       仅管理员；同一份数导成 Excel（口径 / 每张票 / 逐列 三张表）
@@ -755,15 +758,45 @@ def results(_: None = Depends(require_web)):
 
 @app.get("/day")
 def day(date: str = "", _: None = Depends(require_web)):
-    """今日台账：这台机器某天经手的票一张表看完（解析/红旗/提交/原件）。date 省略=今天。
+    """今日台账：这台机器某天经手过的**分单与主单**一张表看完（解析/红旗/提交/原件），行上带 kind。
     台账是本机的、两台机器各记各账，这一页就是把"今天谁做了什么"摊开在同一张桌子上；
-    公司侧的发送状态要按主单查（限流），所以不混进这一页，去「主单检索」看。"""
+    公司侧的发送状态要按主单查（限流），所以不混进这一页，去「主单检索」看。
+    作废的行照样返回（带 voided），显示与否由前端那一个筛决定——数据层不藏东西。"""
     d = (date or time.strftime("%Y-%m-%d")).strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
     rows = store.day_rows(d)
     who = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
     return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who)}
+
+
+class VoidBody(BaseModel):
+    kind: str = "hawb"          # hawb = 分单行（key 给 stem）；mawb = 主单行（key 给主单号）
+    key: str = ""
+    void: bool = True           # False = 撤销作废
+
+
+@app.post("/void")
+def void_row(body: VoidBody, user: dict = Depends(current_user)):
+    """台账那一行的「作废 / 恢复」：只往 voided.json 写一个戳（谁、何时），
+    **提交台账、暂存记录、归档原件、复合键索引一律不动**——"这张票回传过公司"的凭据
+    不能从表里点一下就没了，否则以后出了争议连查都没处查。
+
+    登录即可点，不做成仅管理员：掐掉制单员手边的清理入口，结果只会是他们不删、
+    让测试数据一直留在台账与统计里。代价是前端必须二次确认，且戳上记着是谁作废的。"""
+    if not str(body.key or "").strip():
+        raise HTTPException(400, "要带单号：分单给 stem，主单给主单号")
+    try:
+        if body.void:
+            entry = store.void_row(body.kind, body.key, str(user.get("name") or ""))
+        else:
+            store.unvoid_row(body.kind, body.key)      # 没作废过也回 200：恢复要幂等
+            entry = None
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    LOG.info("台账作废 who=%s(%s) %s=%s -> %s", user.get("name"), user.get("role"),
+             body.kind, body.key, "作废" if body.void else "恢复")
+    return {"ok": True, "voided": entry}
 
 
 @app.get("/tickets")
