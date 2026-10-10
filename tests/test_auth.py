@@ -330,9 +330,11 @@ def test_desk_has_login_gate_and_role_scoped_controls():
     body = html[i:html.find("\n}", i)]
     assert '$("#fModel").hidden = !admin' in body, "模型下拉没按角色收起"
     assert '$("#btnAcct").hidden = !admin' in body, "账号管理入口没限定管理员"
-    # JS 设 hidden 之外，CSS 必须补 .f[hidden]{display:none}：#fModel 是 class="f"，
-    # 而 .f{display:flex} 会盖过 UA 的 [hidden]{display:none}，缺这条则收起对制单员形同虚设。
-    assert ".f[hidden]{display:none}" in html, "缺 .f[hidden] 规则：模型下拉/身份条收不起来（.f 的 flex 盖过 hidden）"
+    # JS 设 hidden 之外，样式表得真能把它收起来：#fModel 是 class="f"，而 .f{display:flex}
+    # 会盖过浏览器默认的 [hidden]{display:none}。2026-10-10 起这条由全局
+    # [hidden]{display:none !important} 兜住（同一族还坑过 #wrap：切到今日台账它照样占 956px），
+    # 所以查的是全局那条在不在，不再查 .f 的单独规则。
+    assert "[hidden]{display:none" in html, "缺全局 [hidden] 兜底：模型下拉/身份条收不起来（.f 的 flex 盖过 hidden）"
     assert "checkAuth()" in html, "启动没先做登录自检"
     assert "rv.readOnly = true" in body, "复核人没锁成登录身份，提交留痕可被冒名"
     assert 'id="fKey"' not in html, "接口密钥输入框已随 HTTP_API_KEY 一并删除"

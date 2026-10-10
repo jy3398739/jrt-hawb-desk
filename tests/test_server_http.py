@@ -639,17 +639,33 @@ def test_desk_pdf_viewer_hides_its_sidebar_and_can_show_the_whole_page():
 
 
 def test_desk_hidden_toggles_beat_class_display_rules():
-    """浏览器实测踩过：.pvtools{display:flex} 的优先级压过 UA 的 [hidden]{display:none}，
-    没有票面时票面工具栏照样亮着（static 检查看不出来，只有真开页面才发现）。
-    JS 用 .hidden 开合的元素，样式表里必须有 [hidden] 兜底。"""
+    """浏览器实测踩过两次：① .pvtools{display:flex} 的优先级压过 UA 的 [hidden]{display:none}，
+    没有票面时票面工具栏照样亮着；② 2026-10-10 同一族——.wrap{display:grid} 让今日台账里
+    `$("#wrap").hidden = true` 白设，核对工作台照旧占着 956px 高，把台账表整张顶到首屏之外
+    （用户的原话是"只保留底部的台账内容，不需要分单解析上半部分"）。
+    这条测试原来的洞恰恰是**清单手抄**：只查 .pvtools/#pvZoom/#pvLoc，没人往清单里加 #wrap
+    就永远查不出来。⇒ 元素从 desk.js 里捞，且只认两种满足方式：该元素自己有 [hidden] 兜底，
+    或样式表有一条全局 [hidden] 兜底。"""
     css = web_src.css()
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)     # 注释里的规则不生效，别被自己的注释骗过
+    html = web_src.part("index.html")
+    js = web_src.part("js/desk.js")
     guarded = " ".join(m.group(1) for m in re.finditer(r"([^{}]*\[hidden\][^{}]*)\{([^}]*)\}", css)
                        if "none" in m.group(2))
-    for sel in (".pvtools", "#pvZoom", "#pvLoc"):
-        rule = re.search(re.escape(sel) + r"[^{}]*\{[^}]*display", css)
-        assert rule, f"{sel} 不再用 display 布局了：这条断言该退休，别放着误导人"
-        assert sel in guarded, f"{sel} 的 display 没有 [hidden] 兜底，JS 里的 .hidden 会失效"
+    global_guard = re.search(r"(^|[,\s])\[hidden\](?![^\s{])[^{}]*\{[^}]*display\s*:\s*none", css)
+    ids = sorted(set(re.findall(r'\$\("#([A-Za-z0-9_]+)"\)\.hidden', js)))
+    assert "wrap" in ids, "视图切换不再藏 #wrap 了：这条断言该跟着改，别让它以为台账还叠在工作台下面"
+    for i in ids:
+        tag = re.search(r"<\w+[^>]*id=\"" + re.escape(i) + r"\"[^>]*>", html)
+        if not tag:
+            continue                                    # 动态建的元素，样式表管不到
+        cls = (re.findall(r'class="([^"]*)"', tag.group(0)) or [""])[0]
+        sels = ["#" + i] + ["." + c for c in cls.split()]
+        shown = [s for s in sels if re.search(re.escape(s) + r"[^{}]*\{[^}]*display", css)]
+        assert global_guard or all(s in guarded for s in shown), \
+            i + " 用 .hidden 开合，但 " + "/".join(s for s in shown if s not in guarded) + \
+            " 的 display 没有 [hidden] 兜底——JS 里的 .hidden 会失效（元素照样占位或照样亮着）"
+    assert global_guard, "样式表里没有全局 [hidden] 兜底：靠逐个元素补规则迟早漏一个（#wrap 就漏过）"
 
 
 def test_health_reports_source_files_newer_than_the_process():

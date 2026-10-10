@@ -17,14 +17,18 @@ input,textarea{font:inherit;color:inherit}
 .dot.ok{background:var(--c-ok)}.dot.warn{background:var(--c-warn)}.dot.bad{background:var(--c-bad)}
 .dot.busy{background:var(--c-accent);animation:pulse 1s infinite alternate}
 @keyframes pulse{to{opacity:.25}}
+/* 一条全局兜底：类/元素选择器的 display 优先级压过浏览器默认的 [hidden]{display:none}，
+   JS 里的 `.hidden = true` 就会变成"看着没反应"。真栽过两次：票面工具栏该收时照样亮着；
+   今日台账把 #wrap 设成 hidden 后它仍占着 956px，台账表被整张顶到首屏之外（2026-10-10，
+   用户："只保留底部的台账内容，不需要分单解析上半部分"）。所以这条带 !important 放在最前面，
+   下面不再逐个元素补 [hidden] —— 手抄清单正是上次漏掉 #wrap 的原因（回归里那条已改成从 desk.js 捞）。 */
+[hidden]{display:none !important}
 .svc{display:flex;align-items:center;gap:6px;font-size:var(--f-sm);color:var(--c-text-2)}
 .svc b{color:var(--c-text-1);font-weight:var(--w-semi)}
 .svc .svc-warn{color:var(--c-warn-text);font-weight:var(--w-semi)}
 .svc .svc-bad{color:var(--c-bad-text);font-weight:var(--w-semi)}
 .ver{font-size:var(--f-xs);font-weight:var(--w-semi);color:var(--c-accent);background:var(--c-accent-soft);border-radius:var(--r-sm);padding:1px 6px;margin-left:6px;vertical-align:middle}
 .f{display:flex;align-items:center;gap:6px;font-size:var(--f-sm);color:var(--c-text-2)}
-/* .f 的 display:flex 会盖过 UA 的 [hidden]{display:none}，不补这条则 applyRole 收起模型下拉/身份条形同虚设 */
-.f[hidden]{display:none}
 .f input[type=text],.f input[type=password],.f select{border:1px solid var(--c-line);border-radius:var(--r-md);padding:5px 8px;background:var(--c-surface-2)}
 .f input:focus,.f select:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
 /* 三栏：票据列表 | 票面原件 | 航空口径字段。核对要一眼对比，票面必须和字段并排。
@@ -235,8 +239,6 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .pvtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 10px;
   border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
 .pvtools #pvZoom{display:flex;gap:6px;align-items:center}
-/* 类选择器的 display 会盖过 UA 的 [hidden]{display:none}，不补这条 hidden 就形同虚设 */
-.pvtools[hidden],.pvtools #pvZoom[hidden]{display:none}
 .pv{flex:1;min-height:200px;overflow:auto;background:var(--c-canvas);padding:10px;text-align:center}
 .pv img{display:inline-block;height:auto;background:var(--c-surface);box-shadow:var(--sh-1)}
 /* 动效 ①：页图入场。一张票常常好几页，一起砸下来眼睛跟不上，错开一档"铺"开。
@@ -264,7 +266,6 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .lk{color:var(--c-accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer;
   display:inline-block;min-height:28px;padding:0}
 .pvtools #pvLoc{display:flex;gap:6px;align-items:center}
-.pvtools #pvLoc[hidden]{display:none}
 /* 定位那一行现在有三样（档位 + 比例 + 页码），比例框按内容收窄，别把"返回原视图"挤到第二行 */
 .pvtools #pvLoc .f{font-size:var(--f-xs)}
 .pvtools #pvLocPct{width:62px;padding:4px 6px;border:1px solid var(--c-line);border-radius:var(--r-md);
@@ -309,7 +310,6 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
    （2026-10-01 用户据此以为「今日台账」坏了）。压深再加一层模糊，未登录时一眼就是停着的状态。 */
 .gate{position:fixed;inset:0;z-index:var(--z-gate);background:var(--c-gate);backdrop-filter:blur(3px);
   display:flex;align-items:center;justify-content:center;padding:20px}
-.gate[hidden]{display:none}
 .login{width:340px;max-width:100%;padding:0}
 .login .t{font-size:var(--f-lg);justify-content:center}
 .login .body{padding:16px 18px 18px}
@@ -320,7 +320,6 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .lgbtn{width:100%;margin-top:2px}
 .lgerr{font-size:var(--f-sm);color:var(--c-bad-text);background:var(--c-bad-bg);border:1px solid var(--c-bad-line);border-radius:var(--r-md);
   padding:7px 10px;margin-bottom:12px}
-.lgerr[hidden]{display:none}
 .lghint{font-size:var(--f-xs);color:var(--c-text-3);margin-top:12px;line-height:1.5}
 .who{font-size:var(--f-sm);color:var(--c-text-1);font-weight:var(--w-semi)}
 .role{font-size:var(--f-xs);color:var(--c-text-3);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:0 7px;margin-left:4px}
@@ -329,7 +328,6 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .pwwarn{font-size:var(--f-xs);color:var(--c-bad-text);background:var(--c-bad-bg);border:1px solid var(--c-bad-line);
   border-radius:var(--r-pill);padding:0 8px;margin-left:6px;min-height:28px;cursor:pointer}
 .pwwarn:hover{border-color:var(--c-line-hover)}
-.pwwarn[hidden]{display:none}
 .acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
 .acctbox .t{font-size:var(--f-base)}
 /* 统计窗口里是几张贴满列宽的表，所以窗口给得宽、正文自己滚；
