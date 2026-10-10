@@ -37,6 +37,11 @@ os.environ["COMPANY_HAWB_KEY"] = ""
 # 主单链默认走另一个渠道（MASTER_VLM_MODEL=qwen38-flash-bailian）。回归里钉成空串=跟分单同渠道，
 # 这样假客户端能拦住真实请求；不钉的话测试会真打百炼、真花钱。
 os.environ["MASTER_VLM_MODEL"] = ""
+# 思考档也钉成"跟随预设"。不钉的话套件就在读这台机器的偏好：2026-10-10 有人在生产审核台把
+# 思考拨到"开"（写进 .env 的 MODEL_THINKING=1），当天部署时服务器上 4 条用例齐红、发版被闸门
+# 拦下——**运维动作不该能让回归变红**，正如它不该能让用例真打公司接口。要测三档本身，
+# 用例里显式 set_thinking("1"/"0"/"")（test_model_switch 那三条就是这么办的）。
+os.environ["MODEL_THINKING"] = ""
 # 提交幂等锁同样必须离开真 output/：不钉的话，用例提交一次就把锁落到运维机的 output/submit_guard，
 # 下次回放同一张票会被判"重复提交"直接吞掉——测试假绿，现场却少了提交。
 GUARD_DIR = Path(tempfile.mkdtemp(prefix="hawb_guard_"))
