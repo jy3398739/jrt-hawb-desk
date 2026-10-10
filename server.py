@@ -16,6 +16,7 @@
   POST /admin/users        设/重置口令或新建账号（管理员）；body={"name","password"?,"role"?}
   DELETE /admin/users/{name}  删除账号（管理员；不能删自己或唯一管理员）
   POST /model              切换模型并写回 .env（管理员会话）；body={"model":"intern-s2-official"}
+  POST /model/thinking     切换思考档并写回 .env（管理员会话）；body={"thinking":""|"0"|"1"}
   POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器 + 公司占位(hawb2，状态 0)，缺号只存本机
@@ -271,8 +272,11 @@ def health():
     return {"ok": True, "version": config.APP_VERSION, "form": config.FORM,
             "model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE,
             "vision": config.MODEL_VISION, "key_configured": config.vlm_api_key_configured(),
+            # 思考档如实报出来：它和模型名一样决定这一票怎么解析，健康检查里看不见就等于说谎
+            "thinking": config.thinking(),
             # 主单链默认走自己的渠道（MASTER_VLM_MODEL）：两条链各报各的，免得看着像配错了
             "master_model": mb["model"], "master_model_choice": mb["choice"],
+            "master_thinking": mb["thinking"],
             "master_key_configured": config.master_api_key_configured(),
             # 跑的是哪一版：commit 在服务器上是空串（只收 tar 推的文件、没有仓库），
             # 那就看 built_at（源码最新 mtime）与 started_at（进程启动）——前者晚于后者就是忘了重启。
@@ -290,6 +294,11 @@ _MODEL_ID_OK = re.compile(r"^[A-Za-z0-9._:/-]{1,120}$")
 class ModelChoice(BaseModel):
     model: str = ""
     chain: str = "hawb"      # hawb = 分单链（默认）；master = 主单链
+
+
+class ThinkingChoice(BaseModel):
+    # None 而不是 ""："" 是合法档位（跟随预设），漏发字段不能被读成"帮你改回跟随预设"
+    thinking: str | None = None
 
 
 def _company_submit(payload: dict) -> dict:
@@ -580,13 +589,17 @@ def stage(body: StageBody, user: dict = Depends(current_user)):
 
 @app.get("/models")
 def models():
-    """可选模型清单 + 两条链各自在用什么。免登录：审核台要先填出下拉（可能还没登录）。"""
+    """可选模型清单 + 两条链各自在用什么。免登录：审核台要先填出下拉（可能还没登录）。
+    `thinking` 一并报回（顶层=当前生效档，预设里=这家能不能开关）：思考档的下拉必须由这份
+    数据填，浏览器自己记一份的话，重启后 .env 说了算、界面却停在旧档。"""
     mb = config.master_model_bundle()
     return {"current": config.VLM_MODEL_CHOICE, "effective": config.VLM_MODEL,
-            "vision": config.MODEL_VISION,
+            "vision": config.MODEL_VISION, "thinking": config.thinking(),
             "master": {"choice": mb["choice"], "model": mb["model"], "vision": mb["vision"],
-                       "label": mb.get("label") or "", "key_configured": config.master_api_key_configured()},
-            "presets": [{"key": k, "model": v["model"], "vision": bool(v["vision"]), "label": v["label"]}
+                       "label": mb.get("label") or "", "key_configured": config.master_api_key_configured(),
+                       "thinking": mb["thinking"]},
+            "presets": [{"key": k, "model": v["model"], "vision": bool(v["vision"]), "label": v["label"],
+                         "thinking": config.thinking(v)}
                         for k, v in config.MODEL_PRESETS.items()]}
 
 
@@ -617,6 +630,26 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
     except OSError as e:
         raise HTTPException(500, f"模型已在本进程切换，但写 .env 失败（重启后仍是旧模型）：{e}")
     return {"ok": True, "chain": "hawb", **info}
+
+
+@app.post("/model/thinking")
+def switch_thinking(body: ThinkingChoice, request: Request, _: None = Depends(require_admin)):
+    """思考档三档："" 跟随预设 / "0" 关 / "1" 开。本进程立即生效并写回 .env（重启后、批处理沿用）。
+    和换模型同一道门——它同样改变提取结果，而且开思考要多烧几千 reasoning token、单票更慢。
+    只对预设里声明了该参数的渠道生效：官方书生不接受 extra_body，硬塞直接 400，所以在不支持的
+    渠道上拨到"开"只是一次无害的偏好记录，切到 Qwen 才真的生效（响应里的 supported 会说清）。"""
+    if body.thinking is None:
+        raise HTTPException(400, '要带 thinking 字段："" 跟随预设 / "0" 关 / "1" 开')
+    try:
+        th = config.set_thinking(body.thinking)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"思考档已在本进程切换，但写 .env 失败（重启后仍是旧档）：{e}")
+    u = auth.session_user(request) or {}
+    LOG.info("思考档 who=%s mode=%s 生效=%s 渠道=%s 支持=%s",
+             u.get("name"), th["mode"], th["on"], config.VLM_MODEL_CHOICE, th["supported"])
+    return {"ok": True, "thinking": th, "model": config.VLM_MODEL}
 
 
 DESK_QUEUE = desk_queue.DeskQueue(slots=config.DESK_CONCURRENCY, max_pending=config.DESK_QUEUE_MAX)

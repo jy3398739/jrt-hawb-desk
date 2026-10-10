@@ -17,6 +17,8 @@
     分单模型<select id="modelSel"></select></label>
   <label class="f" id="fModelM" title="主单（MAWB）提取用的模型，和分单各切各的。主单资料是几百字符的纯文本、没有票面图，2026-09-29 实测同一条 S2 取到 2/36 列、qwen3.8-flash 取到 18/36 列。切换后已缓存的主单解析结果按新模型自动重算">
     主单模型<select id="modelSelM"></select></label>
+  <label class="f" id="fThink" title="思考模式（只对声明了该参数的渠道生效，现在只有 Qwen；官方书生不接受这个参数，下拉会置灰）。跟随预设=各家用自己的默认档（Qwen 是关着，省几千 reasoning token）；开=更肯想但单票更慢更贵。对照实验才开：同一天的台账混着两档，统计就分不清是模型的错还是档位的错">
+    思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
   <label class="f">复核人<input id="reviewer" type="text" placeholder="制单员姓名" size="10"></label>
   <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span><button class="pwwarn" id="pwWarn" type="button" hidden title="管理员口令还是出厂默认值：登录门禁等于没上，点这里去「账号管理」改掉">口令未改</button></span>
   <span class="seg" role="tablist" aria-label="视图切换">

@@ -33,7 +33,8 @@ class _ModelState:
     改这台机器的真 .env：2026-10-08 在服务器上每次部署跑回归，都把线上的模型选择悄悄改回去了。"""
 
     def __enter__(self):
-        self.old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE)
+        self.old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE,
+                    config.MASTER_VLM_MODEL, config.MODEL_THINKING)
         self._dir = tempfile.TemporaryDirectory()
         env = Path(self._dir.name) / ".env"
         env.write_text(f"VLM_MODEL={config.VLM_MODEL_CHOICE}\n"
@@ -42,7 +43,8 @@ class _ModelState:
         return self
 
     def __exit__(self, *exc):
-        config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE = self.old
+        (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE,
+         config.MASTER_VLM_MODEL, config.MODEL_THINKING) = self.old
         self._dir.cleanup()
         return False
 
@@ -236,6 +238,67 @@ def test_vision_path_still_sends_the_image():
         assert blocks[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_thinking_switch_three_modes_and_only_where_supported():
+    """2026-10-10 用户要"给千问加一个思考模式开关"。三档：跟随预设 / 关 / 开。
+    开关只对**预设里声明了这个参数**的渠道生效——官方书生压根不接受 extra_body，
+    给它塞 enable_thinking 会直接 400，所以"支不支持"必须由预设说，不能让界面猜。
+    标签也要跟着变：预设名字里写死"（已关思考）"，开关一开那句就成了谎话。"""
+    with _ModelState():
+        config.set_model("qwen38-flash-bailian")
+        config.set_thinking("")
+        assert config.model_extra_body() == {"enable_thinking": False}, "跟随预设 = 现状（关）"
+        assert config.thinking()["supported"] is True and config.thinking()["on"] is False
+        config.set_thinking("1")
+        assert config.model_extra_body() == {"enable_thinking": True}, "开思考要真的把参数发成 true"
+        assert "思考开" in config.resolve_model("qwen38-flash-bailian")["label"], "标签没跟着变就是骗人"
+        config.set_thinking("0")
+        assert config.model_extra_body() == {"enable_thinking": False}
+        assert "思考关" in config.resolve_model("qwen38-flash-bailian")["label"]
+        config.set_thinking("1")
+        config.set_model("intern-s2-official")
+        assert config.model_extra_body() == {}, "官方书生不接受 extra_body，塞进去会 400"
+        assert config.thinking()["supported"] is False
+        assert "思考" not in config.resolve_model("intern-s2-official")["label"]
+        config.set_thinking("")
+
+
+def test_master_chain_thinking_follows_its_own_preset():
+    """两条链可以指向不同渠道：分单开思考不许把主单也带上（主单是纯文本任务，
+    而且那条链可能压根不支持这个参数）。"""
+    with _ModelState():
+        config.set_model("qwen38-flash-bailian")
+        config.set_thinking("1")
+        config.set_master_model("intern-s2-official")
+        b = config.master_model_bundle()
+        assert b["extra_body"] == {}, f"主单链不该被带上：{b['extra_body']}"
+        assert config.model_extra_body() == {"enable_thinking": True}, "分单链照自己的预设走"
+        config.set_master_model("qwen38-flash-bailian")
+        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": True}, \
+            "主单链自己支持时开关要生效"
+        config.set_thinking("")
+
+
+def test_thinking_persists_to_env_and_restarts_with_it():
+    """开关只存内存 = 重启就回默认，那和没有开关一样（模型选择那条踩过的坑）。
+    `set_model` 只改本进程、不落盘（落盘是那条路由的事），所以"模型那一行没被顺手动"要断言的
+    是临时 .env 里**原来那一行**——拿 set_model 之后的值去比，单独跑靠真 .env 恰好是 qwen 侥幸过、全量跑就假失败。"""
+    with _ModelState():
+        start = config.VLM_MODEL_CHOICE       # _ModelState 刚按这个值写过临时 .env
+        assert "MODEL_THINKING=" not in config.ENV_FILE.read_text(encoding="utf-8"), \
+            "没拨过的档不该凭空多出一行"
+        config.set_thinking("1")
+        line = config.ENV_FILE.read_text(encoding="utf-8")
+        assert "MODEL_THINKING=1" in line, f"没写回 .env：{line!r}"
+        assert f"VLM_MODEL={start}" in line, "别把模型那一行顺手改掉"
+        config.set_thinking("")
+        line = config.ENV_FILE.read_text(encoding="utf-8")
+        assert "\nMODEL_THINKING=\n" in line or line.startswith("MODEL_THINKING=\n"), \
+            "回到「跟随预设」要写成空值：留个 1 在那儿，重启后还是开着的"
+        assert sum(1 for l in line.splitlines() if l.startswith("MODEL_THINKING=")) == 1, \
+            "要就地替换不是再追加一行"
+
+
+
 def test_preset_without_extra_body_sends_nothing_extra():
     """没声明 extra_body 的预设，请求里不该凭空多出参数。
     （2026-09-24 这条原本是 MiMo 用例的尾巴——它测的是"透传机制别漏发也别多发"，
@@ -389,6 +452,10 @@ def test_api_clients_are_bounded_by_timeout_and_a_single_retry_layer():
                     raise AssertionError("ask_vision 没构造客户端")
             finally:
                 os.environ.pop("INTERNLM_API_KEY", None)
+            # 端点要在这个 with 里就取走：退出后 _ModelState 会把选择恢复成 .env 的值，
+            # 到那时再 config.vlm_base_url() 比的是"恢复后"的渠道——本机 .env 已切到 qwen，
+            # 于是这条用例在任何非 S2 默认值的机器上都会假炸（2026-10-10 撞到）。
+            want_url = config.vlm_base_url()
     finally:
         for m, oa, oc, och in saved:
             m.OpenAI = oa
@@ -402,8 +469,8 @@ def test_api_clients_are_bounded_by_timeout_and_a_single_retry_layer():
             f"没带超时，挂住的请求会无限等: timeout={kw.get('timeout')!r}"
         assert kw.get("max_retries") == 0, \
             f"SDK 层重试没关，会和 VLM_RETRIES 相乘: max_retries={kw.get('max_retries')!r}"
-        assert kw.get("base_url") == config.vlm_base_url(), \
-            f"客户端没按当前渠道的端点构造: base_url={kw.get('base_url')!r}"
+        assert kw.get("base_url") == want_url, \
+            f"客户端没按当前渠道的端点构造: base_url={kw.get('base_url')!r} 期望 {want_url!r}"
 
 
 def test_persist_model_choice_can_target_the_master_line():

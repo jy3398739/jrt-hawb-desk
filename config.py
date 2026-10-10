@@ -87,12 +87,14 @@ MODEL_PRESETS = {
     # 换完当天实测：清单里有 qwen3.8-flash；三行票面 1.3s 照抄无误、image_tokens 236、
     # enable_thinking:false 照样有效（completion 里没有 reasoning）。原先那把个人公共版 key 已下线。
     "qwen38-flash-bailian": {"model": "qwen3.8-flash", "vision": True, "max_tokens": 32768,
-                             "label": "Qwen3.8-Flash · 公司百炼专属实例 · 视觉（已关思考）",
+                             "label": "Qwen3.8-Flash · 公司百炼专属实例 · 视觉",
                              "base_url": "https://ws-21g0jh2xbvre59nd.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
                              "api_key_env": "QWEN_API_KEY",
                              "key_hint": "公司百炼专属实例（MaaS）token，sk-ws- 开头，向管理员索取；"
                                          "它只认这一个实例地址，与公共百炼 key 不通用",
-                             "extra_body": {"enable_thinking": False}},
+                             # 思考档由这里声明"参数名 + 默认值"，界面上的开关才知道这一家能不能开关、
+                             # 该发什么。默认关 = 与 2026-09-24 起的行为一致（省几千 reasoning token）。
+                             "thinking": {"param": "enable_thinking", "default": False}},
     # 2026-10-08 用户定案删除另两条商业渠道，理由都是"没换来实际收益"：
     #   · 小米 MiMo-V2.6-Flash（api.xiaomimimo.com）——与 S2 平级（20 票中位 7.2 vs 8.1s、保真同为 99.3%、
     #     红旗同为 12 条），但 p90 45-70s 有长尾，且 HAWB_NO 出现过一次静默错填（红旗没抓）；
@@ -107,6 +109,33 @@ MODEL_PRESETS = {
 # S2 仍在表里且排第一，顶栏下拉随时热切回去，公司实例哪天不通了不影响开工。
 DEFAULT_MODEL_KEY = "qwen38-flash-bailian"
 
+# 思考模式开关（2026-10-10 用户要）："" = 跟随预设（= 现状，qwen 那档关着）/ "0" 关 / "1" 开。
+# 全局一个就够：它只对"预设里声明了参数"的渠道生效，不支持的渠道碰都不碰（见 thinking）。
+# 必须排在 resolve_model 与 _MODEL_INFO 之前：标签里要写"思考开/关"，而 resolve_model 在导入时就跑一次。
+MODEL_THINKING = os.getenv("MODEL_THINKING", "").strip()
+
+
+def thinking(preset: dict | None = None) -> dict:
+    """当前思考档位 = {supported, param, on, mode}。
+    预设没声明 `thinking.param` 的渠道就是不支持：官方书生连 extra_body 都不接受，
+    硬塞 enable_thinking 会直接 400 —— 所以"能不能开"由预设说，开关与标签都照它办事。"""
+    p = _active_preset() if preset is None else preset
+    th = p.get("thinking") or {}
+    param = str(th.get("param") or "")
+    on = bool(th.get("default", False)) if MODEL_THINKING == "" else MODEL_THINKING == "1"
+    return {"supported": bool(param), "param": param, "on": bool(on and param), "mode": MODEL_THINKING}
+
+
+def set_thinking(value) -> dict:
+    """运行时切思考档（审核台 POST /model/thinking）：本进程立即生效 + 写回 .env。
+    只认 ""/"0"/"1"；写回 .env 是必须的——只存内存的话重启就回默认，等于没有开关。"""
+    global MODEL_THINKING
+    v = str(value if value is not None else "").strip()
+    if v not in ("", "0", "1"):
+        raise ValueError(f"thinking 只能是 空（跟随预设）、0（关）或 1（开），收到 {value!r}")
+    MODEL_THINKING = v
+    persist_model_choice(v, "MODEL_THINKING")
+    return thinking()
 
 
 def resolve_model(choice: str = "") -> dict:
@@ -122,6 +151,10 @@ def resolve_model(choice: str = "") -> dict:
     forced = os.getenv("VLM_VISION", "").strip()
     if forced in ("0", "1"):
         info["vision"] = forced == "1"      # 调试/新模型兜底：手动强制，不让它自己猜
+    # 标签里带上思考档：预设名字里写死"（已关思考）"的话，开关一开那句就成了谎话
+    th = thinking(preset or {})
+    if th["supported"]:
+        info["label"] = info["label"] + (" · 思考开" if th["on"] else " · 思考关")
     return info
 
 
@@ -144,11 +177,20 @@ def _active_preset() -> dict:
     return MODEL_PRESETS.get(str(VLM_MODEL_CHOICE).lower()) or {}
 
 
+def extra_body_for(preset: dict) -> dict:
+    """某个预设这次该随 create 发出去的额外参数。思考档由 `thinking(preset)` 决定参数名与真假；
+    没声明的渠道一个字都不加（各家开关写法互不通用，官方书生压根不接受 extra_body）。"""
+    eb = dict(preset.get("extra_body") or {})
+    th = thinking(preset)
+    if th["supported"]:
+        eb[th["param"]] = th["on"]
+    return eb
+
+
 def model_extra_body() -> dict:
-    """预设声明的额外请求体参数（如 MiMo 关思考），随每次 create 原样发出。
-    没有则返回空 dict——不能给没声明的预设凭空塞参数，各家开关写法互不通用
-    （MiMo 认 thinking.type，豆包认同名写法，百炼两种都吃，官方书生压根不接受）。"""
-    return dict(_active_preset().get("extra_body") or {})
+    """当前生效渠道的额外请求体参数，随每次 create 原样发出。"""
+    return extra_body_for(_active_preset())
+
 
 
 def vlm_base_url() -> str:
@@ -171,7 +213,8 @@ def master_model_bundle() -> dict:
     if not MASTER_VLM_MODEL:
         return {"choice": VLM_MODEL_CHOICE, "model": VLM_MODEL, "vision": MODEL_VISION,
                 "base_url": vlm_base_url(), "api_key_env": _active_preset().get("api_key_env"),
-                "max_tokens": model_max_tokens(), "extra_body": model_extra_body()}
+                "max_tokens": model_max_tokens(), "extra_body": model_extra_body(),
+                "thinking": thinking()}
     info = resolve_model(MASTER_VLM_MODEL)
     preset = MODEL_PRESETS.get(str(info["choice"]).lower()) or {}
     return {"choice": info["choice"], "model": info["model"], "vision": info["vision"],
@@ -179,7 +222,8 @@ def master_model_bundle() -> dict:
             "base_url": (preset.get("base_url") or MODELSCOPE_BASE_URL).strip(),
             "api_key_env": preset.get("api_key_env"),
             "max_tokens": max(VLM_MAX_TOKENS, int(preset.get("max_tokens", 0))),
-            "extra_body": dict(preset.get("extra_body") or {})}
+            "extra_body": extra_body_for(preset), "thinking": thinking(preset)}
+
 
 
 def set_master_model(choice: str) -> dict:

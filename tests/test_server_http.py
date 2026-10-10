@@ -929,6 +929,27 @@ def test_master_chain_model_is_visible_and_switchable_separately():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_desk_thinking_selector_is_wired():
+    """思考档下拉三档齐全（跟随预设/关/开），值就是 .env 里那个模式串；
+    档位显示必须来自 /models 的回报，不能让浏览器自己记一份——重启后 .env 说了算，
+    界面停在旧档就成了说谎的下拉。仅管理员可见（与模型下拉同一道门）。"""
+    html = web_src.desk()
+    assert 'id="thinkSel"' in html, "思考档下拉没了"
+    assert 'id="fThink"' in html and '$("#fThink").hidden = !admin' in html, "思考档下拉没跟着管理员门走"
+    load = re.search(r"async function loadModels\(\)\{(.*?)\n\}", html, re.S)
+    assert load and '$("#thinkSel")' in load.group(1), "loadModels 没填思考档下拉（永远停在空选项）"
+    assert re.search(r'\[\s*"",\s*"0",\s*"1"\s*\]\s*\.map', html), \
+        "三档缺一个：只能开、不能回到「跟随预设」的开关没人敢碰"
+    assert "跟随预设" in html, "档位要说人话：0/1 这种值让人猜不到「空」是什么意思"
+    switch = re.search(r"async function setThinking\(sel\)\{(.*?)\n\}", html, re.S)
+    assert switch and '"/model/thinking"' in switch.group(1), "改了档却不 POST：看着切了，其实没切"
+    opts = re.search(r"function thinkOpts\(th\)\{(.*?)\n\}", html, re.S)
+    assert opts and re.search(r"sel\.disabled\s*=\s*!th\.supported", opts.group(1)), \
+        "渠道不支持思考时下拉要置灰：能拨却什么都不改的开关，只会被人当成坏了"
+    assert opts and "th.supported" in opts.group(1) and "旧进程" in opts.group(1), \
+        "服务端没报档位（旧进程）时也要说清楚，不能留一个空下拉让人以为没这个功能"
+
+
 def test_desk_shows_both_chain_models():
     """顶栏要同时看得见两条链的模型（所有人可见状态，仅管理员能切）——
     只报一个的话，主单用了别的模型这件事在界面上完全隐形。"""
@@ -949,6 +970,87 @@ def test_switch_model_rejects_injection_and_empty():
             r = client.post("/model", json={"model": bad})
             assert r.status_code == 400, f"{bad!r} -> {r.status_code}"
         assert client.post("/model", json={"nope": 1}).status_code == 400
+
+
+def test_thinking_switch_is_three_way_admin_only_and_persists():
+    """思考档三档（跟随预设/关/开）：换模型是管理员的事，开关思考也是——它同样改变提取结果
+    （开思考要多烧几千 reasoning token、也更慢）。只改内存不写 .env 的话重启就回默认，等于没开关。"""
+    client = TestClient(server.app)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_env_"))
+    old_env_file = config.ENV_FILE
+    old_state = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.MODEL_THINKING)
+    config.ENV_FILE = tmp / ".env"
+    config.ENV_FILE.write_text("QWEN_API_KEY=sk-x\nVLM_MODEL=qwen38-flash-bailian\n", encoding="utf-8")
+    try:
+        with _stubbed():
+            config.set_model("qwen38-flash-bailian")
+            assert client.post("/model/thinking", json={"thinking": "1"}).status_code == 401, \
+                "开思考没要登录"
+            _login_admin(client)
+            r = client.post("/model/thinking", json={"thinking": "1"})
+            assert r.status_code == 200 and r.json()["ok"], r.text
+            assert config.thinking()["on"] is True, "本进程没立即生效（还要重启才算切）"
+            assert config.model_extra_body() == {"enable_thinking": True}, "开关没落到真正发出去的参数上"
+            assert "MODEL_THINKING=1" in config.ENV_FILE.read_text(encoding="utf-8"), "档位没写回 .env，重启就丢"
+            assert client.get("/health").json()["thinking"]["on"] is True, "健康检查没报出思考档"
+            assert client.post("/model/thinking", json={"thinking": "0"}).json()["thinking"]["on"] is False
+            assert client.post("/model/thinking", json={"thinking": ""}).json()["thinking"] == \
+                {"supported": True, "param": "enable_thinking", "on": False, "mode": ""}, \
+                "跟随预设 = 回到各家用自己的默认值（qwen 那档是关）"
+            for bad in ("2", "yes", "开"):
+                assert client.post("/model/thinking", json={"thinking": bad}).status_code == 400, \
+                    f"{bad!r} 这种值居然放行了"
+    finally:
+        config.ENV_FILE = old_env_file
+        (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION,
+         config.MODEL_THINKING) = old_state
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_models_list_shows_which_channels_can_toggle_thinking():
+    """下拉要在免登录阶段就填得出"这家能不能开关思考"：官方书生压根不接受 extra_body，
+    界面不点名会让人以为开关坏了（其实参数发过去直接 400）。"""
+    client = TestClient(server.app)
+    with _stubbed():
+        j = client.get("/models").json()
+        by = {p["key"]: p for p in j["presets"]}
+        assert by["qwen38-flash-bailian"]["thinking"]["supported"] is True, "能关能开的渠道没标出来"
+        assert by["qwen38-flash-bailian"]["thinking"]["param"] == "enable_thinking"
+        assert by["intern-s2-official"]["thinking"]["supported"] is False, "不支持的要显式说不支持"
+        assert "thinking" in j and "master" in j and "thinking" in j["master"], \
+            "当前档与主单链档都要报：顶栏显示的模型名不许和实际发的参数不一致"
+
+
+def test_thinking_on_an_unsupported_channel_sends_nothing_extra():
+    """在不支持思考的渠道上把开关拨到"开"：请求里一个字都不许多（官方书生多收一个参数就回 400），
+    而且接口要当场说清"这家不支持"——全局一个开关的代价就在这儿，不能靠界面自觉。
+    .env 指到临时目录：这条会真的切模型，不能让回归把开发机的渠道改掉。"""
+    client = TestClient(server.app)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_env_"))
+    old_env_file = config.ENV_FILE
+    old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.MODEL_THINKING)
+    config.ENV_FILE = tmp / ".env"
+    config.ENV_FILE.write_text("INTERNLM_API_KEY=sk-x\nQWEN_API_KEY=sk-y\n"
+                               "MODEL_THINKING=\n", encoding="utf-8")
+    try:
+        with _stubbed():
+            _login_admin(client)
+            assert client.post("/model", json={"model": "intern-s2-official"}).status_code == 200
+            j = client.post("/model/thinking", json={"thinking": "1"}).json()
+            assert j["ok"] and j["thinking"]["supported"] is False, "不支持的渠道要如实说不支持"
+            assert config.model_extra_body() == {}, "不支持的渠道居然被塞了参数：真请求会 400"
+            m = client.get("/models").json()
+            assert m["thinking"]["supported"] is False
+            assert m["thinking"]["mode"] == "1", "档位本身要如实报回来：界面靠它区分「没拨」和「拨了但这家不支持」"
+            assert m["master"]["thinking"]["supported"] is False, "主单链此刻也是 S2，开关同样不该生效"
+            assert "思考" not in {p["key"]: p for p in m["presets"]}["intern-s2-official"]["label"], \
+                "预设名不跟着档位改写：思考档只由那一个下拉说，两处都说就会互相打脸"
+    finally:
+        config.ENV_FILE = old_env_file
+        (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION,
+         config.MODEL_THINKING) = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
 
 
 def test_desk_model_selector_is_wired_to_models_and_model_endpoints():
