@@ -265,7 +265,7 @@ def test_desk_has_a_day_ledger_view_switching_without_leaving_the_workbench():
     assert 'id="viewDay"' in page and 'id="dayCard"' in page, "缺少今日台账入口或整页卡"
     assert 'role="tab"' in page and 'aria-selected' in page, "视图切换要用 tab 语义，读屏器才知道现在在哪一页"
     assert '"/day"' in js and "renderDay" in js, "前端没接 /day"
-    assert "L.daySummary" in js, "计数要走 logic，别在渲染里再算一遍"
+    assert "L.dayBar" in js, "计数要走 logic，别在渲染里再算一遍"
     op = js[js.index("function openDay("):js.index("function ", js.index("function openDay(") + 1)] \
         if "function openDay(" in js else ""
     assert "openHouse(" in js and 'data-open="' in js, "台账行的「打开」要复用 openHouse，不另开一套加载逻辑"

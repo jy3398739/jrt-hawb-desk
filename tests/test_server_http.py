@@ -169,14 +169,20 @@ def test_text_tokens_pass_wcag_aa_on_their_real_backgrounds():
         assert r >= floor, f"{fg}(#{tok[fg]}) 在 {bg}(#{tok[bg]}) 上只有 {r:.2f}:1，{tag} 要 ≥{floor}:1"
 
     LIGHT = ["--c-surface", "--c-bg", "--c-surface-2", "--c-surface-3", "--c-canvas",
-             "--c-neutral", "--c-accent-sel", "--c-accent-glow", "--c-edited"]
+             "--c-neutral", "--c-accent-sel", "--c-accent-glow", "--c-edited",
+             # 解析正确率看板：有改动的整行铺 --c-warn-strip、悬停铺 --c-hit，
+             # 正文三级字就直接压在这两块上，所以它们也是"文字真实会出现的底"。
+             "--c-warn-strip", "--c-hit"]
     for ink in ("--c-text-1", "--c-text-2", "--c-text-3"):
         for bg in LIGHT:
             ratio(ink, bg, 4.5, "正文/说明文字")
     for fg, bgs in (("--c-accent", ["--c-surface", "--c-bg", "--c-surface-2", "--c-accent-soft"]),
                     ("--c-ok-text", ["--c-surface", "--c-bg", "--c-ok-bg", "--c-accent-sel"]),
                     ("--c-warn-text", ["--c-surface", "--c-bg", "--c-warn-bg", "--c-warn-strip", "--c-edited"]),
-                    ("--c-bad-text", ["--c-surface", "--c-bg", "--c-bad-bg", "--c-accent-sel"])):
+                    ("--c-bad-text", ["--c-surface", "--c-bg", "--c-bad-bg", "--c-accent-sel"]),
+                    # 今日归档那两支：分单徽标压在自己的青绿底上，附件链接压在白底/表头灰底/主单浅底上
+                    ("--c-sub-text", ["--c-surface", "--c-bg", "--c-surface-2", "--c-sub-bg"]),
+                    ("--c-attach", ["--c-surface", "--c-bg", "--c-surface-2"])):
         for bg in bgs:
             ratio(fg, bg, 4.5, "带语义的文字")
     for dark in ("--c-accent", "--c-toast", "--c-toast-ok", "--c-toast-bad"):
@@ -184,6 +190,11 @@ def test_text_tokens_pass_wcag_aa_on_their_real_backgrounds():
     for fill in ("--c-ok", "--c-warn", "--c-bad", "--c-accent"):
         for bg in ("--c-surface", "--c-bg", "--c-surface-2", "--c-canvas", "--c-accent-sel"):
             ratio(fill, bg, 3.0, "状态点/竖条这类图形")
+    # 看板条形图的渐变两端：条子长短是要读出来的信息（WCAG 1.4.11 图形 ≥3:1），
+    # 底色既有面板白也有它自己那条轨道灰。交接原型给的 #eab46b 在这两块上只有 1.87 / 1.66。
+    for bar in ("--c-bar-a", "--c-bar-b"):
+        for bg in ("--c-surface", "--c-surface-3"):
+            ratio(bar, bg, 3.0, "条形图填充")
 
 
 def test_state_fill_tokens_are_never_used_as_text():

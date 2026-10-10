@@ -54,7 +54,7 @@ const EXTS = [".png",".jpg",".jpeg",".bmp",".tif",".tiff",".pdf",".xlsx",".xlsm"
 const BASE = location.pathname.replace(/\/(index\.html)?$/, "");
 const SUBMIT_URL = BASE + "/submit";
 
-const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate",
+const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate", dayDensity:"hawb.review.day.density",
             locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
             split:"hawb.review.split", colK:"hawb.review.colK"};
 const $ = s => document.querySelector(s);
@@ -1927,7 +1927,7 @@ $("#mstResult").addEventListener("click", async e => {
    统计读 /stats：模型那一版与人最后定下的那一版逐列比（数只在 stats.py 算一处）。
    公司的发送状态不在这两张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
 const VIEW = {cur: "desk", rows: [], date: ""};
-const ST = {rows: [], summary: {}};
+const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;
 function syncCards(){
   const v = VIEW.cur;
@@ -1944,13 +1944,15 @@ function setView(v){
   });
   syncCards();
   dayConfirm = "";                      // 换页就把「确认作废？」问句收掉：回来得重新点一次，不会留着等人误点
-  if (VIEW.cur === "day") loadDay();
+  if (VIEW.cur === "day") loadDay(true);
 }
 const todayStr = () => {
   const n = new Date(), p = x => String(x).padStart(2, "0");
   return n.getFullYear() + "-" + p(n.getMonth() + 1) + "-" + p(n.getDate());
 };
-async function loadDay(){
+/* fade=true 才是"换了一批数据"（切页/换日期/点刷新）——只有这时行才挂 dvin 播入场淡入。
+   作废完重画传 false：那一屏还是同一批票，重播一遍淡入就是坑 9 说的"列表频繁闪"。 */
+async function loadDay(fade){
   const box = $("#dayBox");
   box.innerHTML = '<div class="empty">正在读今天的台账…</div>';
   try{
@@ -1960,74 +1962,241 @@ async function loadDay(){
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     VIEW.date = j.date; VIEW.rows = j.rows || [];
     $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
-    renderDay();
+    renderDay(fade !== false);
   }catch(e){
     box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
   }
 }
-/* 今日台账：分单与主单合一张表（行上带 kind），作废是"从台账与统计里收起来"的软闸门。
+/* 今日归档：分单与主单合一张高密度表（行上带 kind），按主单聚簇、点箭头原地平滑折叠。
+   交接原型 archive-dense-view.html 第 5 节那九条坑点各有用例钉着（tests/test_day_dense_view.py）：
+   折叠不重建 DOM、过渡里不掺 min-height、收尾先关过渡再清内联值、定时器按组分开存、
+   入场淡入只在真的换了一批数据时播。改这块之前先跑那一组。
+   作废是"从台账与统计里收起来"的软闸门：票面原件、暂存记录、提交台账与复合键索引一律不动。
    dayConfirm 只活在内存里：刷新页面就该问第二遍，记进 localStorage 反而会把上一轮的确认
    留到下一次误点。 */
+const DV = {filter: "all", sort: "cluster", collapsed: new Set(), timers: {}};
+const DV_ANIM = 250;        // 收尾比 CSS 那条 --dv-fold(.24s) 晚一点：早了会把过渡掐在半路
+/* 两面小图标都写 stroke="currentColor"，颜色交给 CSS：desk.js 里出现一个色值就是回归
+   （test_server_http.test_color_literals_only_live_in_tokens）。 */
+const DV_FLAG_SVG = '<svg width="10" height="10" viewBox="0 0 14 14" fill="none" aria-hidden="true">'
+  + '<path d="M3.5 1.5v11M3.5 2h7.6l-1.6 2.4 1.6 2.4H3.5" stroke="currentColor" stroke-width="1.5"'
+  + ' stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const DV_CHEV_SVG = '<svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">'
+  + '<path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"'
+  + ' stroke-linejoin="round"/></svg>';
 let dayOnlyVoid = false, dayConfirm = "";
 const KIND_CN = {hawb: "分单", mawb: "主单"};
+function dvRowH(){
+  /* 目标行高从令牌读回来，不在这里另写一个 31：CSS 用 --dv-row 决定静态行高，
+     动画又要知道该收到多少，两边各写一份的话改一次密度就动画到一半停住。 */
+  const cozy = document.body.dataset.density === "cozy";
+  const v = getComputedStyle(document.body).getPropertyValue(cozy ? "--dv-row-cozy" : "--dv-row");
+  return parseFloat(v) || 31;
+}
+/* 密度是本机偏好（各人屏幕不一样，不该互相将就），存 LS.dayDensity 不存账号。
+   行高只有 CSS 一处说了算：切档改 body[data-density]，浏览器自己换 min-height，不重渲染整表。 */
+function dvInitDensity(){
+  const d = localStorage.getItem(LS.dayDensity) === "cozy" ? "cozy" : "compact";
+  document.body.dataset.density = d;
+  document.querySelectorAll("#dayDensity button")
+    .forEach(b => b.classList.toggle("on", b.dataset.d === d));
+}
+function dvGroup(pk){
+  const box = $("#dayBox");
+  return {master: box.querySelector('tr.dvm[data-dvm="' + CSS.escape(pk) + '"]'),
+          subs: Array.prototype.slice.call(box.querySelectorAll('tr.dvs[data-dvp="' + CSS.escape(pk) + '"]'))};
+}
+function dvAnimate(pk, collapsing){
+  const g = dvGroup(pk);
+  if (!g.master) return;
+  const targetH = dvRowH();
+  g.master.classList.toggle("show-hint", collapsing);
+  const chev = g.master.querySelector(".dvchev");
+  if (chev) chev.classList.toggle("closed", collapsing);
+  if (!g.subs.length) return;      // 当前筛法下这一组没有分单行：只更新箭头与「已折叠」提示
+  clearTimeout(DV.timers[pk]);
+  g.subs.forEach(row => {
+    const inners = Array.prototype.slice.call(row.querySelectorAll(".dvci"));
+    /* 起点量当前实际高度：动画中途再点要从半路接续，写死 0 或目标值都会跳一下。
+       收起来时取 max(实测, 目标)——舒适档下人刚拖过的行可能比令牌值高。 */
+    const from = collapsing
+      ? Math.max(inners[0].offsetHeight, targetH)
+      : (row.classList.contains("is-collapsed") ? 0 : inners[0].offsetHeight);
+    if (!collapsing) row.classList.remove("is-collapsed");
+    row.classList.add("folding");
+    inners.forEach(el => {
+      el.style.minHeight = "0px";
+      el.style.height = from + "px";
+      el.style.opacity = from === 0 ? "0" : "1";
+    });
+    void row.offsetWidth;                        // 强制 reflow：不隔一帧两次改动会被合并成一次
+    requestAnimationFrame(() => inners.forEach(el => {
+      el.style.height = (collapsing ? 0 : targetH) + "px";
+      el.style.opacity = collapsing ? "0" : "1";
+    }));
+  });
+  DV.timers[pk] = setTimeout(() => {
+    g.subs.forEach(row => {
+      row.classList.remove("folding");
+      if (collapsing) row.classList.add("is-collapsed");
+      /* 顺序不能反：先关过渡、强制 reflow，再清内联值交还 CSS，否则残留属性变化会触发
+         第二次动画（"展开到 31px 又掉回去再爬回来"那个抖动的根因）。 */
+      row.querySelectorAll(".dvci").forEach(el => {
+        el.style.transition = "none";
+        el.style.height = ""; el.style.minHeight = ""; el.style.opacity = "";
+      });
+    });
+    void $("#dayBox").offsetWidth;
+    g.subs.forEach(row => row.querySelectorAll(".dvci").forEach(el => { el.style.transition = ""; }));
+  }, DV_ANIM + 20);
+}
+function dvToggle(pk){
+  const collapsing = !DV.collapsed.has(pk);
+  if (collapsing) DV.collapsed.add(pk); else DV.collapsed.delete(pk);
+  dvAnimate(pk, collapsing);
+  dvSyncCollapse();
+}
+function dvGroups(){
+  const box = $("#dayBox"), withSubs = new Set();
+  box.querySelectorAll("tr.dvs[data-dvp]").forEach(tr => withSubs.add(tr.dataset.dvp));
+  return Array.prototype.slice.call(box.querySelectorAll("tr.dvm[data-dvm]"))
+    .map(tr => tr.dataset.dvm).filter(pk => withSubs.has(pk));
+}
+function dvAnyOpen(){ return dvGroups().some(pk => !DV.collapsed.has(pk)); }
+function dvSyncCollapse(){
+  $("#dayCollapse").textContent = dvAnyOpen() ? "全部折叠" : "全部展开";
+}
+function dvStatHtml(b){
+  /* 红旗那一格报的是"有红旗的票数"，不是红旗标记总数（交接文档第 3 节点名了这一条）；
+     总数放在悬停提示里，两个口径都留着，别让人以为它们在互相打脸。 */
+  return `<span>共 <em>${b.total}</em> 票</span>`
+    + `<span>主单 <em>${b.masters}</em></span>`
+    + `<span class="dvr" title="红旗标记一共 ${b.flags} 条">红旗 <em>${b.flagged}</em> 票</span>`
+    + `<span>未提交 <em>${b.pending}</em></span>`
+    + (b.failed ? `<span>失败 <em>${b.failed}</em></span>` : "")
+    + (b.voided ? `<span>已作废 <em>${b.voided}</em></span>` : "");
+}
 function voidCell(r){
+  /* 操作列只有 96px，两步确认竖着排（desk.css 里 td.c-op 那道 flex-wrap）：
+     横着排会被裁掉一半，装不下的确认按钮等于没有确认。 */
   const k = r.kind + "|" + (r.kind === "mawb" ? r.mawb : r.stem);
   if (r.voided)
     return '<button class="btn sm" type="button" data-undo="' + esc(k) + '" title="当初作废：' +
            esc(r.voided.by || "?") + " " + esc(r.voided.at || "") + '">恢复</button>';
   if (dayConfirm === k)
-    return '<span class="vq">作废这一行？原件、暂存与提交记录都不动</span>' +
-           '<button class="btn sm danger" type="button" data-void="' + esc(k) + '">确认作废</button>' +
-           '<button class="btn sm" type="button" data-vno="1">取消</button>';
+    return '<button class="btn sm danger" type="button" data-void="' + esc(k) +
+           '" title="作废这一行？票面原件、暂存记录与提交台账都不动，随时能恢复">确认作废</button>' +
+           '<button class="btn sm" type="button" data-vno="1" title="取消，什么都不动">取消</button>';
   return '<button class="btn sm gh" type="button" data-void="' + esc(k) +
          '" title="从台账与统计里收起来，随时能恢复；票面原件、暂存与提交台账一律不动">作废</button>';
 }
-function renderDay(){
-  const s = L.daySummary(VIEW.rows);
-  $("#dayCnt").textContent = `${s.total} 张 · 已提交 ${s.submitted} · 待提交 ${s.pending}`
-    + (s.failed ? ` · 失败 ${s.failed}` : "") + (s.flags ? ` · 红旗 ${s.flags} 条` : "")
-    + (s.voided ? ` · 已作废 ${s.voided}` : "");
-  const rows = L.dayVisible(VIEW.rows, dayOnlyVoid);
+function dvRowHtml(r, subs, fade){
+  const m = r.kind === "mawb", pk = L.dayKey(r), closed = DV.collapsed.has(pk);
+  const no = m ? (r.mawb || "没取到主单号") : (r.hawb || r.stem || "没取到分单号");
+  /* 箭头排在最前面，而且必须是真按钮：伪链接协议那种写法键盘到不了、读屏器也念不出来。
+     没有分单的那一组给占位箭头（visibility:hidden）保住单号的对齐，但不给点。 */
+  const chev = !m ? ""
+    : (subs[pk] > 0
+      ? `<button type="button" class="dvchev${closed ? " closed" : ""}" data-dvk="${esc(pk)}"`
+        + ` title="折叠 / 展开名下 ${subs[pk]} 张分单" aria-expanded="${closed ? "false" : "true"}">${DV_CHEV_SVG}</button>`
+      : `<button type="button" class="dvchev dvnone" tabindex="-1" aria-hidden="true">${DV_CHEV_SVG}</button>`);
+  const doc = m
+    ? `<span class="dvdoc">${chev}<span class="dvk m">主单</span>`
+      + `<button type="button" class="dvno m" data-mopen="${esc(r.mawb)}"`
+      + ` title="回工作台按这个主单号检索并打开核对区">${esc(no)}</button>`
+      + `<span class="dvfold">分单 ${subs[pk] || 0} 已折叠</span></span>`
+    : `<span class="dvdoc dvind"><span class="dvk s">分单</span>`
+      + (r.has_original
+        ? `<button type="button" class="dvno s" data-open="${esc(r.stem)}"`
+          + ` title="回到工作台接着核这张票">${esc(no)}</button>`
+        : `<span class="dvno s" title="原件没归档，回不去核对页">${esc(no)}</span>`)
+      + `<span class="dvpm">${esc(L.normNo(r.mawb) || "无主单号")}</span></span>`;
+  const st = r.failed
+    ? `<span class="dvst bad" title="${esc(r.error || "")}"><i></i>解析失败</span>`
+    : r.submitted
+      ? `<span class="dvst ok"><i></i>已提交${m ? ` <small>${r.filled}/${r.cols_total}</small>` : ""}</span>`
+      : `<span class="dvst no"><i></i>未提交${m ? ` <small>${r.filled}/${r.cols_total}</small>` : ""}</span>`;
+  const flag = (r.flags || 0) > 0
+    ? `<span class="dvfc" title="这一票有 ${r.flags} 条红旗标记">${DV_FLAG_SVG}×${r.flags}</span>`
+    : '<span class="dvfc none">—</span>';
+  const sub = r.submitted;
+  const rec = sub
+    ? `<span class="dvrec" title="${esc((sub.reviewer || "?") + " · " + (sub.at || "")
+        + (sub.action ? " · " + sub.action : ""))}">${esc(sub.reviewer || "?")} `
+      + `<span class="dvt">${esc(L.shortTime(sub.at))}</span>${sub.action ? " " + esc(sub.action) : ""}</span>`
+    : '<span class="dvdash">—</span>';
+  const snap = `<span class="dvsnap" title="${esc("解析渠道 " + (r.channel || "?") + " · 耗时 "
+      + (r.elapsed || 0) + "s · " + (r.processed_at || ""))}">${esc(r.channel || "?")} · ${r.elapsed || 0}s</span>`;
+  const att = r.has_original
+    ? `<a class="dvatt" href="${BASE}${m ? "/mawb/source/" + encodeURIComponent(r.mawb)
+                                          : "/source/" + encodeURIComponent(r.stem)}"`
+      + ' target="_blank" rel="noopener" title="新标签页打开归档的原件">原件</a>'
+    : '<span class="dvdash" title="这一票没有归档原件">—</span>';
+  const cls = ["dvm", "dvs"][m ? 0 : 1]
+    + ((r.flags || 0) > 0 ? " flagged" : "") + (r.voided ? " voided" : "") + (fade ? " dvin" : "")
+    + (m ? (closed ? " show-hint" : "") : (DV.collapsed.has(pk) ? " is-collapsed" : ""));
+  const key = m ? ` data-dvm="${esc(pk)}"` : ` data-dvp="${esc(pk)}"`;
+  return `<tr class="${cls}"${key} title="${esc(KIND_CN[r.kind] || r.kind)}`
+    + `${r.voided ? " · 已作废（" + esc(r.voided.by || "?") + "）" : ""}`
+    + `${r.uploader ? " · 上传 " + esc(r.uploader) : ""}${r.stager ? " · 暂存 " + esc(r.stager) : ""}">`
+    + `<td><div class="dvci">${doc}</div></td>`
+    + `<td><div class="dvci">${st}</div></td>`
+    + `<td class="c-flag"><div class="dvci">${flag}</div></td>`
+    + `<td><div class="dvci">${rec}</div></td>`
+    + `<td><div class="dvci">${snap}</div></td>`
+    + `<td><div class="dvci">${att}</div></td>`
+    + `<td class="c-op"><div class="dvci">${voidCell(r)}</div></td></tr>`;
+}
+function renderDay(fade){
+  const live = L.dayVisible(VIEW.rows, dayOnlyVoid);
+  $("#dayStats").innerHTML = dvStatHtml(L.dayBar(VIEW.rows));
+  const subs = L.daySubCounts(live);
+  const rows = L.dayOrder(L.dayFilter(live, DV.filter), DV.sort);
   if (!rows.length){
     $("#dayBox").innerHTML = VIEW.rows.length
-      ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。" : "这一天的票都被作废了。勾上「只看作废」翻回来。")
-        + '</div>'
+      ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。"
+          : "当前筛选下没有票。换个档位，或把「只看作废」勾上翻回作废的那些。") + '</div>'
       : '<div class="empty">这一天这台机器没经手过票。换个日期，或点「刷新」。</div>';
+    dvSyncCollapse();
     return;
   }
-  const html = rows.map(r => {
-    const m = r.kind === "mawb";
-    const no = m
-      ? `<button type="button" class="lk" data-mopen="${esc(r.mawb)}" title="回工作台按这个主单号检索并打开核对区">${esc(r.mawb)}</button>`
-      : r.has_original
-        ? `<button type="button" class="lk" data-open="${esc(r.stem)}" title="回到工作台接着核这张票">${esc(r.hawb || r.stem)}</button>`
-        : esc(r.hawb || (m ? r.mawb : "没取到分单号"));
-    const st = r.failed ? '<span class="badge miss">解析失败</span>'
-      : r.submitted ? '<span class="badge same">已提交</span>' : '<span class="badge warn">未提交</span>';
-    return `<tr class="${r.failed ? "flag" : ""}${r.voided ? " voided" : ""}">
-      <td class="kcol"><span class="kind k${esc(r.kind)}">${KIND_CN[r.kind] || esc(r.kind)}</span></td>
-      <td>${no}</td>
-      <td>${m ? '<span class="hint">本行就是主单</span>' : esc(r.mawb || "—")}</td>
-      <td>${st}${m && !r.failed ? ` <span class="hint">${r.filled}/${r.cols_total} 列</span>` : ""}</td>
-      <td>${r.flags ? `<span class="badge warn">红旗 ${r.flags}</span>` : '<span class="badge">无</span>'}</td>
-      <td>${r.submitted ? esc(r.submitted.reviewer + " · " + r.submitted.at +
-                             (r.submitted.action ? " · " + r.submitted.action : "")) : "—"}</td>
-      <td>${esc((r.channel || "—") + " · " + (r.elapsed || 0) + "s")}</td>
-      <td>${r.has_original
-        ? `<a href="${BASE}${m ? "/mawb/source/" + encodeURIComponent(r.mawb) : "/source/" + encodeURIComponent(r.stem)}" target="_blank" rel="noopener">看原件</a>`
-        : '<span class="hint">没归档原件</span>'}</td>
-      <td class="kcol">${voidCell(r)}</td></tr>`;
-  }).join("");
+  /* 折叠态是全局的（以归一化主单号为键），换筛选/排序/密度都保留：重画时按 DV.collapsed
+     把 is-collapsed、箭头那 90° 与「分单 N 已折叠」提示一起还原，否则人一筛就丢了刚才收好的那几组。 */
   $("#dayBox").innerHTML = `<table><thead><tr>
-      <th class="kcol">类型</th><th>单号</th><th>主单</th><th>本台状态</th><th>红旗</th>
-      <th>提交（谁 · 何时 · 公司回执）</th><th>解析</th><th>原件</th><th class="kcol">作废</th></tr></thead>
-      <tbody>${html}</tbody></table>
+      <th class="w-doc">单据</th><th>状态</th><th class="w-flag">红旗</th>
+      <th class="w-rec">提交记录</th><th class="w-snap">缩影</th><th class="w-att">附件</th>
+      <th class="w-op">操作</th></tr></thead>
+      <tbody>${rows.map(r => dvRowHtml(r, subs, fade)).join("")}</tbody></table>
       <p class="hint hintp">「公司发送状态」要按主单去公司系统查（限流 10 次/秒）：点顶栏「主单检索」查那张主单下的全部票。</p>`;
+  dvSyncCollapse();
 }
 /* 统计页：数全部来自 /stats 的 summary（Python 一处算），这里只排版与换算百分号。
    为什么不让前端也算一遍：同一套算术写两遍迟早给出两个百分比，而这些数要拿去做决定
    ——今日台账那页就是为这件事专门留了一条用例。 */
-function pct(v){ return v === null || v === undefined ? "—" : (v * 100).toFixed(1) + "%"; }
+/* 百分比拆成「数」与「单位」两段：看板上大号数字 25px、单位 13px 灰（交接文档 §4.2）。
+   整串返回的写法会把 % 一起放大到 25px。没有分母时仍是破折号——不许编一个 100% 出来。 */
+function pctParts(v){
+  return (v === null || v === undefined) ? {n: "—", u: ""} : {n: (v * 100).toFixed(1), u: "%"};
+}
+/* 改动字段那一格：只显示前 2 个标签，其余收 +n，全部字段名进 title。
+   原版把整串字段名塞进一格换行，一行能占掉三行的高度——那是这一页最难看的一处。 */
+function stTagCell(list, label){
+  const all = list || [], tg = L.statsTags(all);
+  if (!tg.shown.length) return '<span class="stempty">—</span>';
+  return `<span class="sttags" title="${esc(label + all.length + " 列：" + all.join("、"))}">`
+    + tg.shown.map(f => `<span class="sttag">${esc(f)}</span>`).join("")
+    + (tg.more ? `<span class="sttag more">+${tg.more}</span>` : "")
+    + "</span>";
+}
+/* 六张卡的顺序、语义色、单位与那句灰色解释语都按交接文档 §3.2 钉在这儿。
+   值一律取服务器算好的那一份，这里只管摆——同一套算术写两遍迟早给出两个百分比。 */
+const ST_KPI = [
+  {k: "acc_field", lb: "逐字段准确率", ds: "模型本身读得准不准", rate: true, v: "blue", bar: "blue"},
+  {k: "acc_after_review", lb: "复核后准确率", ds: "人还剩多少活；能否对接看这个", rate: true, v: "green", bar: "green"},
+  {k: "clean_rate", lb: "一次通过率", ds: "一张没改的票占比", rate: true, v: "amber", bar: "amber"},
+  {k: "edits_doc", lb: "制单员改的列", ds: "人修正模型的字段数", u: " 列", v: "", bar: ""},
+  {k: "edits_inp", lb: "录入员改的列", ds: "录入环节的二次改动", u: " 列", v: "green", bar: ""},
+  {k: "unreviewed", lb: "未复核就发出", ds: "未经录入员复核", u: " 张", v: "red", bar: ""}];
 function statsQS(){
   /* 只拼查询串，URL 前缀留在调用点上写死带 BASE —— 页面挂在 /hawb/ 下，
      test_server_http 那条守卫盯的就是调用点第一个词不是 BASE 的写法，别绕开它。 */
@@ -2051,60 +2220,140 @@ async function loadStats(){
   }
 }
 function renderStats(){
-  const s = ST.summary;
-  $("#stCnt").textContent = `可算 ${s.tickets || 0} 张 · 可比 ${s.fields_comparable || 0} 列`
-    + (s.legacy ? ` · 历史无逐字段留痕 ${s.legacy} 张（不进分母）` : "");
-  const head = [["逐字段准确率（模型本身读得准不准）", pct(s.acc_field)],
-                ["复核后准确率（人还剩多少活；能不能对接看这个）", pct(s.acc_after_review)],
-                ["一次通过率（一张没改的票占比）", pct(s.clean_rate)],
-                ["制单员改的列", s.edits_doc || 0],
-                ["录入员改的列", s.edits_inp || 0],
-                ["未经录入员复核就发出", (s.unreviewed || 0) + " 张"]];
-  let html = '<table class="list compact"><thead><tr><th>指标</th><th class="num">值</th></tr></thead><tbody>'
-    + head.map(h => `<tr><td>${esc(h[0])}</td><td class="num">${esc(String(h[1]))}</td></tr>`).join("")
-    + "</tbody></table>";
+  /* 看板骨架：口径条 → 六张卡 → 左条形图 + 右明细表。只有这一层播入场动画，
+     明细 tbody 交给 renderStatsRows 单独重画——否则每点一次分段筛选，六张卡就跟着淡入一遍。 */
+  const s = ST.summary, box = $("#stBox");
+  const cnt = L.statsCounts(ST.rows);
+  const cl = L.statsClosure(s, ST.rows);
+  const ok = cl.rowsMatch && cl.colsMatch;
+  /* 口径条那句「不进分母」不是装饰：少了它，「可算 4 张」会被读成「这个窗口里一共只有 4 张票」。
+     两条恒等式对不上时整条变脸——那时候画出来的百分比与明细不是同一批票，不能给人用。 */
+  const scope = `<div class="stscope${ok ? "" : " broken"}" id="stScope" role="status">`
+    + `<span>可算 <b>${s.tickets || 0}</b> 张</span>`
+    + `<span>可比 <b>${s.fields_comparable || 0}</b> 列</span>`
+    + `<span>历史无逐字段留痕 <b>${s.legacy || 0}</b> 张</span>`
+    + `<span class="note">（无留痕单据不进入准确率分母，仅在下方明细备查）</span>`
+    + (ok ? "" : `<span class="bad">口径与明细对不上：可算 ${s.tickets || 0} + 无留痕 ${s.legacy || 0}`
+        + ` ≠ 明细 ${ST.rows.length} 行，可比列合计 ${s.fields_comparable || 0}。`
+        + `下面的百分比先别用，刷新一次看看。</span>`)
+    + `</div>`;
+  const kpis = '<div class="stkpis" id="stKpis">' + ST_KPI.map(c => {
+    const raw = s[c.k];
+    const p = c.rate ? pctParts(raw) : {n: String(raw || 0), u: c.u};
+    return `<div class="stkpi${c.v ? " v-" + c.v : ""}"><div class="lb">${esc(c.lb)}</div>`
+      + `<div class="ds">${esc(c.ds)}</div>`
+      + `<div class="vl">${esc(p.n)}<small>${esc(p.u)}</small></div>`
+      + (c.bar ? `<div class="sttrack ${c.bar}"><i></i></div>` : "")
+      + `</div>`;
+  }).join("") + "</div>";
+  /* 条形图只画前 12 列（与改版前同一个上限）：by_field 已经按被改次数降序，切掉尾巴不影响
+     "最长那根 = 100%" 的比例。剩下的在底部那块归属信息里报个数，不悄悄吞掉。 */
+  const all = s.by_field || [];
+  const bars = L.statsBars(all.slice(0, 12));
+  const barsPanel = '<div class="stpanel"><div class="stph"><h2>高频改动列</h2>'
+    + '<p>该修提示词还是码表，看这里</p></div><div class="stbars" id="stBars">'
+    + (bars.length
+      ? bars.map(b => `<div class="stbar"><div class="top">`
+          + `<span class="fn" title="${esc(b.field)}">${esc(b.field)}</span>`
+          + `<span class="n">×${b.edits}</span></div>`
+          + `<div class="stbtrack"><div class="stbfill"></div></div></div>`).join("")
+      : '<div class="stempty">窗口内没有任何改动：模型读的与人定下的完全一致。</div>')
+    + '</div><div class="stcolscope">'
+    /* 原型在这儿写死了「涉及 1 票 VCE4373」。真实的 by_field 只有 {field,edits,tickets}，
+       不带是哪几张票——要点名票就得改后端，而交接文档 §9 说本次不动后端，所以只报聚合的张数。 */
+    + `<span class="stchip">涉及 ${cnt.changed} 票</span>`
+    + `<span class="stchip">${all.length} 列被改过</span>`
+    + (all.length > bars.length ? `<span class="stchip">另有 ${all.length - bars.length} 列未显示</span>` : "")
+    + "</div></div>";
+  const segs = [["all", "全部"], ["changed", "有改动"], ["clean", "改动 0"], ["trace", "无留痕"]];
+  const detail = '<div class="stpanel"><div class="stph"><h2>逐张明细</h2>'
+    + '<div class="stseg" id="stSeg" role="group" aria-label="明细筛选">'
+    + segs.map(g => `<button type="button" data-sf="${g[0]}"`
+        + `${ST.seg === g[0] ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"'}>`
+        + `${esc(g[1])} <span class="c">${cnt[g[0]]}</span></button>`).join("")
+    + '</div></div><div class="stwrap"><table id="stTable"><colgroup>'
+    /* 列宽走 col 元素：那条「内联样式只放行两种」的守卫认的就是这一种，
+       而 fixed 布局之下也只有 col 给的宽度是真宽度（长字段名撑不开列）。 */
+    + '<col style="width:126px"><col style="width:150px"><col style="width:136px"><col style="width:88px">'
+    + '<col style="width:74px"><col style="width:66px"><col style="width:250px"><col style="width:150px">'
+    + '</colgroup><thead><tr><th>主单号</th><th>分单号</th><th>上传人</th><th>暂存人</th>'
+    + '<th>可比</th><th>改动</th><th>制单员改的</th><th>录入员改的</th></tr></thead>'
+    + '<tbody id="stRows"></tbody></table></div></div>';
+  let html = scope + kpis + '<div class="stmain" id="stMain">' + barsPanel + detail + "</div>";
   if (!s.tickets){
-    html += '<div class="empty">窗口内没有可算的票：点过「暂存」或「提交」之后才有逐字段留痕。'
+    html += '<div class="empty stbelow">窗口内没有可算的票：点过「暂存」或「提交」之后才有逐字段留痕。'
       + '<span class="sub">本功能上线前的台账只存了字段名与哈希，比不出值，已计入上面「历史无逐字段留痕」。</span></div>';
   }
-  if ((s.by_field || []).length){
-    html += '<div class="t2">哪一列最常改（该修提示词还是码表，看这里）</div>'
-      + '<table class="list compact"><thead><tr><th>列</th><th class="num">被改次数</th><th class="num">票数</th></tr></thead><tbody>'
-      + s.by_field.slice(0, 12).map(e => `<tr><td>${esc(e.field)}</td>`
-        + `<td class="num">${e.edits}</td><td class="num">${e.tickets}</td></tr>`).join("")
-      + "</tbody></table>";
-  }
+  /* 分组那一块是接好后端的四个轴（模型/角色/上传人/列），原型里没有——但删掉它就是趁改版砍功能。 */
   if ((s.groups || []).length){
     const ks = Object.keys(s.groups[0]);
-    html += '<div class="t2">分组看</div><table class="list compact"><thead><tr>'
+    html += '<div class="stpanel stbelow" id="stGroups"><div class="stph"><h2>分组看</h2></div>'
+      + '<div class="stwrap"><table class="list"><thead><tr>'
       + ks.map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>"
       + s.groups.map(g => "<tr>" + ks.map(c => `<td>${esc(String(g[c]))}</td>`).join("") + "</tr>").join("")
-      + "</tbody></table>";
+      + "</tbody></table></div></div>";
   }
-  if (ST.rows.length){
+  html += '<p class="stfoot"><b>读法：</b>上面六张卡速读准确率与人的工作量，左边条形图定位「最该修的列」，'
+    + '右边明细用「有改动 / 无留痕」分段切换，<b>无留痕行自动弱化</b>而不是满屏刷屏。'
+    + '两个数不能混：<b>逐字段准确率</b>问模型读得准不准；<b>复核后准确率</b>问录入员还剩多少活'
+    + '——能不能把提取结果直接喂给平台，看后者。没暂存记录就直发的票，改动全记在制单员档'
+    + '（那些值确实是核对台上的人改的），「未复核就发出」那一张卡是它的对照组。'
+    + '想知道某张票另外那几个被折叠的列是什么，把鼠标停在标签上。</p>';
+  box.innerHTML = html;
+  stPaint(bars);
+  renderStatsRows();
+}
+/* 进度条宽度、条形宽度与生长延迟都是"值当场算出来"的数据，但内联样式只放行 left 与 col 两种写法，
+   所以一律等骨架进了 DOM 再由这里写回元素。条形只写 width（比例），长度动画交给 CSS 的 scaleX——
+   动画化 width 每帧都触发布局，列一多就掉帧。 */
+function stPaint(bars){
+  const box = $("#stBox"), s = ST.summary;
+  const fills = box.querySelectorAll(".sttrack i");
+  let fi = 0;
+  ST_KPI.forEach(c => {
+    if (!c.bar) return;
+    const v = s[c.k];
+    const w = (v === null || v === undefined) ? 0 : Math.max(0, Math.min(1, v)) * 100;
+    if (fills[fi]) fills[fi].style.width = w.toFixed(1) + "%";
+    fi += 1;
+  });
+  const bf = box.querySelectorAll(".stbfill");
+  (bars || []).forEach((b, i) => {
+    if (!bf[i]) return;
+    bf[i].style.width = (b.pct * 100).toFixed(1) + "%";
+    bf[i].style.animationDelay = (0.05 + i * 0.07).toFixed(2) + "s";   // 0.07s 一档依次长出来
+  });
+}
+/* 明细 tbody 单独重画：换分段只换这一段，六张卡与条形图都不重建，所以入场动画不会重播。
+   行底色三档（有改动铺暖色 / 无留痕弱化 / 其余正常）由 L.statsSeg 的归属决定，与筛选同一个判据。 */
+function renderStatsRows(){
+  const tb = $("#stRows");
+  if (!tb) return;
+  tb.innerHTML = L.statsFilter(ST.rows, ST.seg).map(r => {
     /* 两个号各占一列（2026-10-09 用户："挤在一格里眼花缭乱"）：连成一格时列一窄就断在点号后面，
-       每格变成"半行 + 孤零零一行"，竖着看全是锯齿。拆开后各自不许断行、宽度按字符数给足，
-       等宽数字天然对齐。一个号都没解析出来时才退回票名——整列都写"缺号"反而认不出是哪张。
-       票名与原始文件名留在悬停提示里：找回那张 PDF 全靠它。模型那一列删了（要横评模型看上面的分组轴）。 */
-    html += '<div class="t2">逐张</div><table class="list compact"><thead><tr>'
-      + '<th>主单号</th><th>分单号</th><th>上传人</th><th>暂存人</th><th class="num">可比</th>'
-      + '<th class="num">改动</th><th>制单员改的</th><th>录入员改的</th></tr></thead><tbody>'
-      + ST.rows.map(r => {
-        const m = r.mawb ? esc(r.mawb) : (r.hawb ? "—" : esc(r.stem));
-        return `<tr class="${r.legacy ? "hit" : ""}">
-        <td class="tno" title="${esc((r.stem || "") + (r.source_name && r.source_name !== r.stem ? " · " + r.source_name : ""))}">${m}</td><td class="tno">${esc(r.hawb || "—")}</td>
-        <td>${esc((r.uploader || "—") + (r.uploader_role ? "（" + L.roleCn(r.uploader_role) + "）" : ""))}</td>
-        <td>${esc(r.stager || "—")}</td>
-        <td class="num">${r.legacy ? "—" : r.comparable}</td>
-        <td class="num">${r.legacy ? "无留痕" : r.total}</td>
-        <td>${esc((r.doc || []).join("、") || "—")}</td>
-        <td>${esc((r.inp || []).join("、") || "—")}</td></tr>`; }).join("") + "</tbody></table>";
-  }
-  html += '<p class="hint hintp">两个数不能混：<b>逐字段准确率</b>问模型读得准不准；'
-    + '<b>复核后准确率</b>问录入员还剩多少活——能不能把提取结果直接喂给平台，看后者。'
-    + '没暂存记录就直发的票，改动全记在制单员档（那些值确实是核对台上的人改的），'
-    + '「未经录入员复核」那一列是它的对照组。</p>';
-  $("#stBox").innerHTML = html;
+       每格变成"半行 + 孤零零一行"，竖着看全是锯齿。一个号都没解析出来时才退回票名——
+       整列都写"缺号"反而认不出是哪张；票名与原始文件名留在悬停提示里，找回那张 PDF 全靠它。 */
+    const tip = (r.stem || "") + (r.source_name && r.source_name !== r.stem ? " · " + r.source_name : "");
+    const m = r.mawb ? esc(r.mawb) : (r.hawb ? "—" : esc(r.stem));
+    const seg = L.statsSeg(r);
+    const person = r.uploader
+      ? `<span class="stperson">${esc(r.uploader)}${r.uploader_role ? ` <small>（${esc(L.roleCn(r.uploader_role))}）</small>` : ""}</span>`
+      : '<span class="stempty">—</span>';
+    /* 无留痕那一格写清楚是「无留痕」，不是空着让人以为没数；改动那一格同理给破折号。 */
+    const cmp = r.legacy ? '<span class="stcmp notrace">无留痕</span>'
+      : `<span class="stcmp">${r.comparable}</span>`;
+    const diff = (r.total === null || r.total === undefined) ? '<span class="stempty">—</span>'
+      : `<span class="stdiff ${r.total > 0 ? "has" : "zero"}">${r.total}</span>`;
+    return `<tr class="${seg === "trace" ? "sttrace" : (seg === "changed" ? "stchanged" : "")}">`
+      + `<td class="tno"><div class="stci"><span class="stnum stmno" title="${esc(tip)}">${m}</span></div></td>`
+      + `<td class="tno"><div class="stci"><span class="stnum stsno">${esc(r.hawb || "—")}</span></div></td>`
+      + `<td><div class="stci">${person}</div></td>`
+      + `<td><div class="stci">${r.stager ? `<span class="stperson">${esc(r.stager)}</span>` : '<span class="stempty">—</span>'}</div></td>`
+      + `<td><div class="stci">${cmp}</div></td>`
+      + `<td><div class="stci">${diff}</div></td>`
+      + `<td><div class="stci">${stTagCell(r.doc, "制单员改了 ")}</div></td>`
+      + `<td><div class="stci">${stTagCell(r.inp, "录入员改了 ")}</div></td></tr>`;
+  }).join("");
 }
 $("#viewDesk").addEventListener("click", () => setView("desk"));
 $("#rail").addEventListener("click", e => {
@@ -2123,9 +2372,51 @@ $("#statsClose").addEventListener("click", () => { $("#statsWin").hidden = true;
 $("#stGo").addEventListener("click", loadStats);
 $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });
 ["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));
-$("#dayGo").addEventListener("click", loadDay);
-$("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(); });
-$("#dayOnlyVoid").addEventListener("change", e => { dayOnlyVoid = e.target.checked; dayConfirm = ""; renderDay(); });
+/* 分段筛选只重画 tbody。委托挂在 #stBox 上：innerHTML 换掉的是它的孩子，委托点自己不动。
+   要是这里调 renderStats()，六张卡与条形图会跟着重建，入场动画每点一次筛选就重播一遍。 */
+$("#stBox").addEventListener("click", e => {
+  const b = e.target.closest("[data-sf]"); if (!b) return;
+  ST.seg = b.dataset.sf;
+  b.parentElement.querySelectorAll("button").forEach(x => {
+    const on = x === b;
+    x.classList.toggle("on", on);
+    x.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  renderStatsRows();
+});
+$("#dayGo").addEventListener("click", () => loadDay(true));
+$("#dayDate").addEventListener("change", () => { VIEW.date = ""; loadDay(true); });
+$("#dayOnlyVoid").addEventListener("change", e => { dayOnlyVoid = e.target.checked; dayConfirm = ""; renderDay(false); });
+/* 三组档位控件都只改 DV 里的一个字段再重画：筛选/排序是"同一批票换个看法"，
+   所以传 fade=false —— 每换一次筛就闪一遍淡入，正是原型第 9 条坑点。 */
+$("#dayFilter").addEventListener("click", e => {
+  const b = e.target.closest("[data-f]"); if (!b) return;
+  DV.filter = b.dataset.f;
+  b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  renderDay(false);
+});
+$("#daySort").addEventListener("click", e => {
+  const b = e.target.closest("[data-s]"); if (!b) return;
+  DV.sort = b.dataset.s;
+  b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  renderDay(false);
+});
+$("#dayCollapse").addEventListener("click", () => {
+  const collapsing = dvAnyOpen();
+  dvGroups().forEach(pk => {
+    if (collapsing) DV.collapsed.add(pk); else DV.collapsed.delete(pk);
+    dvAnimate(pk, collapsing);           // 每组各自动画、各自的收尾定时器，不重建 DOM
+  });
+  dvSyncCollapse();
+});
+$("#dayDensity").addEventListener("click", e => {
+  const b = e.target.closest("[data-d]"); if (!b) return;
+  const d = b.dataset.d === "cozy" ? "cozy" : "compact";
+  document.body.dataset.density = d;     // 行高由 CSS 令牌接管，这里不碰表格内容
+  localStorage.setItem(LS.dayDensity, d);
+  document.querySelectorAll("#dayDensity button")
+    .forEach(x => x.classList.toggle("on", x === b));
+});
 async function postVoid(k, on){
   const i = k.indexOf("|");
   const body = {kind: k.slice(0, i), key: k.slice(i + 1), void: on};
@@ -2140,9 +2431,14 @@ async function postVoid(k, on){
   }catch(err){
     toast((on ? "作废失败：" : "恢复失败：") + err.message, "bad");
   }
-  loadDay();      // 以服务端为准重画：作废本落在服务器上，别人那一屏也要跟着变
+  loadDay(false);      // 以服务端为准重画：作废本落在服务器上，别人那一屏也要跟着变
 }
 $("#dayBox").addEventListener("click", e => {
+  const c = e.target.closest(".dvchev");
+  if (c){                                  // 箭头排在最前，先接住：占位箭头（没分单）不给点
+    if (!c.classList.contains("dvnone")) dvToggle(c.dataset.dvk);
+    return;
+  }
   const o = e.target.closest("[data-open]");
   if (o){ setView("desk"); openHouse(o.dataset.open); return; }
   const m = e.target.closest("[data-mopen]");
@@ -2156,11 +2452,11 @@ $("#dayBox").addEventListener("click", e => {
   }
   const v = e.target.closest("[data-void]");
   if (v){                                  // 第一下只把这一行变成「确认作废？」，不发请求（防误点）
-    if (dayConfirm !== v.dataset.void){ dayConfirm = v.dataset.void; renderDay(); return; }
+    if (dayConfirm !== v.dataset.void){ dayConfirm = v.dataset.void; renderDay(false); return; }
     postVoid(v.dataset.void, true); return;
   }
   const n = e.target.closest("[data-vno]");
-  if (n){ dayConfirm = ""; renderDay(); return; }
+  if (n){ dayConfirm = ""; renderDay(false); return; }
   const u = e.target.closest("[data-undo]");
   if (u){ postVoid(u.dataset.undo, false); }
 });
@@ -2275,5 +2571,5 @@ function bindEdgeGrip(){
     saveDeskShare(L.boxWidthPct(w, d, avail, 260));
   });
 }
-applyDeskPrefs(); bindSplitGrip(); bindColGrip(); bindEdgeGrip();
+applyDeskPrefs(); dvInitDensity(); bindSplitGrip(); bindColGrip(); bindEdgeGrip();
 checkAuth();

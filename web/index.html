@@ -23,7 +23,7 @@
   <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span><button class="pwwarn" id="pwWarn" type="button" hidden title="管理员口令还是出厂默认值：登录门禁等于没上，点这里去「账号管理」改掉">口令未改</button></span>
   <span class="seg" role="tablist" aria-label="视图切换">
     <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
-    <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日台账</button>
+    <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日归档</button>
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">统计</button>
@@ -77,8 +77,7 @@
         <option value="role">按角色</option><option value="user">按上传人</option>
         <option value="field">按列</option></select></label>
       <button class="btn sm" id="stGo" type="button">刷新</button>
-      <button class="btn sm" id="stCsv" type="button">导出 Excel</button>
-      <span class="n" id="stCnt"></span>
+      <button class="btn sm pri" id="stCsv" type="button">导出 Excel</button>
       <button class="btn sm gh" id="statsClose" type="button">关闭</button>
     </div>
     <div class="statsbody" id="stBox"></div>
@@ -165,11 +164,33 @@
 </section>
 
 <section class="stack" id="dayCard" hidden>
-  <div class="t">今日台账<span class="sp"></span>
+  <div class="t">今日归档<span class="n">高密度一屏扫完：主单浅底、名下分单缩进，点箭头原地折叠</span><span class="sp"></span>
     <label class="f">日期<input id="dayDate" type="date" aria-label="台账日期"></label>
     <button class="btn sm" id="dayGo" type="button">刷新</button>
     <label class="f" title="作废只是把这一行从台账与统计里收起来：票面原件、暂存记录、提交台账与主单检索全都不动，随时能恢复。要清的是测试数据对正确率的污染，不是历史。"><input type="checkbox" id="dayOnlyVoid" aria-label="只看作废的票"> 只看作废</label>
-    <span class="n" id="dayCnt"></span></div>
+  </div>
+  <div class="dvbar" id="dayBar">
+    <div class="dvstats" id="dayStats" role="status" aria-live="polite"></div>
+    <div class="dvdiv" aria-hidden="true"></div>
+    <div class="dvseg" id="dayFilter" role="group" aria-label="按状态筛选">
+      <button type="button" data-f="all" class="on">全部</button>
+      <button type="button" data-f="unsent">未提交</button>
+      <button type="button" data-f="flag">红旗</button>
+      <button type="button" data-f="done">已提交</button>
+    </div>
+    <div class="dvdiv" aria-hidden="true"></div>
+    <div class="dvseg" id="daySort" role="group" aria-label="排序">
+      <button type="button" data-s="cluster" class="on">按主单聚簇</button>
+      <button type="button" data-s="flag">红旗优先</button>
+    </div>
+    <div class="dvdiv" aria-hidden="true"></div>
+    <button type="button" class="dvchip" id="dayCollapse" title="把每一组主单名下的分单收起来；再点一次全部展开">全部折叠</button>
+    <span class="dvsp"></span>
+    <div class="dvseg" id="dayDensity" role="group" aria-label="行高">
+      <button type="button" data-d="compact" class="on">紧凑</button>
+      <button type="button" data-d="cozy">舒适</button>
+    </div>
+  </div>
   <div id="dayBox"></div>
 </section>
 

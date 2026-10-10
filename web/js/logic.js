@@ -41,6 +41,130 @@ const L = {
     return (rows || []).filter(r => !!r.voided === !!onlyVoided);
   },
 
+  /* ── 今日归档（高密度台账）的算法 ─────────────────────────────────────────
+     后端 /day 给的是"分单行 + 主单行按 processed_at 合流"，**并不保证主单紧挨着自己的分单**
+     （交接文档第 3 节写的"后端保证连续"在 store.day_rows 上不成立：它是两个列表拼完再按时间排），
+     所以聚簇必须由前端算。算式放这里由 node 断输入输出——渲染里再算一遍，迟早和这里对不上。 */
+
+  /* 号归一：999-95764373 与 99995764373 是同一张主单的两种写法（模型抄的与人填的），
+     不归一就会分成两组、折叠也只折得动一半。非字母数字一律丢掉，字母统一大写。 */
+  normNo(v){
+    return String(v === null || v === undefined ? "" : v).replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  },
+  /* 这一行属于哪一组。没取到主单号的分单**自己一组**（用文件 stem 当键）：并进上一组
+     等于替票面说了一句它没说的话——"这张票属于那张主单"。stem 是归档键，天然唯一，
+     所以键在筛选/排序之后仍然稳定（折叠态才不会因为换了个筛就认错组）。 */
+  dayKey(r){ return L.normNo(r && r.mawb) || ("~" + L.str(r, "stem")); },
+
+  /* 组内主单在前、名下分单随后；组的先后按这一天第一次出现的时间。
+     不改传进来的那份数组——它还是"后端原始顺序"，切回别的排序要用。 */
+  dayCluster(rows){
+    const groups = {}, order = [], out = [];
+    (rows || []).forEach(r => {
+      const k = L.dayKey(r);
+      if (!Object.prototype.hasOwnProperty.call(groups, k)){ groups[k] = {m: [], s: []}; order.push(k); }
+      groups[k][r.kind === "mawb" ? "m" : "s"].push(r);
+    });
+    order.forEach(k => { out.push.apply(out, groups[k].m); out.push.apply(out, groups[k].s); });
+    return out;
+  },
+  /* 每张主单名下有几条分单：0 的那一组箭头是占位的（点不动），N>0 才在折叠后报"分单 N 已折叠"。
+     没有主单号的分单不进这张表——冒出一个空键的组，等于界面上多一组折不起来的东西。 */
+  daySubCounts(rows){
+    const all = rows || [], c = {};
+    all.forEach(r => { if (r.kind === "mawb"){ const k = L.normNo(r.mawb); if (k) c[k] = 0; } });
+    all.forEach(r => { if (r.kind !== "mawb"){ const k = L.normNo(r.mawb); if (k) c[k] = (c[k] || 0) + 1; } });
+    return c;
+  },
+
+  /* 四档筛选。认不出的档退回"全部"：退回空表的话，人会以为这一天真的没票。
+     「已提交」是**所有**提交过的行（主单与分单都算）——原型那版只留主单，
+     制单员点进去就看不见自己刚发出去的分单，等于这一页在骗他。 */
+  dayFilter(rows, f){
+    const all = rows || [];
+    if (f === "unsent") return all.filter(r => !r.submitted);
+    if (f === "flag") return all.filter(r => (r.flags || 0) > 0);
+    if (f === "done") return all.filter(r => !!r.submitted);
+    return all.slice();
+  },
+  /* 红旗优先：红旗多的在前，一样多时未提交的在前，再一样就保持原顺序（稳定排序——
+     同一天连点两次不该看着像重新洗了牌）。下标那一项是显式的稳定性保底。 */
+  dayFlagFirst(rows){
+    return (rows || []).map((r, i) => ({r: r, i: i}))
+      .sort((a, b) => ((b.r.flags || 0) - (a.r.flags || 0))
+        || (a.r.submitted === b.r.submitted ? 0 : (a.r.submitted ? 1 : -1))
+        || (a.i - b.i))
+      .map(x => x.r);
+  },
+  dayOrder(rows, mode){ return mode === "flag" ? L.dayFlagFirst(rows) : L.dayCluster(rows); },
+
+  /* 控制条那四个数。红旗是"有红旗的**票数**"，不是红旗标记总数（交接文档第 3 节点名了这一条）；
+     总数/未提交/失败/作废复用 daySummary，不另算一套——同一套算术写两遍迟早给出两个数。 */
+  dayBar(rows){
+    const s = L.daySummary(rows), live = (rows || []).filter(r => !r.voided);
+    return {total: s.total,
+            masters: live.filter(r => r.kind === "mawb").length,
+            flagged: live.filter(r => (r.flags || 0) > 0).length,
+            pending: s.pending, failed: s.failed, flags: s.flags, voided: s.voided};
+  },
+
+  /* 提交记录那一格只有 240px：整串 2026-10-10T09:20:00 等宽排下来会把操作人姓名挤掉。
+     同一年里月日时分足够认票，秒与年留在悬停提示里。认不出的形状原样返回（"mock" 这种
+     测试值不该被吃掉），空的还是空的。 */
+  shortTime(v){
+    const s = String(v === null || v === undefined ? "" : v).trim();
+    const m = /^\d{4}-(\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(s);
+    return m ? (m[1] + " " + m[2]) : s;
+  },
+
+  /* ── 解析正确率看板：分段归属 / 口径闭环 / 条形比例 / 字段标签折叠 ────────────────
+     准确率本身只有 stats.py 一处算（前端连百分号都不许自己拼一遍），这里只做四件"画法"上的事：
+     一行属于哪一档、四档各几行、后端那份聚合值与这份明细是不是同一批票、条子该多长、
+     字段名显示几个。全是纯函数，node 直接断输入输出。 */
+  statsSeg(r){
+    const x = r || {};
+    // legacy 行的 total 是 null 不是 0：当成「改动 0」会把历史票算成一次通过，
+    // 而一次通过率正是拿去回答"能不能不经过人直接对接"的那个数。
+    if (x.legacy) return "trace";
+    return (x.total || 0) > 0 ? "changed" : "clean";
+  },
+  statsCounts(rows){
+    const all = rows || [], c = {all: all.length, changed: 0, clean: 0, trace: 0};
+    all.forEach(r => { c[L.statsSeg(r)] += 1; });
+    return c;
+  },
+  /* 认不出的档退回"全部"：退回空表的话，人会以为这个窗口内真的一张票都没有。 */
+  statsFilter(rows, f){
+    const all = rows || [];
+    if (f !== "changed" && f !== "clean" && f !== "trace") return all.slice();
+    return all.filter(r => L.statsSeg(r) === f);
+  },
+  /* 两条恒等式（交接文档 §5.8）：可算 + 无留痕 = 明细行数；各票可比之和 = 顶部可比列数。
+     这不是重算准确率，是自检"后端给的聚合值与这份明细是不是同一批票"——时间窗一边含端点
+     一边不含就会悄悄错开；对不上还照画，画出来的百分比全都不能用。 */
+  statsClosure(summary, rows){
+    const s = summary || {}, all = rows || [];
+    let cols = 0;
+    all.forEach(r => { cols += (r.comparable || 0); });
+    return {rowsMatch: (s.tickets || 0) + (s.legacy || 0) === all.length,
+            colsMatch: cols === (s.fields_comparable || 0)};
+  },
+  /* 条长 = 被改次数 ÷ 最大次数（等次数时满格）。最大为 0 就给 0：除出 NaN 写进宽度的话，
+     浏览器静默当没这条声明，条子反而停在满格——看着像"这一列改得最多"。 */
+  statsBars(byField){
+    const list = byField || [];
+    let max = 0;
+    list.forEach(e => { if ((e.edits || 0) > max) max = e.edits || 0; });
+    return list.map(e => ({field: e.field, edits: e.edits || 0, tickets: e.tickets || 0,
+                           pct: max ? (e.edits || 0) / max : 0}));
+  },
+  /* 字段标签只完整显示前 2 个，其余收 +n：把全部字段名塞进一格换行正是原版最难看的那处。
+     折叠不等于丢——调用方要把整个列表放进 title，人想知道另外那几个是什么不必去导 Excel。 */
+  statsTags(fields, keep){
+    const all = fields || [], k = keep === undefined ? 2 : keep;
+    return {shown: all.slice(0, k), more: all.length > k ? all.length - k : 0};
+  },
+
   /* 打开主单 / 重新解析之后，把本机草稿并回当前解析。
      人改过的列照单恢复；只有"草稿当时的原值 ≠ 现在解析出的原值"的列才算打架——
      底层解析动了，人对着旧值改的那一格可能已经不对，要点名复核。

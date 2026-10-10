@@ -370,7 +370,9 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
     css = web_src.part("css/desk.css")
     assert re.search(r"\.tno\{[^}]*white-space:nowrap", css), ".tno 没真的禁止断行"
     assert "<th>票名</th><th>模型</th>" not in js, "老的两列（票名/模型）还在"
-    i = js.index('class="t2">逐张</div>')
-    per = js[i:i + 1400]
+    # 看板改版之后明细行由 renderStatsRows 单独重画（换分段不重播入场动画），锚点跟着挪过去，
+    # 但下面两条要盯的事情没变：模型列别回来、票名别丢。
+    i = js.index("function renderStatsRows(")
+    per = js[i:i + 2400]
     assert "r.model" not in per, "页面上模型那一列没删干净"
     assert "r.stem" in per and "title" in per, "票名要从这一列挪走但别丢掉：找回原件全靠它"

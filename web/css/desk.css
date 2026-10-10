@@ -340,9 +340,9 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .pwwarn:hover{border-color:var(--c-line-hover)}
 .acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
 .acctbox .t{font-size:var(--f-base)}
-/* 统计窗口里是几张贴满列宽的表，所以窗口给得宽、正文自己滚；
-   标题行放不下就换行（起止日期 + 分组 + 刷新 + 导出 + 计数 + 关闭）。 */
-.statsbox{width:min(1120px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}
+/* 统计窗口里是一张看板（六卡 + 左条形图 + 右明细表），所以窗口给到接近原型那个 1380px；
+   正文自己滚，标题行放不下就换行（起止日期 + 分组 + 刷新 + 导出 + 关闭）。 */
+.statsbox{width:min(1360px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}
 .statsbox .t{font-size:var(--f-base);flex-wrap:wrap;row-gap:6px}
 .statsbody{overflow:auto;padding:0 12px 12px}
 /* 表头那根 sticky 的 top 是给"整页滚"准备的（要让表头停在顶栏下面）。
@@ -351,6 +351,148 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 /* 统计「逐张」的两个号列：各自不许断行，宽度按字符数给足（数字是等宽的，天然对齐）。
    不给这条就会在列被挤窄时断在号中间，一屏看下来全是锯齿。 */
 .statsbody .tno{white-space:nowrap;width:13ch}
+
+/* ── 解析正确率看板（交接原型 accuracy-report-redesign.html）──────────────────────────
+   原版三块纵向平铺：关键数字不突出、「无留痕」满屏刷屏、改动字段长文本换行。这一版是
+   「上面六张卡速读 → 左边条形图定位最该修的列 → 右边高密度表查单据」。
+   原型那套 --bg/--ink/--accent 变量名与值都不是本仓库的（色值只有 tokens.css 一个来源，
+   老守卫会扫），所以下面一律映射到已有令牌；行高与今日归档共用 --dv-row，两页并排看才是一套房。 */
+
+/* 口径条：三个数 + 一句分母说明。那句说明是整页最容易被当成装饰删掉的文字——
+   删掉之后「可算 4 张」会被读成「这个窗口里一共只有 4 张票」。 */
+.stscope{display:flex;align-items:center;gap:18px;flex-wrap:wrap;background:var(--c-surface);
+  border:1px solid var(--c-line-soft);border-radius:var(--r-lg);padding:8px 16px;margin-bottom:12px;
+  font-size:var(--f-sm);color:var(--c-text-3);box-shadow:var(--sh-panel)}
+.stscope b{color:var(--c-text-2);font-family:var(--mono);font-weight:var(--w-semi)}
+.stscope .note{color:var(--c-text-3)}
+/* 两条恒等式对不上时口径条要变脸：这时候画出来的百分比与明细不是同一批票，不能用。 */
+.stscope.broken{border-color:var(--c-bad-line);background:var(--c-bad-bg)}
+.stscope .bad{color:var(--c-bad-text);font-weight:var(--w-semi)}
+
+/* 六张 KPI 卡。grid 默认把每张拉到同一行高，所以后三张没有进度条也不会矮半截。 */
+.stkpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:12px}
+.stkpi{position:relative;display:flex;flex-direction:column;background:var(--c-surface);
+  border:1px solid var(--c-line-soft);border-radius:var(--r-lg);padding:13px 15px 11px;
+  overflow:clip;box-shadow:var(--sh-panel)}
+.stkpi .lb{font-size:var(--f-sm);color:var(--c-text-2);white-space:nowrap}
+.stkpi .ds{font-size:var(--f-xs);color:var(--c-text-3);margin-top:1px;min-height:15px}
+.stkpi .vl{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:var(--w-semi);
+  font-size:25px;line-height:1.15;margin-top:5px;color:var(--c-text-1)}
+.stkpi .vl small{font-size:var(--f-md);font-weight:var(--w-normal);color:var(--c-text-3);margin-left:1px}
+/* 语义色一律取「文字档」那一支：--c-ok/--c-warn/--c-bad 是"看得见的点"（≥3.0 就算合格），
+   当字色用会有老守卫拦下来，而 25px 大数字看着没事、旁边 11px 的说明字就会糊。 */
+.stkpi.v-blue .vl{color:var(--c-accent)}
+.stkpi.v-green .vl{color:var(--c-ok-text)}
+.stkpi.v-amber .vl{color:var(--c-warn-text)}
+.stkpi.v-red .vl{color:var(--c-bad-text)}
+/* 前 3 张卡底部那条 4px 进度条：宽度由 JS 写回（内联 style= 只放行 left 与 col 两种）。 */
+.sttrack{height:4px;background:var(--c-surface-3);border-radius:var(--r-pill);margin-top:9px;overflow:clip}
+.sttrack i{display:block;height:100%;border-radius:var(--r-pill);background:var(--c-accent)}
+.sttrack.green i{background:var(--c-ok)}
+.sttrack.amber i{background:var(--c-warn)}
+
+/* 主区两栏。右栏必须写 minmax(0,1fr)：明细表有 min-width，写成 1fr 的话那一列会被表撑破，
+   整块溢出窗口，左栏跟着被挤没。 */
+.stmain{display:grid;grid-template-columns:320px minmax(0,1fr);gap:12px;align-items:start}
+.stpanel{background:var(--c-surface);border:1px solid var(--c-line-soft);border-radius:var(--r-lg);
+  box-shadow:var(--sh-panel);overflow:clip;min-width:0}
+.stph{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:12px 16px 9px;
+  border-bottom:1px solid var(--c-line-soft)}
+.stph h2{font-size:var(--f-md);font-weight:var(--w-semi);white-space:nowrap;margin:0}
+.stph p{font-size:var(--f-xs);color:var(--c-text-3);margin:0}
+
+/* 高频改动列：横向条形。条宽走 transform:scaleX 不动画化 width——width 每帧触发布局，
+   列一多就掉帧，scaleX 在合成层上跑。关键帧 from/to 都写：静态态就是满格，
+   「减少动态效果」把 animation 关掉之后条子不会停在 0（原型只写 to，关掉就是整块空白）。 */
+.stbars{padding:10px 16px 12px;display:flex;flex-direction:column;gap:9px}
+.stbar{display:flex;flex-direction:column;gap:3px;min-width:0}
+.stbar .top{display:flex;align-items:center;gap:8px;min-width:0}
+.stbar .fn{flex:1;min-width:0;font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stbar .n{flex:none;font-family:var(--mono);font-size:var(--f-xs);font-weight:var(--w-semi);color:var(--c-warn-text)}
+.stbtrack{height:6px;background:var(--c-surface-3);border-radius:var(--r-pill);overflow:clip}
+.stbfill{height:100%;border-radius:var(--r-pill);transform-origin:left;transform:scaleX(1);
+  background:linear-gradient(90deg,var(--c-bar-a),var(--c-bar-b));animation:stGrow .7s var(--ez-out) both}
+@keyframes stGrow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+/* 面板底部那块归属信息。原型在这儿写死了「涉及 1 票 VCE4373」——真实的 by_field 只有
+   {field,edits,tickets}，不带是哪几张票（要票名就得改后端，交接文档 §9 说本次不动），
+   所以只报聚合的「涉及 n 票」。 */
+.stcolscope{display:flex;gap:6px;flex-wrap:wrap;padding:4px 16px 13px;font-size:var(--f-xs);color:var(--c-text-3)}
+.stchip{background:var(--c-neutral);border-radius:var(--r-md);padding:2px 8px}
+
+/* 明细表头右侧那组分段筛选：计数小字常驻，点了立刻过滤（不重新拉数、也不重播入场动画）。 */
+.stseg{display:inline-flex;margin-left:auto;background:var(--c-surface-3);border-radius:var(--r-md);padding:2px}
+.stseg button{display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;cursor:pointer;
+  font-size:var(--f-sm);color:var(--c-text-2);padding:3px 11px;border-radius:var(--r-sm);
+  transition:background var(--dur-fast),color var(--dur-fast)}
+.stseg button .c{font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-3)}
+.stseg button.on{background:var(--c-surface);color:var(--c-text-1);font-weight:var(--w-semi);box-shadow:var(--sh-seg)}
+.stseg button.on .c{color:var(--c-text-2)}
+
+/* 明细表：列宽走 col 元素 + fixed 布局（守卫只放行 <col style="width:」这一种内联宽度，
+   而 fixed 之下 col 给的宽度才是真宽度，长字段名撑不开列）。 */
+.stwrap{overflow-x:auto}
+#stTable{width:100%;min-width:980px;border-collapse:collapse;table-layout:fixed;font-size:var(--f-sm)}
+#stTable thead th{text-align:left;font-weight:var(--w-normal);color:var(--c-text-3);font-size:var(--f-xs);
+  background:var(--c-surface-2);border-bottom:1px solid var(--c-line-strong);padding:7px 12px;
+  white-space:nowrap;letter-spacing:.02em}
+#stTable tbody td{padding:0 12px;border-bottom:1px solid var(--c-line-soft);vertical-align:middle;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stTable tbody tr:last-child td{border-bottom:0}
+/* 行高只有 --dv-row 一处说了算，且给在内层盒子上而不是 td：min-height 写在 tr 上浏览器不认，
+   写在 td 上又会被内容顶开。今日归档用的就是这一招（.dvci），两页共用同一个令牌才是一套房。 */
+.stci{display:flex;align-items:center;min-height:var(--dv-row);min-width:0}
+.stnum{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.stmno{color:var(--c-text-2)}
+.stsno{font-weight:var(--w-semi);color:var(--c-text-1)}
+.stperson{color:var(--c-text-2)}
+.stperson small{color:var(--c-text-3);font-size:var(--f-xs)}
+.stempty{color:var(--c-text-3)}
+.stcmp{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:var(--w-semi)}
+.stcmp.notrace{font-weight:var(--w-normal);font-size:var(--f-xs);color:var(--c-text-3)}
+/* 改动徽标：0 是绿软底，>0 是橙软底。底色用「状态底」那一支，字用「文字档」那一支。 */
+.stdiff{display:inline-flex;align-items:center;justify-content:center;min-width:21px;padding:0 6px;
+  border-radius:var(--r-sm);font-family:var(--mono);font-variant-numeric:tabular-nums;
+  font-size:var(--f-xs);font-weight:var(--w-semi)}
+.stdiff.zero{color:var(--c-ok-text);background:var(--c-ok-bg)}
+.stdiff.has{color:var(--c-warn-text);background:var(--c-warn-bg)}
+/* 改动字段标签：只完整显示前 2 个，其余收 +n（全部字段名留在 title 里）。
+   nowrap 是这条的要点——原版让字段名在格里换行，一行能占掉三行的高度。 */
+.sttags{display:inline-flex;gap:4px;flex-wrap:nowrap;overflow:hidden;max-width:250px}
+.sttag{flex:none;display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:var(--r-sm);
+  font-family:var(--mono);font-size:10px;color:var(--c-warn-text);background:var(--c-warn-bg);
+  border:1px solid var(--c-warn-line)}
+.sttag.more{color:var(--c-text-3);background:var(--c-neutral);border-color:var(--c-line)}
+/* 三种行底色：有改动整行铺一层暖色、无留痕整行弱化（不是删掉——它不进分母但要能备查）、
+   其余正常。弱化只降字色，靠分段筛选降噪，藏起来的话「可算 4 张」和明细行数就对不上了。 */
+#stTable tbody tr:hover td{background:var(--c-accent-glow)}
+tr.stchanged td{background:var(--c-warn-strip)}
+tr.stchanged:hover td{background:var(--c-hit)}
+tr.sttrace td{color:var(--c-text-3)}
+tr.sttrace:hover td{background:var(--c-accent-glow)}
+.stfoot{margin:12px 0 2px;font-size:var(--f-sm);color:var(--c-text-3)}
+.stfoot b{color:var(--c-text-2);font-weight:var(--w-semi)}
+.stbelow{margin-top:12px}     /* 两栏之下再挂一块（空状态说明 / 分组表）时与上面那一排拉开距离 */
+/* 首屏入场：六张卡按 0.04s 一档步进淡入，随后两栏与口径条跟上。这个动画只挂在骨架上，
+   明细 tbody 由 renderStatsRows 单独重画——挂到行身上的话，每点一次分段筛选整表就闪一遍。 */
+.stkpi,.stpanel,.stscope{animation:stFade var(--dur-slow) both}
+.stkpi:nth-child(1){animation-delay:.02s}
+.stkpi:nth-child(2){animation-delay:.06s}
+.stkpi:nth-child(3){animation-delay:.10s}
+.stkpi:nth-child(4){animation-delay:.14s}
+.stkpi:nth-child(5){animation-delay:.18s}
+.stkpi:nth-child(6){animation-delay:.22s}
+.stmain .stpanel{animation-delay:.24s}
+@keyframes stFade{from{opacity:0}to{opacity:1}}
+/* 窄窗口（≤1100px）：六张卡折成每行三张、左右两栏堆叠。这一页是浮层窗口，
+   窗口一窄，320px 的左栏会把右栏挤到只剩几百像素——堆叠不是为好看，是为了还能用。
+   堆叠那一栏必须写 minmax(0,1fr)：grid 里的 1fr 等于 minmax(auto,1fr)，auto 的下限是内容最小宽，
+   而明细表带着 min-width:980px——光写 1fr 的话这一栏死活不肯窄于 980px，整块从窗口里溢出去，
+   "横向滚动"滚的就成了整扇窗而不是表格（六张卡留在左边、表在右边，两截对不上）。 */
+@media (max-width:1100px){
+  .stkpis{grid-template-columns:repeat(3,1fr)}
+  .stmain{grid-template-columns:minmax(0,1fr)}
+}
 .acctlist{overflow:auto;padding:4px 0}
 .arow{display:flex;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--c-line-soft);font-size:var(--f-md);
   transition:background var(--dur-fast)}
@@ -361,6 +503,120 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .acctadd{display:flex;gap:8px;padding:12px 14px;border-top:1px solid var(--c-line);background:var(--c-surface-2);flex-wrap:wrap}
 .acctadd input{flex:1;min-width:140px;border:1px solid var(--c-line);border-radius:var(--r-md);padding:6px 8px;font-size:var(--f-md)}
 .acctadd input:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
+/* ── 今日归档：紧凑高密度台账（交接原型 archive-dense-view.html 的落地）───────────────
+   一天几十票要一屏扫完：行高压到令牌给的 31px、没有组头隔断，主从只靠浅底 + 缩进 + 细竖线区分。
+   类名一律 dv 前缀——这一页复用整页样式，.seg/.chip/.k/.st/.num/.empty/.indent 这些短名在
+   desk.css 里各有别的含义（给统计浮层复用样式时踩过：同一个名字两套语义，改一处坏另一处）。
+   交接文档第 5 节那九条坑点各有用例钉着（tests/test_day_dense_view.py），改这块前先跑那一组。 */
+
+/* 坑 1：容器用 clip 不用 hidden。hidden 会让容器成为 sticky 的滚动上下文，而容器自己不滚
+   ⇒ 控制条与表头一起吸不住；clip 只裁剪、不建滚动容器。外层 #dayCard 同样不许有 overflow。 */
+#dayBox{overflow:clip;background:var(--c-surface)}
+#dayCard .t{border-bottom:0;padding-bottom:6px}    /* 分隔线交给下面那条控制条，别叠两道 */
+/* 坑 5：高度恒定、不换行，放不下就在条内横向滚。窄窗口下它一折行变高（原型实测到过 80px），
+   表头吸顶位置就和它错位。top 走实测顶栏高——顶栏在 1020–1460px 会折成两排。 */
+.dvbar{position:sticky;top:var(--hdh);z-index:var(--z-sticky);display:flex;align-items:center;gap:8px;height:var(--dv-bar-h);flex-wrap:nowrap;overflow-x:auto;padding:0 14px;margin-bottom:10px;background:var(--c-surface);border-bottom:1px solid var(--c-line);box-shadow:var(--sh-bar)}
+.dvbar>*{flex:none}
+.dvbar>.dvsp{flex:1 1 auto}          /* 弹簧要单独放回来：上一条把 bar 里所有孩子都钉成不伸缩了 */
+.dvstats{display:flex;gap:11px;font-size:var(--f-sm);color:var(--c-text-3);margin-right:4px;white-space:nowrap}
+.dvstats em{font-style:normal;font-family:var(--mono);color:var(--c-text-2)}
+.dvstats .dvr em{color:var(--c-bad-text);font-weight:var(--w-semi)}
+.dvdiv{width:1px;height:18px;background:var(--c-line-strong);margin:0 3px}
+.dvseg{display:inline-flex;background:var(--c-surface-3);border-radius:var(--r-md);padding:2px}
+.dvseg button{border:0;background:transparent;font-size:var(--f-sm);color:var(--c-text-2);padding:3px 11px;
+  border-radius:var(--r-sm);cursor:pointer;min-height:26px;white-space:nowrap;
+  transition:color var(--dur-fast),background var(--dur-fast)}
+.dvseg button:hover{color:var(--c-text-1)}
+.dvseg button.on{background:var(--c-surface);color:var(--c-text-1);font-weight:var(--w-semi);box-shadow:var(--sh-seg)}
+.dvseg button:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px}
+.dvchip{font-size:var(--f-sm);color:var(--c-text-2);background:var(--c-surface);border:1px solid var(--c-line-strong);
+  border-radius:var(--r-pill);padding:3px 12px;min-height:26px;cursor:pointer;white-space:nowrap;
+  transition:border-color var(--dur-fast),background var(--dur-fast),color var(--dur-fast)}
+.dvchip:hover{border-color:var(--c-line-hover)}
+.dvchip.on{background:var(--c-text-1);color:var(--c-inverse);border-color:var(--c-text-1)}
+.dvchip:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px}
+
+#dayBox table{font-size:var(--f-sm)}
+/* 坑 6：表头吸在"实测顶栏高 + 控制条高"下面，两个都走令牌；写死像素的话顶栏一折行就重叠。 */
+#dayBox th{position:sticky;top:calc(var(--hdh) + var(--dv-bar-h));z-index:var(--z-th);background:var(--c-surface-2);
+  border-bottom:1px solid var(--c-line-strong);padding:7px 12px;white-space:nowrap;text-align:left;
+  font-size:var(--f-xs);color:var(--c-text-3);font-weight:var(--w-semi);letter-spacing:.3px}
+/* 列宽写在 th（table-layout:fixed 只认第一行给的宽度，写在 td 上会被忽略）。
+   七列里只有「状态」不给宽：它是唯一允许伸的那一列，把余量都吃走。
+   操作列比原型的 60px 宽：这里放的是两步确认的作废（确认作废 / 取消 竖着排），
+   60px 装不下——装不下的确认按钮等于没有确认。 */
+#dayBox th.w-doc{width:250px}
+#dayBox th.w-flag{width:90px}
+#dayBox th.w-rec{width:240px}
+#dayBox th.w-snap{width:110px}
+#dayBox th.w-att{width:70px}
+#dayBox th.w-op{width:96px}
+#dayBox td{padding:0 12px;border-bottom:1px solid var(--c-line-soft);vertical-align:middle;white-space:nowrap}
+/* 坑 3：行高与过渡都作用在 td 里的包裹层上——行高写在 td 上不参与过渡，折叠就只能是"啪"地消失。
+   过渡列表里只能有 height 与 opacity：min-height 混进去的话，收尾清内联值时它会从 0 再动画回行高，
+   肉眼就是"展开到 31px 又掉到 17px 再爬回来"。 */
+.dvci{display:flex;align-items:center;min-height:var(--dv-row);overflow:hidden;
+  transition:height var(--dv-fold) var(--ez-std),opacity var(--dur) ease}
+body[data-density=cozy] .dvci{min-height:var(--dv-row-cozy)}
+#dayBox td.c-op .dvci{flex-wrap:wrap;row-gap:3px}   /* 两步确认竖着排：列窄，横着排会被裁掉一半 */
+#dayBox tbody tr:last-child td{border-bottom:0}
+#dayBox tbody tr:hover td{background:var(--c-accent-glow)}
+#dayBox tr.dvm td{background:var(--c-surface-2);border-top:1px solid var(--c-line-strong)}
+#dayBox tr.dvm:hover td{background:var(--c-surface-3)}
+#dayBox tr.flagged td.c-flag{background:var(--c-bad-bg)}
+#dayBox tr.voided td{opacity:.62}
+#dayBox tr.dvs.folding td{border-bottom-color:transparent}   /* 折叠途中那条行分隔线先淡掉，不然它在原地留一道 */
+#dayBox tr.is-collapsed{display:none}
+/* 坑 9：入场淡入挂在 dvin 上——这个类只在"真的换了一批数据"时加（loadDay 那三处）。
+   挂在裸的 tbody tr 上，筛选/排序/折叠每次重建都会重播一遍，列表就一直在闪。 */
+#dayBox tbody tr.dvin{animation:dvFade .3s both}
+@keyframes dvFade{from{opacity:0}to{opacity:1}}
+
+.dvdoc{display:inline-flex;align-items:center;gap:7px;min-width:0}
+/* 分单那一道树形缩进：竖线要跨到上一行与下一行（top/bottom 各 -9px），连起来才是一条不断的线 */
+.dvind{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0;padding-left:20px}
+.dvind::before{content:"";position:absolute;left:7px;top:-9px;bottom:-9px;width:1px;background:var(--c-line-strong)}
+.dvind::after{content:"";position:absolute;left:7px;top:50%;width:10px;height:1px;background:var(--c-line-strong)}
+.dvk{display:inline-flex;align-items:center;flex:none;height:16px;padding:0 5px;border-radius:var(--r-sm);
+  font-size:var(--f-xs);font-weight:var(--w-semi);letter-spacing:.3px}
+.dvk.m{color:var(--c-accent);background:var(--c-accent-soft);border:1px solid var(--c-accent-line)}
+.dvk.s{color:var(--c-sub-text);background:var(--c-sub-bg);border:1px solid var(--c-sub-line)}
+.dvno{border:0;background:transparent;padding:0;font:inherit;font-family:var(--mono);cursor:pointer;
+  text-align:left;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dvno.m{font-weight:var(--w-semi);color:var(--c-text-1)}
+.dvno.s{color:var(--c-text-2)}
+.dvno:hover{color:var(--c-accent);text-decoration:underline;text-underline-offset:3px}
+.dvno:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px;border-radius:var(--r-sm)}
+.dvpm{flex:none;font-size:var(--f-xs);font-family:var(--mono);color:var(--c-text-3)}
+/* 「分单 N 已折叠」：宽度与淡入一起过渡，直接显隐会把后面的内容顶得跳一下 */
+.dvfold{max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-size:var(--f-xs);color:var(--c-text-3);
+  transition:max-width var(--dv-fold) var(--ez-std),opacity var(--dur) ease}
+#dayBox tr.dvm.show-hint .dvfold{max-width:130px;opacity:1;margin-left:2px}
+.dvchev{display:inline-flex;align-items:center;justify-content:center;flex:none;width:18px;height:18px;padding:0;
+  border:0;border-radius:var(--r-sm);background:transparent;color:var(--c-text-3);cursor:pointer;
+  transition:background var(--dur-fast),color var(--dur-fast)}
+.dvchev:hover{background:var(--c-surface-3);color:var(--c-text-1)}
+.dvchev:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px}
+.dvchev svg{transition:transform .18s var(--ez-std)}
+.dvchev.closed svg{transform:rotate(-90deg)}
+.dvchev.dvnone{visibility:hidden;cursor:default}   /* 没有分单的主单：占位保住对齐，但不给点 */
+.dvst{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:var(--w-semi)}
+.dvst i{flex:none;width:6px;height:6px;border-radius:var(--r-pill)}
+.dvst.ok{color:var(--c-ok-text)}   .dvst.ok i{background:var(--c-ok)}
+.dvst.no{color:var(--c-warn-text)} .dvst.no i{background:var(--c-warn)}
+.dvst.bad{color:var(--c-bad-text)} .dvst.bad i{background:var(--c-bad)}
+.dvst small{font-family:var(--mono);font-weight:var(--w-normal);color:var(--c-text-3)}
+.dvfc{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-weight:var(--w-semi);color:var(--c-bad-text)}
+.dvfc.none{font-weight:var(--w-normal);color:var(--c-text-3)}
+.dvrec{overflow:hidden;font-size:var(--f-xs);color:var(--c-text-2);text-overflow:ellipsis}
+.dvrec .dvt{font-family:var(--mono);color:var(--c-text-3)}
+.dvsnap{font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-3)}
+.dvatt{border:0;background:transparent;padding:0;font:inherit;font-size:var(--f-sm);cursor:pointer;
+  color:var(--c-attach);text-decoration:underline;text-underline-offset:3px}
+.dvatt:hover{color:var(--c-accent)}
+.dvatt:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px;border-radius:var(--r-sm)}
+.dvdash{color:var(--c-text-3)}
+
 /* 会动的东西点名关掉（不用 *{animation:none!important} 那种大锤：它把该留的反馈也一起砸了）。
    留着的两处是"换色"不是"位移"——点字段名之后那个框还在闪、跳过去的那一行还在黄，
    关掉它们等于把功能关掉，制单员就不知道自己点到哪儿了。 */
@@ -368,6 +624,14 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
   .pv img.pvpage,.railList{animation:none}
   .railDots .rd{transition:none}
   .railDots .rd:hover{transform:none}
-  .btn,.row,.arow,.drop,.toast{transition:none}
+  .btn,.row,.arow,.drop,.toast,.stseg button{transition:none}
   .dot.busy{animation:none}          /* 呼吸停掉，但 --c-accent 那颗点还在，旁边也有文字状态 */
+  /* 今日归档那两处：淡入与折叠过渡都停掉，但折叠本身照旧生效——高度归零靠 is-collapsed 的
+     display:none 兜住，它是功能不是装饰，关掉就等于"点了没反应"。 */
+  #dayBox tbody tr.dvin{animation:none}
+  .dvci,.dvfold,.dvchev svg{transition:none}
+  /* 看板那两处：六张卡的步进淡入与条形的生长都停掉。条形的关键帧 from/to 两头都写了，
+     静态态就是满格，所以关掉动画不会把条子留在 0 上（原型那种只写 to 的会，整块图变空白）。 */
+  .stkpi,.stpanel,.stscope{animation:none}
+  .stbfill{animation:none}
 }
