@@ -21,16 +21,20 @@ def _isolate(tmp: Path):
     """把账号表、提交台账**和归档目录**一起指到临时目录，返回旧值供恢复。
     归档这一样是新加的：stem 现在的含义是「原件在本机点得开」（`store.lookup_stem` 会查目录），
     不隔离的话这些检索测试读的是这台机器的真 output/archive——换一台机器（或在 VM 上跑回归）
-    结果就不一样，和上一轮 .env 被回归改写是同一类缺陷。"""
-    old = (auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR)
+    结果就不一样，和上一轮 .env 被回归改写是同一类缺陷。
+    主单缓存目录同理：`/company/mawb` 是"检索即解析"，一跑就往 `config.MASTER_DIR` 落一份
+    `<主单号>.json`。本机 output/master 里早就有那几张真票，所以清单比对看不出来；
+    在全新解包的目录里跑（部署前的 install.ps1 就是这种）它当场响。"""
+    old = (auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.MASTER_DIR)
     auth.USERS_FILE = tmp / "users.json"
     config.SUBMIT_LEDGER = tmp / "submitted.json"
     config.ARCHIVE_DIR = tmp / "archive"
+    config.MASTER_DIR = tmp / "master"
     return old
 
 
 def _restore(old, tmp):
-    auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR = old
+    auth.USERS_FILE, config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.MASTER_DIR = old
     shutil.rmtree(tmp, ignore_errors=True)
 
 

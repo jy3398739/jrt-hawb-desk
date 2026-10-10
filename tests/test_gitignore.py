@@ -23,8 +23,15 @@ MUST_BLOCK = (".env", "users.json", "output/air/any.json", "input/any.pdf",
               "output/staged/any.json")
 # 必须能被 sync.sh 的 git ls-files 取到，挡了就等于"部署成功但线上缺文件"
 # .env.example 是模板（要入库），规则写成 .env.* 时必须靠 ! 把它放回来——它也在这一条里核。
+# 后两条钉的是 2026-10-10 抓到的那个真坑：规则写成 input/（没前导斜杠）会连任意层级同名
+# 目录一起吞掉，L3 基线夹具的 input/ 就是这么被吞了几个月——夹具没进过 Git、没进过 GitHub、
+# 不在部署包里，全新解包的目录跑回归当场"夹具只剩 0 份"。根目录那个投放口照旧要挡（上面 MUST_BLOCK）。
 MUST_NOT_BLOCK = ("config.py", "server.py", "web/js/desk.js", "deploy/sync.sh",
-                  "requirements-server.lock.txt", ".env.example")
+                  "requirements-server.lock.txt", ".env.example",
+                  # 探的是**未跟踪**的同目录路径：git 的忽略规则对已入库的文件不再生效，
+                  # 拿 1_dsv.json 去问只会永远得到"没被忽略"，规则改回 input/ 也测不出来。
+                  "tests/fixtures/l3/input/zzz_probe.json",
+                  "tests/fixtures/l3/expected/zzz_probe.json")
 
 
 def _git_text():
@@ -48,9 +55,12 @@ def _in_repo() -> bool:
 
 
 def _mentioned_in_gitignore(rel: str) -> bool:
-    """退化判定：只看第一段有没有作为一行规则出现（'.env' 或 'output/' 这类）。"""
+    """退化判定：只看第一段有没有作为一行规则出现（'.env' 或 'output/' 这类）。
+    前导斜杠在这里丢掉是对的：这条判定本来就只比首段，锚不锚根对它的结论没有影响
+    （`/output/` 与 `output/` 对 `output/air/any.json` 都是命中，对
+    `tests/fixtures/l3/input/x.json` 都不命中——后者首段是 tests）。"""
     head = rel.split("/", 1)[0]
-    pats = _patterns()
+    pats = [p[1:] if p.startswith("/") else p for p in _patterns()]
     if head in pats or (head + "/") in pats:
         return True
     # 密钥文件的备份/临时副本（.env.bak-xxx、users.json.bak）：规则写的是 .env.* 这种通配，
@@ -74,6 +84,25 @@ def test_secrets_and_local_env_are_blocked():
 def test_source_files_are_not_blocked():
     for rel in MUST_NOT_BLOCK:
         assert not _blocked(rel), rel + " 被误挡：部署清单取自 git ls-files，挡住就等于不部署"
+
+
+def test_l3_fixtures_are_actually_in_version_control():
+    """规则吞掉一个目录时，git 只是"不主动收"，本机跑回归照样绿（文件就在盘上）——
+    缺文件这件事要等到全新解包（部署包、别人 clone、CI）才现形，而那时已经晚了。
+    所以这里直接问索引：盘上几份，索引里就得几份。
+    服务器那份代码是 tar 推过去的、没有 .git，这条只在开发机与发版前的本地回归上跑（那正是它该管的地方）。"""
+    if not _in_repo():
+        return
+    for sub in ("input", "expected"):
+        on_disk = sorted(p.name for p in (ROOT / "tests" / "fixtures" / "l3" / sub).glob("*.json"))
+        raw = subprocess.run(["git", "ls-files", "-z", "tests/fixtures/l3/" + sub],
+                             cwd=ROOT, capture_output=True).stdout.decode("utf-8")
+        tracked = sorted(x.rsplit("/", 1)[-1] for x in raw.split("\0") if x)
+        assert len(on_disk) >= 31, f"L3 夹具盘上只剩 {len(on_disk)} 份，基线被误删了"
+        assert tracked == on_disk, (
+                sub + "/ 里有夹具没进版本控制（部署包与 clone 都会缺）："
+                + str(sorted(set(on_disk) - set(tracked))[:5])
+                + "——十有八九是 .gitignore 某条规则没锚定，把任意层级的 input/ 一起吞了")
 
 
 def test_fallback_rule_text_matcher_agrees_with_git():
