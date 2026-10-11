@@ -1302,9 +1302,12 @@ def test_desk_field_click_locates_value_on_the_ticket():
         "老票补转录的 /layout 兜底断了（含在途 Promise 共享）"
     assert "ll:j.transcript" in html, "提取响应里的转录没存到票上"
     show = re.search(r"async function showLocPage\(page, seq\)\{(.*?)\n\}", html, re.S)
-    assert show and 'class="bbox"' in show.group(1) and "left:${x1 / 10}%" in show.group(1), \
-        "bbox 覆盖层断了：0-1000 归一坐标要换算成百分比"
+    assert show and "drawLocBoxes()" in show.group(1), \
+        "定位框不再写进 pvBoxes 那一层：三层各管一件事，混回内容层就跟着票面一起被重建掉"
     assert "X-Ticket-Pages" in show.group(1), "没读服务端报的总页数，多页票翻不动"
+    lyr = re.search(r"function lyrHtml\(ls, cls, tip\)\{(.*?)\n\}", html, re.S)
+    assert lyr and "getBoundingClientRect" in lyr.group(1) and "/ 1000" in lyr.group(1), \
+        "bbox 覆盖层断了：0-1000 归一坐标现在按那一页实测矩形换成 px（层盖在多页堆上，按页面百分比会算错是哪一页）"
     fit = re.search(r"function locFit\(\)\{(.*?)\n\}", html, re.S)
     assert fit and "L.locateZoom(" in fit.group(1) and "L.autoZoomPct(" in fit.group(1), \
         "放大倍数不再由 locFit 自己算：要走偏好（L.locateZoom）与那一档的算式（L.autoZoomPct）"
@@ -1349,17 +1352,20 @@ def test_locate_zoom_has_a_switch_and_a_custom_ratio_per_browser():
 
 
 def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
-    """2026-09-21 用户三条 UI 意见：①提交/导出三键挪到字段表顶部（原来在 39 行下面，
+    """2026-09-21 用户三条 UI 意见：①提交/导出这三键要在手边（原来在 39 行下面，
     每次提交都要滚到最底）；②字段列自己滚，别带着左边上传/排队列表一起动；
-    ③收发货人长文本框按内容自适应高度（原来按 "\n" 数行数，一整段没有换行就只有一行高）。"""
+    ③收发货人长文本框按内容自适应高度（原来按 "\n" 数行数，一整段没有换行就只有一行高）。
+    ①这一条现在的实现是"操作条吸底常驻"而不是"搬到表上方"：38 列分五段之后表更长，
+    放上面就变成"滚到底看不到提交"，所以钉在栏底、任何时候都在视野里。"""
     html = web_src.desk()
-    top = html.find('class="ft top"')
-    assert top > -1, "顶部操作条没了：提交/导出又滚回表尾去了"
-    seg = html[top:html.find("wireMain(t)", top)]
-    for bid in ('id="submit"', 'id="expOne"', 'id="expAll"'):
-        assert bid in seg, f"顶部操作条少了 {bid}"
-    assert seg.find("id=") < seg.find("<table"), "提交键没在字段表上面"
+    bar = html[html.index('<div class="ft bottom">'):]
+    bar = bar[:bar.index("</div>")]
+    for bid in ('id="expOne"', 'id="expAll"'):
+        assert bid in bar, f"常驻操作条少了 {bid}"
+    assert "drawSubmitBtn(t, ef, todo.n)" in bar, "提交那颗不在这条操作条里：三态按钮的工厂没接上"
     css = re.sub(r"/\*.*?\*/", "", web_src.css(), flags=re.S)
+    assert re.search(r"\.ft\.bottom\{[^}]*position:sticky[^}]*bottom:0", css), \
+        "操作条不吸底：核到最后一行要提交还得先滚回表尾，用户这条意见就白改了"
     wide = re.search(r"@media \(min-width:1461px\)\{(.*?)\n\}", css, re.S)
     assert wide, "三栏独立滚动的媒体查询没了：滚字段又会带着整页一起动"
     assert re.search(r"#main\{[^}]*position:sticky[^}]*overflow:auto", wide.group(1)), \
@@ -1396,9 +1402,18 @@ def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
     assert "data-fhreset" in js, "要有一个明确的「恢复自动高度」出口（双击会和选词打架）"
     # 两道把手：一个在网格里（分栏），一个在表头里（列宽，那张表是 desk.js 现画的）
     assert 'id="gripView"' in page, "分栏那道把手没进页面"
-    assert 'id="gripCol"' in js, "表头那道把手没进字段表"
+    assert 'closest(".gripCol")' in js, "表头那道把手的拖动接线断了（分段之后每段一张表，它是类不是 id：五份同宽的一列共用一份偏好）"
     assert 'role="separator"' in page and 'role="separator"' in js, "拖把手得让键盘与读屏器也知道它是分隔条"
-    assert "minmax(420px, var(--vw))" in css, "网格还在写死 1.18fr：拖了不生效"
+    assert "minmax(360px, var(--vw))" in css, "网格还在写死 1.18fr：拖了不生效"
+    # 字段栏那道 1fr 的底线必须容得下"字段名列 + 状态列 + 还能打字的值列"：
+    # 从前默认 54% 给票面、字段栏只剩 360px，而 colK 206 + scol 120 就吃掉 326，
+    # 新开一台没拖过把手的浏览器上值列只剩 34px（1620px 窗口实测，表头三格挤成竖排）。
+    assert "minmax(460px, 1fr)" in css, "字段栏的底线太矮：三段列宽加起来会把值列压没"
+    tok = web_src.part("css/tokens.css")
+    colk = int(re.search(r"--colK:(\d+)px", tok).group(1))
+    scol = int(re.search(r"--scolW:(\d+)px", tok).group(1))
+    assert 460 - colk - scol >= 130, \
+        "默认列宽没给值列留下可打的宽度（%d+%d=%d，字段栏底线 460）" % (colk, scol, colk + scol)
     assert "* 1fr" not in css, "Chrome 不接受 calc(var() * 1fr)：整条 grid-template-columns 会掉回自动布局"
     assert "var(--colK" in css, "字段名列还是死宽度，表头那道把手没接到东西上"
     assert re.search(r"th\.kcol\{width:var\(--colK\)", css), \
@@ -1472,9 +1487,11 @@ def test_every_value_box_has_a_corner_driving_both_width_and_height():
     assert "function blockEnter(" in js and js.count('addEventListener("keydown", blockEnter') >= 2, \
         "单行框没挡回车：换行会一路写进公司系统"
     # 状态列的宽从前只写在 td.s 上：fixed 表格不认（同一批坑的第 25 条），它和值列平分剩余空间，
-    # 值框白白窄一半、拖 120px 只长 60px。宽要写在表头那一格上。
-    assert "th.scol{width:120px}" in css, "状态列的宽没写进表头：它白占一半剩余空间，值框窄一半"
-    assert js.count('class="num scol"') >= 2, "两张字段表的表头要都带上 scol，只改一张另一张还是窄的"
+    # 值框白白窄一半、拖 120px 只长 60px。宽要写在列定义上（col，或老那张表的表头那一格）。
+    assert "col.scol{width:var(--scolW)}" in css and "th.scol{width:var(--scolW)}" in css, \
+        "状态列的宽没写进列定义：它白占一半剩余空间，值框窄一半"
+    assert js.count('<col class="scol">') >= 1, "分段那张表没带状态列的列定义（colgroup 是每段自己的）"
+    assert 'class="num scol"' in js, "主单那张表还靠表头给状态列定宽，别一起退掉"
 
 
 def test_the_word_for_stage_means_only_the_server_tier():

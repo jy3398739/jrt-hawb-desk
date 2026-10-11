@@ -409,5 +409,88 @@ const L = {
   zoomAnchor(contentNew, frac, cursorInPane){
     return Math.max(0, Math.round(contentNew * frac - cursorInPane));
   },
+
+  /* ── 分段核对流（右栏五段 + 三态提交）：状态机与口径全在这里一处算 ──────────
+     待办 = 未确认红旗 + 未确认空值；红旗优先于一切（填了值也要显式确认才放行）。
+     `acked` 是"这一格人已经看过"的单一入口：有红旗时指红旗全确认，空值时指「本就为空」确认，
+     两个集合在 desk.js 里仍各管各的（ackF / ackE），这里只问结论。 */
+  isEmptyVal(raw, air){
+    return !String(raw == null ? "" : raw).trim() && !String(air == null ? "" : air).trim();
+  },
+  fieldStatus(o){
+    const flags = Number(o.flags) || 0, acked = !!o.acked;
+    const air = String(o.air == null ? "" : o.air).trim();
+    let s;
+    if (flags) s = acked ? "confirmed" : "flag";
+    else if (this.isEmptyVal(o.raw, o.air)) s = acked ? "emptyok" : "empty";
+    else if (!air) s = "miss";                 // L2 有值、L3 空：归一化没跟上，是提示不是待办
+    else s = "same";
+    const label = {flag: "红旗 " + flags, confirmed: "已确认", empty: "字段为空",
+                   emptyok: "已确认", miss: "航空口径空", same: "已归一"}[s];
+    return {s, label, todo: s === "flag" || s === "empty"};
+  },
+  todoOf(rows){
+    const keys = (rows || []).filter(r => this.fieldStatus(r).todo).map(r => r.k);
+    return {keys, n: keys.length};
+  },
+  /* 进度：分母是"刚进这张票时的待办快照"，不是字段数（38 列里 22 列本来就没印，
+     拿 38 当分母会让一眼看过去全是"完成度 58%"的假象）。0/0 算 100%，别出 NaN。 */
+  progress(base, left){
+    const total = Math.max(0, Number(base) || 0);
+    const done = Math.max(0, total - Math.max(0, Number(left) || 0));
+    return {done, total, pct: total ? Math.round(done * 100 / total) : 100};
+  },
+  /* 段头：hard（有未确认红旗）比 soft（有空值待确认）重，两处都有事时不许被抹平成琥珀。
+     todo 按"列"数：同一列既是红旗又空着，只算一项。 */
+  segState(fields, hard, soft){
+    const order = [], by = {};
+    for (const f of fields || []){
+      const g = f.g;
+      let s = by[g];
+      if (!s){ s = by[g] = {g, tot: 0, todo: 0, hard: 0, soft: 0, cleared: 0, state: "clear"}; order.push(g); }
+      s.tot++;
+      const h = !!(hard || {})[f.k], e = !!(soft || {})[f.k];
+      if (h) s.hard++;
+      if (e) s.soft++;
+      if (h || e) s.todo++;
+      s.state = s.hard ? "hasflag" : s.soft ? "hasissue" : "clear";
+    }
+    order.forEach(g => { by[g].cleared = by[g].tot - by[g].todo; });
+    return order.map(g => by[g]);
+  },
+  nextTodo(ks, cur){
+    const a = ks || [];
+    if (!a.length) return "";
+    const i = a.indexOf(cur);
+    return i < 0 ? a[0] : a[(i + 1) % a.length];
+  },
+  /* 锚点的出处只认真坐标：先取 fidelity.sources，没有就从红旗文案里那个 值='…' 回查转录行。
+     两条都找不到就不给这一列出框——画一个猜出来的框比不画更坏，它会让人以为位置已经核对过。 */
+  flagKeyOf(flag){
+    const m = String(flag || "").match(/([A-Z][A-Z0-9]{2,}(?:_[A-Z0-9]+)*)/);
+    return m ? m[1] : "";
+  },
+  anchorLines(src, lines, flag){
+    const ks = Object.keys(src || {});
+    /* 先认红旗文案里那一列的名字：sources 是整张表的出处表（一台票十几个键），
+       拿它的第一个键去配某一条红旗，配到的是别的列——框会画在错的那一行上。
+       只有 sources 恰好只剩一个键、而红旗又没点名时才用它兜底。 */
+    const k = this.flagKeyOf(flag) || (ks.length === 1 ? ks[0] : "");
+    if (!k) return {};
+    const byIdx = {};
+    (lines || []).forEach(l => { byIdx[l.i] = l; });
+    const direct = (src[k] || []).map(i => byIdx[i]).filter(Boolean);
+    if (direct.length) return {[k]: direct};
+    const m = String(flag || "").match(/值='([^']+)'/);
+    if (!m) return {};
+    const norm = s => String(s == null ? "" : s).toUpperCase().replace(/[^A-Z0-9一-龥]/g, "");
+    const v = norm(m[1]);
+    const runs = (String(m[1]).match(/\d{5,}|[A-Za-z]{4,}/g) || []).map(norm);
+    const hit = (lines || []).filter(l => {
+      const t = norm(l.text);
+      return t && v && (t.includes(v) || runs.some(r => r.length > 4 && t.includes(r)));
+    });
+    return hit.length ? {[k]: hit.slice(0, 12)} : {};
+  },
 };
 if (typeof module !== "undefined") module.exports = L;

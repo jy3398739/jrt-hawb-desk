@@ -9,8 +9,10 @@ button{font:inherit;cursor:pointer}
    :focus-visible 让鼠标点击不描边、Tab 到了一定描边。 */
 :focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}
 input,textarea{font:inherit;color:inherit}
+/* 顶栏单行不折行（窄窗口横向兜底）：这一排控件是"今天用什么"的总览，折成两排就把版本与服务状态
+   顶出视野。高度仍然由 desk.js 实测回写 --hdh——写死 52px 正是 v1.3.0「表头压住第一行」那族坑。 */
 .hdr{position:sticky;top:0;z-index:var(--z-hdr);background:var(--c-surface);border-bottom:1px solid var(--c-line);
-  padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:nowrap;white-space:nowrap;overflow-x:auto}
 .hdr h1{font-size:var(--f-xl);margin:0;font-weight:var(--w-bold);letter-spacing:.5px}
 .sp{flex:1}
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--c-text-3);flex:none}
@@ -35,7 +37,7 @@ input,textarea{font:inherit;color:inherit}
    --vw（票面栏占整行的百分数）与 --colK（字段名列宽）由把手写回，存本机；默认值在 tokens.css。
    --vw 有两个入口（分栏那道缝、值格右边界那道），因为值这一列的宽就是"整行减去票面栏"剩下的。 */
 .wrap{display:grid;gap:14px;padding:14px 16px;align-items:start;
-  grid-template-columns:48px 264px minmax(420px, var(--vw)) 10px minmax(360px, 1fr);
+  grid-template-columns:48px 264px minmax(360px, var(--vw)) 10px minmax(460px, 1fr);
   grid-template-areas:"rail side view grip form"}
 #rail{grid-area:rail}#side{grid-area:side}#view{grid-area:view}#main{grid-area:form}#gripView{grid-area:grip}
 /* 分栏与表头那两道把手共用一条皮肤：一条竖线，hover / 聚焦 / 正在拖的时候亮起来。
@@ -200,10 +202,12 @@ tr:hover .edg::after,.edg:hover::after,.edg:focus-visible::after,.edg.drag::afte
 td.v textarea:hover,td.v input:hover{border-color:var(--c-line-strong);background:var(--c-surface)}
 td.v textarea:focus,td.v input:focus{outline:2px solid var(--c-accent-line);outline-offset:-1px;border-color:var(--c-accent-line);
   background:var(--c-surface);box-shadow:0 0 0 3px var(--c-focus-ring)}
-/* 状态列的宽必须写在表头：table-layout:fixed 只认第一行给的宽度（写在 td.s 上不生效，
-   那样它就和值列平分剩余空间，值框白窄一半）。 */
-th.scol{width:120px}
-td.s{width:120px;padding:8px 10px;text-align:right}
+/* 状态列的宽必须写在列定义上：table-layout:fixed 只认 col（或第一行表头）给的宽度，
+   写在 td.s 上不生效（那样它就和值列平分剩余空间，值框白窄一半）。
+   分单那五段是每段一张表、列宽在 colgroup 里；主单那张还是老表头，两边共用同一支令牌。 */
+col.scol{width:var(--scolW)}
+th.scol{width:var(--scolW)}
+td.s{width:var(--scolW);padding:8px 10px;text-align:right}
 .note{font-size:var(--f-xs);margin-top:3px;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .note .q{color:var(--c-warn-text)}.note .b{color:var(--c-bad-text)}.note .e{color:var(--c-accent)}
 .note .rs{color:var(--c-text-3);cursor:pointer;text-decoration:underline dotted;display:inline-block;
@@ -211,6 +215,78 @@ td.s{width:120px;padding:8px 10px;text-align:right}
 .badge{font-size:var(--f-xs);padding:1px 6px;border-radius:var(--r-sm);background:var(--c-neutral);color:var(--c-text-2);white-space:nowrap}
 .badge.miss{background:var(--c-bad-bg);color:var(--c-bad-text)}.badge.warn{background:var(--c-warn-bg);color:var(--c-warn-text)}
 .badge.same{background:var(--c-ok-bg);color:var(--c-ok-text)}
+/* ── 分段核对流（v1.16.0）：右栏五段、每段一张表、段头吸顶、行内六态 ──────────────
+   每段一张表不是排版洁癖：<tr> 上写 position:sticky 粘不住——它的包含块就是那一行，撑不出
+   "钉在容器顶"。段头必须是该段那张表自己的 <thead>。列宽走 colgroup：fixed 表格只认列定义给的宽
+   （写在 td 上不生效，v1.6.0 那次"值框白窄一半"就是这条）。 */
+table.gt{margin-bottom:2px}
+table.gt + table.gt{border-top:1px solid var(--c-line)}
+col.kcol{width:var(--colK)}
+tr.grp th{position:sticky;top:var(--todoH);z-index:calc(var(--z-th) + 1);padding:6px 10px;text-align:left;
+  border-top:1px solid var(--c-line);border-bottom:1px solid var(--c-line);background:var(--c-surface-2);
+  font-size:var(--f-sm);font-weight:var(--w-semi);color:var(--c-text-1);letter-spacing:.3px}
+tr.grp .in{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+tr.grp .gn{letter-spacing:1px;font-weight:var(--w-bold)}
+tr.grp .cnt{font-family:var(--mono);font-size:var(--f-xs);padding:1px 6px;border-radius:var(--r-pill);
+  background:var(--c-neutral);color:var(--c-text-2)}
+tr.grp .sok{font-size:var(--f-xs);font-weight:var(--w-normal);color:var(--c-ok-text)}
+tr.grp .ssoft{font-size:var(--f-xs);font-weight:var(--w-normal);color:var(--c-warn-text)}
+tr.grp .sflag{font-size:var(--f-xs);font-weight:var(--w-semi);color:var(--c-bad-text)}
+tr.grp.hasissue th{background:var(--c-warn-bg);border-bottom-color:var(--c-warn-line)}
+tr.grp.hasflag th{background:var(--c-bad-bg);border-bottom-color:var(--c-bad-line)}
+/* 折叠那颗：它改的是"这一段看不看"，不是数据，所以长得很轻，但必须是真 button */
+.fold{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--c-text-3);
+  font-size:var(--f-sm);line-height:1;padding:2px 4px;min-height:22px;border-radius:var(--r-sm);cursor:pointer}
+.fold:hover{background:var(--c-accent-glow);color:var(--c-accent)}
+tr.foldrow td{padding:6px 12px;font-size:var(--f-sm);color:var(--c-text-3);background:var(--c-surface-2)}
+/* 行左边那 3px 竖条＝这一格现在要谁动手：红＝红旗未确认，橙＝空栏待确认，蓝＝自己改过，
+   绿＝人确认过了。竖条是图形不是字，所以用"看得见的点"那一族（--c-bad/--c-warn/--c-ok），
+   字一律用 -text 那一族——这两个不是一回事，混用就是这站改版前犯过的错。 */
+tr.flag td.k{box-shadow:inset 3px 0 0 var(--c-bad)}
+tr.emptyrow td.k{box-shadow:inset 3px 0 0 var(--c-warn)}
+tr.edited td.k{box-shadow:inset 3px 0 0 var(--c-accent)}
+tr.acked td.k{box-shadow:inset 3px 0 0 var(--c-ok)}
+tr.missrow td.k{box-shadow:inset 3px 0 0 var(--c-line-strong)}
+tr.flag td.v textarea{background:var(--c-bad-bg)}
+tr.emptyrow td.v textarea{background:var(--c-warn-bg)}
+/* 行内动作区：六态里每一态最多两颗（确认 + 撤回不同时出现），排在这个位置就不会把值格挤窄 */
+.acts{display:flex;gap:4px;justify-content:flex-end;flex-wrap:wrap;margin-top:4px}
+.btn.g{border-color:var(--c-ok);color:var(--c-ok-text)}
+.btn.g:hover:not(:disabled){background:var(--c-ok-bg);border-color:var(--c-ok)}
+.badge.flagb{background:var(--c-bad-bg);color:var(--c-bad-text)}
+.badge.emptyb{background:var(--c-warn-bg);color:var(--c-warn-text)}
+.badge.conf{background:var(--c-ok-bg);color:var(--c-ok-text)}
+/* 待办条上的三个计数：红旗橙红那两支是可点的（点一下跳过去），"已改"只是数字。
+   appearance:none 那一段和 .row/.rs 同一族——可点的必须是真按钮，也不能长着 UA 那颗灰按钮的皮。 */
+.t-flag,.t-soft{appearance:none;-webkit-appearance:none;background:transparent;border:0;cursor:pointer;
+  font-family:var(--mono);font-size:var(--f-sm);font-weight:var(--w-semi);padding:2px 7px;border-radius:var(--r-sm)}
+.t-flag{color:var(--c-bad-text)}.t-soft{color:var(--c-warn-text)}
+.t-flag:hover,.t-soft:hover{background:var(--c-accent-glow)}
+.t-edit{font-family:var(--mono);font-size:var(--f-sm);color:var(--c-accent)}
+.t-mut{font-family:var(--mono);font-size:var(--f-sm);color:var(--c-text-2)}
+.bar{width:104px;height:6px;border-radius:3px;background:var(--c-surface-3);overflow:hidden;flex:none}
+.bar i{display:block;height:100%;width:0;background:var(--c-ok);transition:width var(--dur) var(--ez-std)}
+/* 提交那颗的三态：红＝还有未确认红旗（点了不发送，只带你跳过去），琥珀＝还有空栏没人确认
+   （点第一下只是武装），绿＝没有待办。都用"深字 + 浅底 + 同族描边"：
+   白字压在橙红渐变上过不了本站自己那条 WCAG 表。 */
+.btn.okGo{background:var(--c-ok-bg);border-color:var(--c-ok);color:var(--c-ok-text);font-weight:var(--w-semi)}
+.btn.okGo:hover:not(:disabled){background:var(--c-ok-bg);border-color:var(--c-ok)}
+.btn.warnGo{background:var(--c-warn-bg);border-color:var(--c-warn-line);color:var(--c-warn-text);font-weight:var(--w-semi)}
+.btn.badGo{background:var(--c-bad-bg);border-color:var(--c-bad-line);color:var(--c-bad-text);font-weight:var(--w-semi)}
+/* 左栏三页签：队列 / 主单检索 / 未保存的编辑（三张卡竖着堆的时候，看下面那张得先把上面滚走） */
+.tabs{display:flex;gap:2px;padding:6px 6px 0;border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
+.tabb{appearance:none;-webkit-appearance:none;background:transparent;border:0;cursor:pointer;
+  font-size:var(--f-sm);color:var(--c-text-2);padding:6px 8px;border-radius:var(--r-sm) var(--r-sm) 0 0;
+  min-height:32px}
+.tabb:hover{background:var(--c-accent-glow);color:var(--c-accent)}
+.tabb[aria-selected="true"]{background:var(--c-surface);color:var(--c-text-1);font-weight:var(--w-semi);
+  box-shadow:var(--sh-panel)}
+.tabb .n{font-family:var(--mono);font-size:var(--f-xs);color:var(--c-bad-text);margin-left:3px}
+.tabpanel{background:var(--c-surface)}
+.tabpanel .t{padding:8px 10px}
+.tabpanel .hint{padding:0 10px 8px;display:block}
+.tabpanel .mstbar{padding:8px 10px 0}
+.tabpanel #mstResult{padding:0 10px 8px}
 .mvnotes{margin:0;padding:2px 16px 10px 30px;font-size:var(--f-sm);color:var(--c-text-2);line-height:1.75}
 /* 名下分单整宽卡：一个主单下几十张分单时表格自己滚、表头粘住，
    不再塞回 264px 的左栏（那里五列就挤成竖排了） */
@@ -283,12 +359,21 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .pvtools #pvLocPct:disabled{opacity:.45}
 .pv .page{position:relative;display:inline-block;text-align:left}
 .pv .page img{display:block;width:100%}
+/* 舞台：内容格（#pvPages）与三层浮层共用的那个定位上下文。
+   宽度必须还是栏宽——页图是按 width:百分比 放的，百分比的基准一变，适应宽度与滚轮锚点就一起算错。 */
+.pv .pvstage{position:relative;display:block;text-align:center}
 .pv .lyr{position:absolute;left:0;top:0;width:100%;height:100%}
 .pv .bbox{position:absolute;border:2px solid var(--c-locate-line);background:var(--c-locate);
   border-radius:2px;animation:flashb 1.2s ease 2}
 /* 动效 ③：定位巡航。只加外圈光晕——不碰 transform/边框宽/透明度归零，
    脉冲跑完那个框必须还在原地，不然"到底哪一行"又说不清了。 */
 @keyframes flashb{50%{background:var(--c-locate-hi);box-shadow:0 0 0 6px var(--c-locate-halo)}}
+/* 常驻锚点（未确认红旗在票面上的出处）与悬停框（这一格的转录行）。
+   虚线＝"在这儿，但你还没确认"；实线浅蓝＝只是给你看一眼出处，移开就没了。
+   两层都不承载文字：字在 title 里，框只做"位置"这一件事。 */
+.pv .anchor{position:absolute;border:1.5px dashed var(--c-warn);background:var(--c-anchor-soft-fill);border-radius:2px}
+.pv .anchor.hard{border-color:var(--c-bad);background:var(--c-anchor-fill)}
+.pv .hbox{position:absolute;border:1.5px solid var(--c-accent-line);background:var(--c-hover-fill);border-radius:2px}
 /* 提示堆在底部居中，一条一个节点：后一条不覆盖前一条（一次失败的原因常常不止一个，
    被吃掉的那一条正是线索）。整条可点，看一眼就能关掉。 */
 #toasts{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);display:flex;flex-direction:column;

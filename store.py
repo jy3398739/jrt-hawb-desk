@@ -194,7 +194,8 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
                    acked_flags: list = None, edited_fields: list = None,
                    sent_fingerprint: str = "", company_action: str = "",
                    air_sent: dict = None, stager: str = "", staged_at: str = "",
-                   no_inputter_review: bool = False) -> dict:
+                   no_inputter_review: bool = False,
+                   skipped_empty: list = None, acked_empty: list = None) -> dict:
     """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。
     acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。
     sent_fingerprint / company_action / before：这次到底发了什么、公司怎么回的、发之前库里是什么——
@@ -202,7 +203,10 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
     air_sent：这次真发给公司的那份全量值。光有哈希对不回内容，重算一次又会被"人已经改了"污染；
     stager/staged_at：发之前是谁暂存（核对）过的——按人算修改量与"未经录入员复核"都读它。
     no_inputter_review：这批里没有录入员复核过的暂存记录、制单员点了确认就直发的记号。
-    它必须逐条留在台账里：以后问"跳过复核直接发的那批错得多不多"，分母就在这儿。"""
+    它必须逐条留在台账里：以后问"跳过复核直接发的那批错得多不多"，分母就在这儿。
+    skipped_empty / acked_empty：提交那一版里空着的列分两档记——人逐列确认过「票面本来就没印」
+    的是 acked_empty，没确认就点第二次按钮硬发出去的是 skipped_empty（同一套软闸门留痕）。
+    两档都是空表也要落键：读的一方按"有没有这一档"分支，缺键会让统计当场崩或悄悄漏。"""
     with _LEDGER_LOCK:
         data = _load_ledger()
         entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
@@ -210,6 +214,8 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
                  "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
                  "acked_flags": [str(a) for a in (acked_flags or [])],
                  "edited_fields": [str(x) for x in (edited_fields or [])],
+                 "skipped_empty": [str(x) for x in (skipped_empty or [])],
+                 "acked_empty": [str(x) for x in (acked_empty or [])],
                  "sent_fingerprint": sent_fingerprint or "",
                  "company_action": company_action or "",
                  "air_sent": air_sent if isinstance(air_sent, dict) else {},

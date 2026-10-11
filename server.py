@@ -51,6 +51,7 @@ import auth
 import company_api
 import config
 import desk_queue
+import fieldspec
 import jobs
 import master_pipeline
 import purge
@@ -439,6 +440,18 @@ def _l2_l1(stem: str, tk: dict):
     return raw, transcript
 
 
+def _empty_cols(raw: dict | None, rec: dict) -> list:
+    """提交这一版里「票面本来就没印」的列：L2 与 L3 都空——与审核台 fieldStatus 同一条判据。
+    由服务端按落盘那份算，不数前端报的几个：空栏留痕以后要按列聚合，口径只能有一处
+    （红旗那条「以服务端重算为准」是同一个教训，见 test_server_recomputes_house_flags_and_blocks_unacked）。"""
+    out = []
+    for k in fieldspec.desk_keys():
+        if str((raw or {}).get(k) or "").strip() or str(rec.get(k) or "").strip():
+            continue
+        out.append(k)
+    return out
+
+
 def _sent_fingerprint(mawb: str, hawb: str, rec: dict) -> str:
     """这次到底把什么发给了公司。整表写回出事时（哪列被抹成 NULL）靠它对账重算。"""
     return hashlib.sha256(json.dumps({"mawb": mawb, "hawb": hawb, "air": rec}, sort_keys=True,
@@ -478,6 +491,12 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         if left:
             raise HTTPException(400, {"message": f"{hawb} 还有未清的红旗：逐条确认后才能回传公司",
                                       "flags": left})
+        # 空栏两档留痕（v1.16.0）：哪些列在提交这一版真的没值由服务端算，人逐列确认「本就为空」的
+        # 记 acked_empty，没确认就点第二次硬发出去的记 skipped_empty。有值的列即使前端报了也不收。
+        blanks = _empty_cols(raw, rec)
+        claim = {str(x) for x in (tk.get("acked_empty") if isinstance(tk.get("acked_empty"), list) else [])}
+        acked_empty = [k for k in blanks if k in claim]
+        skipped_empty = [k for k in blanks if k not in claim]
         # 第三道门（2026-10-08 用户定案）：制单员可以直发，但"没有录入员复核过的暂存记录"
         # 必须多点一次确认。判据只认服务器上的暂存事件，不认前端写的任何名字；
         # 确认之后台账留 no_inputter_review，否则以后答不出"跳过复核直接发的那批错得多不多"。
@@ -487,9 +506,9 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             raise HTTPException(400, {
                 "message": f"{hawb} 没有录入员复核过的暂存记录：确认「未经录入员复核，仍要回传公司」后再提交",
                 "ack": "no_inputter_review"})
-        passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed))
+        passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty))
     results, codes = [], []
-    for tk, stem, mawb, hawb, rec, acked, st, reviewed in passed:
+    for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty in passed:
         # 逐张收集成败，不在第一张错上 raise：/submit 收的是列表，前面几张已经写进公司库了，
         # 让它们随异常一起消失，调用方就分不清"没发出去"和"发出去了但没回执"，
         # 再点一次等于第二次整表写回。
@@ -514,15 +533,19 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                                      company_action=str(receipt.get("action") or ""),
                                      air_sent=rec, stager=st.get("stager") or "",
                                      staged_at=st.get("staged_at") or "",
-                                     no_inputter_review=not reviewed)
+                                     no_inputter_review=not reviewed,
+                                     skipped_empty=skipped_empty, acked_empty=acked_empty)
         if st:
             store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)
         results.append({"stem": stem, "ok": True, "submitted": True,
                         "key": entry["key"], "mode": receipt.get("mode")})
-        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s%s",
+        LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s"
+                 " 空栏=%d（确认 %d / 跳过 %d）%s",
                  user.get("name"), mawb, hawb, receipt.get("mode"), receipt.get("action") or "-",
                  bool(receipt.get("idempotent")), len(entry.get("edited_fields") or []), len(acked),
-                 st.get("stager") or "-", "" if reviewed else "（未经录入员复核，已确认）")
+                 st.get("stager") or "-", len(acked_empty) + len(skipped_empty),
+                 len(acked_empty), len(skipped_empty),
+                 "" if reviewed else "（未经录入员复核，已确认）")
     if codes:
         bad = [r for r in results if not r["ok"]]
         n_ok = len(results) - len(bad)

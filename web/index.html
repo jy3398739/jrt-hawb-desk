@@ -140,20 +140,31 @@
         <div class="btns"><button class="btn pri" id="pick">选择文件</button></div>
       </div>
       <input type="file" id="file" multiple hidden accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff,.pdf,.xlsx,.xlsm,.xls">
-      <div class="list" id="list" role="group" aria-label="待核对的分单"><div class="empty">尚无票据。</div></div>
     </section>
-    <section class="card stack">
-      <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus" role="status" aria-live="polite"></span></div>
-      <div class="f mstbar">
-        <input id="mstNo" type="text" aria-label="主单号" placeholder="主单号，如 235-96146363" size="18">
-        <button class="btn sm pri" id="mstGo">检索</button>
+    <!-- 左栏三页签：从前上传下面把「队列 / 主单检索 / 未保存的编辑」三张卡竖着堆起来，
+         要看下面那张就得把上面滚走，而这三样本来就不同时用。页签只换列表，控件与逻辑一律不动。 -->
+    <section class="card">
+      <div class="tabs" id="railTabs" role="tablist" aria-label="左栏：队列 / 主单检索 / 未保存的编辑">
+        <button class="tabb" type="button" role="tab" id="railTabQueue" data-rt="queue" aria-selected="true" aria-controls="tabQueue">队列<span class="n" id="tabQueueN"></span></button>
+        <button class="tabb" type="button" role="tab" id="railTabMawb" data-rt="mawb" aria-selected="false" aria-controls="tabMawb">主单检索</button>
+        <button class="tabb" type="button" role="tab" id="railTabDraft" data-rt="draft" aria-selected="false" aria-controls="tabDraft">未保存<span class="n" id="tabDraftN"></span></button>
       </div>
-      <div class="hint">按主单号取回主单资料并自动解析，名下分单列在页面底部。</div>
-      <div id="mstResult"></div>
-    </section>
-    <section class="card stack">
-      <div class="t">本机未保存的编辑<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
-      <div class="list compact" id="drafts" role="group" aria-label="本机未保存的编辑"></div>
+      <div class="tabpanel" id="tabQueue" role="tabpanel">
+        <div class="list" id="list" role="group" aria-label="待核对的分单"><div class="empty">尚无票据。</div></div>
+      </div>
+      <div class="tabpanel" id="tabMawb" role="tabpanel" hidden>
+        <div class="t">主单检索 · 公司系统<span class="sp"></span><span class="hint" id="mstStatus" role="status" aria-live="polite"></span></div>
+        <div class="f mstbar">
+          <input id="mstNo" type="text" aria-label="主单号" placeholder="主单号，如 235-96146363" size="18">
+          <button class="btn sm pri" id="mstGo">检索</button>
+        </div>
+        <div class="hint">按主单号取回主单资料并自动解析，名下分单列在页面底部。</div>
+        <div id="mstResult"></div>
+      </div>
+      <div class="tabpanel" id="tabDraft" role="tabpanel" hidden>
+        <div class="t">本机未保存的编辑<span class="sp"></span><button class="btn sm gh" id="clearDrafts">清空</button></div>
+        <div class="list compact" id="drafts" role="group" aria-label="本机未保存的编辑"></div>
+      </div>
     </section>
   </div>
 
@@ -185,7 +196,17 @@
       <button class="btn sm" id="pvDl">下载原件</button>
     </div>
     <div class="pv" id="pvBody">
-      <div class="empty">上传分单后显示票面。</div>
+      <!-- 三层浮层各有各的生命周期，混在一层里就会互相擦掉：
+           pvAnchors 常驻（未确认红旗在票面上的出处，确认一条当场少一个），
+           pvHover 跟着指针（移开就清，不许顺手把定位框也清了），
+           pvBoxes 是点字段名那一次的定位高亮（1.3 秒自己没）。
+           三层都盖在 #pvPages 这个舞台上，框的位置按页图实测矩形换算，多页 stacked 也落在正确那一页。 -->
+      <div class="pvstage" id="pvStage">
+        <div class="pvpages" id="pvPages"><div class="empty">上传分单后显示票面。</div></div>
+        <div class="lyr" id="pvAnchors" aria-hidden="true"></div>
+        <div class="lyr" id="pvHover" aria-hidden="true"></div>
+        <div class="lyr" id="pvBoxes" aria-hidden="true"></div>
+      </div>
     </div>
   </section>
 

@@ -60,6 +60,12 @@ const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts",
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
+/* 分段核对流的界面态：不属于任何一张票，也不落盘。
+   FOLD = 折了哪几段（折不折是看板的偏好，换票不该重来）；
+   DESK.onlyTodo = 只看待核对；DESK.armed = 提交那颗按钮武装了没有。 */
+const FOLD = new Set();
+const DESK = {onlyTodo:false, armed:false};
+const RAILTAB = {cur:"queue"};
 /* MV = 「主单」视图：公司主单检索 → 自动解析（L1 原文 / 36 列可编辑 / 红旗）→ 人工确认后
    按 mawb3 提交发送回公司。它不是分单票据：字段面、红旗判据、提交接口都是主单那一套。 */
 let MV = null;
@@ -245,15 +251,20 @@ function drafts(){ try { return JSON.parse(localStorage.getItem(LS.draft) || "{}
 function saveDraft(t){
   if (!t.stem) return;
   const d = drafts();
+  /* ackE（哪些空栏人确认过「本就为空」）与 todoBase（进度分母那份快照）都要跟着存：
+     只存 airE 的话，刷新一次确认全丢、进度从"核到一半"退回 0/0——那正是最该留住的两样。 */
   d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
-               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], submitted:t.submitted};
+               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], ackE:t.ackE || [],
+               todoBase:t.todoBase, submitted:t.submitted};
   localStorage.setItem(LS.draft, JSON.stringify(d));
 }
 function loadDraft(stem){
   const d = drafts()[stem]; if (!d) return null;
   return {file:null, filename:d.filename || d.stem, stem:d.stem, state:"done", restored:true,
           channel:d.channel, elapsed:d.elapsed, qc:d.qc, raw:d.raw || {}, air:d.air || {},
-          airE:d.airE || {}, ackF:d.ackF || [], submitted:d.submitted || null};
+          airE:d.airE || {}, ackF:d.ackF || [], ackE:d.ackE || [],
+          todoBase:typeof d.todoBase === "number" ? d.todoBase : null,
+          submitted:d.submitted || null};
 }
 
 /* ── 票据模型：页面只展示/编辑航空口径，原文口径留在数据里做保真追溯 ──────── */
@@ -282,6 +293,7 @@ function payloadFor(t, who){
     reviewer: who, reviewed_at: nowTxt(),
     needs_review: effectiveFlags(t).length > 0, flags: effectiveFlags(t),
     acked_flags: (t.ackF || []).slice(),
+    acked_empty: (t.ackE || []).slice(),
     edited_fields: editedList(t),
     raw_original: t.raw, air_original: t.air,
     air_reviewed: reviewed(t),
@@ -303,7 +315,15 @@ function releasePreview(){
   for (const u of (PREVIEW.pages || [])) URL.revokeObjectURL(u);
   PREVIEW.pages = null;
 }
-function pvBody(html){ $("#pvBody").innerHTML = html; }
+function pvBody(html){
+  /* 舞台与三层浮层是 index.html 里的常驻节点：以前这里直接换 #pvBody 的 innerHTML，
+     现在只换内容那一格——不然每画一次票面就把锚点/悬停/定位三层各自的框一起删掉，
+     移开鼠标会把刚点出来的定位框也擦走（三层各管一件事的理由就在这）。 */
+  $("#pvPages").innerHTML = html;
+  drawAnchors();
+  hoverField("");
+  $("#pvBoxes").innerHTML = "";
+}
 function applyZoom(){
   const imgs = [...document.querySelectorAll("#pvBody img")];
   if (!imgs.length) return;
@@ -314,6 +334,8 @@ function applyZoom(){
   $("#pvZoomTxt").textContent = PREVIEW.zoom + "%";
   box.classList.toggle("pannable",
     L.canPan(box.scrollWidth, box.clientWidth) || L.canPan(box.scrollHeight, box.clientHeight));
+  drawAnchors();          // 倍率一变，锚点/悬停那些按像素画的框就要照着新矩形重摆（不清就会飘在旧位置上）
+  hoverField(HOVER.k);
   if (PREVIEW.mode !== "pages") return;
   const pct = L.wholePagePct(im.naturalWidth, im.naturalHeight, box.clientWidth, box.clientHeight);
   const btn = $("#pvPage");
@@ -578,6 +600,81 @@ function fieldValCandidates(t, k){
   }
   return out;
 }
+/* ── 票面三层：常驻锚点 / 悬停出处 / 点字段那一次的定位框 ─────────────────────
+   三层各有各的寿命，混在一层里就会互相擦掉：移开鼠标把刚点出来的定位框一起清掉，
+   或者定位完留下一屏没人清的悬停框。坐标一律按"那一页现在实际占的矩形"换算：
+   票面能放大能拖，写死百分比就在放大那天跑到别处（bbox 本身是每轴归一到 0-1000）。 */
+function pageImg(p){
+  const imgs = [...document.querySelectorAll("#pvPages img")];
+  if (!imgs.length) return null;
+  if (LOC.on) return (p || 1) === LOC.page ? imgs[0] : null;   // 定位模式一次只看一页
+  return imgs[(p || 1) - 1] || null;
+}
+function lyrHtml(ls, cls, tip){
+  const stage = $("#pvStage");
+  if (!stage) return "";
+  const sr = stage.getBoundingClientRect();
+  const title = (tip || {}).title || "";
+  return (ls || []).map(l => {
+    const im = pageImg(l.page || 1);
+    if (!im || !Array.isArray(l.bbox) || l.bbox.length !== 4) return "";
+    /* 用矩形差而不是 offsetLeft：页面图外面还套着定位模式那一层 .page（它是 relative），
+       offsetLeft 会算在那一层上，而浮层的坐标系是舞台。两个 rect 同进同退，差值与滚动无关。 */
+    const r = im.getBoundingClientRect();
+    const [x1, y1, x2, y2] = l.bbox;
+    return `<div class="${cls}" title="${esc((title ? title + " · " : "") + l.text)}" `
+      + `style="left:${Math.round(r.left - sr.left + r.width * x1 / 1000)}px;`
+      + `top:${Math.round(r.top - sr.top + r.height * y1 / 1000)}px;`
+      + `width:${Math.max(6, Math.round(r.width * (x2 - x1) / 1000))}px;`
+      + `height:${Math.max(5, Math.round(r.height * (y2 - y1) / 1000))}px"></div>`;
+  }).join("");
+}
+/* 常驻锚点只给"票面印了、模型没取"的那一格（未确认红旗）：出处先取 fidelity.sources，
+   没有就从红旗文案里那个 值='…' 回查转录行。两条都找不到就不画——
+   猜出来的框比不画更坏，它会让人以为这个位置已经核对过（空栏在真实数据里本来就没出处）。 */
+function drawAnchors(){
+  const el = $("#pvAnchors"); if (!el) return;
+  el.innerHTML = "";
+  const t = current();
+  if (!t || MV) return;
+  if (!t.ll || !(t.ll.lines || []).length){
+    /* 从今日台账/主单侧点开的那张票手上没有转录（只有本次会话解析过的才有）：
+       去 /layout 补一次，回来再画。补不到就当没有——锚点宁可不画也不猜（在途 Promise 由 layoutFor 去重）。 */
+    if (t.stem) layoutFor(t).then(ls => { if (ls && current() === t) drawAnchors(); });
+    return;
+  }
+  const lines = t.ll.lines;
+  const src = ((t.qc || {}).fidelity || {}).sources || {};
+  const leftMap = flagsByField({flags: effectiveFlags(t)}).map;
+  let html = "";
+  for (const k of KEYS){
+    for (const f of (leftMap[k] || [])){
+      html += lyrHtml((L.anchorLines(src, lines, f)[k] || []), "anchor hard",
+                      {title: k + " 红旗出处"});
+    }
+  }
+  el.innerHTML = html;
+}
+/* 悬停：指针进哪一行，就把那一格的转录出处轻轻框出来。只写 hover 那一层，
+   并且只认盘上已有的转录——悬停是"顺手一看"，不该为它发请求。 */
+const HOVER = {k: ""};
+function hoverField(k){
+  const el = $("#pvHover"); if (!el) return;
+  HOVER.k = k || "";
+  el.innerHTML = "";
+  const t = current();
+  if (!k || !t || MV || !t.ll) return;
+  el.innerHTML = lyrHtml(hoverLines(t, k), "hbox");
+}
+function hoverLines(t, k){
+  const ls = (t.ll && t.ll.lines) || [];
+  for (const c of fieldValCandidates(t, k)){
+    const hit = matchLines(c, ls);
+    if (hit.length) return hit;
+  }
+  const src = (((t.qc || {}).fidelity) || {}).sources || {};
+  return (src[k] || []).map(i => ls.find(l => l.i === i)).filter(Boolean);
+}
 /* 转录来源：本次会话提取的用响应里的 t.ll；本机未保存的编辑载入的从服务端 /layout 取（要归档过才有）。
    在途 Promise 挂在票上共享：连点两个字段时第二个别再发一遍请求、也不会误判"无转录"。 */
 async function layoutFor(t){
@@ -635,17 +732,17 @@ async function showLocPage(page, seq){
         <span class="sub">按页渲染读的是归档原件：这台机器上没有它，重传一次就有。</span></div>`); return; }
   }
   if (seq !== _pvSeq) return;                 // 期间又点了别的字段/票，这份丢掉
-  const boxes = LOC.hits.filter(l => (l.page || 1) === LOC.page).map(l => {
-    const [x1, y1, x2, y2] = l.bbox;
-    return `<div class="bbox" title="${esc(l.text)}" style="left:${x1 / 10}%;top:${y1 / 10}%;` +
-      `width:${Math.max(x2 - x1, 10) / 10}%;height:${Math.max(y2 - y1, 10) / 10}%"></div>`;
-  }).join("");
-  pvBody(`<div class="page" id="pvPageBox"><img id="pvImg" src="${src}" alt="票面第 ${LOC.page} 页"><div class="lyr">${boxes}</div></div>`);
+  pvBody(`<div class="page" id="pvPageBox"><img id="pvImg" src="${src}" alt="票面第 ${LOC.page} 页"></div>`);
+  drawLocBoxes();
   $("#pvLocPage").textContent = "第 " + LOC.page + "/" + LOC.pages + " 页";
   $("#pvLocPrev").disabled = LOC.page <= 1;
   $("#pvLocNext").disabled = LOC.page >= LOC.pages;
   const im = $("#pvImg");
   if (im.complete && im.naturalWidth) locFit(); else im.onload = locFit;
+}
+/* 定位框只写定位那一层：放大/换页之后要照着新的矩形重画一遍，不然框还停在放大前的位置。 */
+function drawLocBoxes(){
+  $("#pvBoxes").innerHTML = lyrHtml(LOC.hits.filter(l => (l.page || 1) === LOC.page), "bbox");
 }
 /* 点字段后放不放大、放多大是各人的手感（2026-10-09 用户要的选择权）：只存这台浏览器，
    不该由谁替同事定。默认 auto 就是这功能上线以来的行为。 */
@@ -673,20 +770,26 @@ function locCapPct(){
 function locFit(){
   const im = $("#pvImg"), page = $("#pvPageBox"), pane = $("#pvBody");
   if (!im || !page || !im.naturalHeight) return;
-  const first = page.querySelector(".bbox");
-  const bh100 = first ? im.naturalHeight * parseFloat(first.style.height) / 100 : 0;   // 100% 宽时该行的高（px）
+  /* 那一行放到 100% 宽时有多高：bbox 每轴各自归一到 0-1000，(y2-y1)/1000 就是它占整页高的份额。
+     从前是回头读第一个框的 inline height（那时是百分比），框改成按像素画之后那个数自己会跟着倍率变，
+     再读它就是拿放大后的高度去算放大倍数。 */
+  const hit = LOC.hits.filter(l => (l.page || 1) === LOC.page)[0];
+  const frac = hit ? Math.max((hit.bbox[3] - hit.bbox[2]) / 1000, 0.004) : 0;
+  const bh100 = frac * (im.naturalHeight / im.naturalWidth) * pane.clientWidth;   // 100% 宽时该行的高（px）
   const p = zoomPref();
   const cap = L.maxZoomPct(im.naturalWidth, pane.clientWidth);
   const z = L.locateZoom(p.mode, p.pct, L.autoZoomPct(pane.clientHeight, bh100), cap);
   $("#pvLocPct").max = cap;      // 上限先摆在框子上，别等人填了 9999 才告诉他会被收
   page.style.width = (z || 100) + "%";
+  drawLocBoxes();                // 宽度刚变过：框要照着新的矩形重画，不然还停在放大前的位置
+  const first = $("#pvBoxes").querySelector(".bbox");
   if (first){
-    const pr = page.getBoundingClientRect(), fr = first.getBoundingClientRect(), br = pane.getBoundingClientRect();
+    const fr = first.getBoundingClientRect(), br = pane.getBoundingClientRect();
     /* 巡航用 scrollTo：一次调用同时给两个方向，浏览器自己合成一段滚动。
        不给 #pvBody 写 scroll-behavior:smooth——installPan 每次 pointermove 都在改 scrollLeft/Top，
        那会让"按住拖动"变成果冻。设了系统"减少动态效果"就直给，不滚。 */
-    pane.scrollTo({left: pane.scrollLeft + (fr.left + fr.width / 2) - (pr.left + br.width / 2),
-                   top: pane.scrollTop + (fr.top + fr.height / 2) - (pr.top + br.height / 2),
+    pane.scrollTo({left: pane.scrollLeft + (fr.left + fr.width / 2) - (br.left + br.width / 2),
+                   top: pane.scrollTop + (fr.top + fr.height / 2) - (br.top + br.height / 2),
                    behavior: matchMedia("(prefers-reduced-motion:reduce)").matches ? "auto" : "smooth"});
   }
 }
@@ -856,7 +959,8 @@ async function runQueue(){
     try{
       const j = await extract(t);
       Object.assign(t, {state:"done", stem:j.stem, channel:j.channel, elapsed:j.elapsed,
-                        qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ll:j.transcript || null});
+                        qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ackE:[],
+                        todoBase:null, ll:j.transcript || null});
       if (S.sel === t.filename) S.sel = t.stem;
       saveDraft(t);
       hintLocate();          // 第一次解析成功时提一次「点字段名能定位」，之后不再啰嗦
@@ -995,6 +1099,7 @@ function render(){
   const done = S.tickets.filter(t => t.state === "done").length;
   const rev = S.tickets.filter(t => effectiveFlags(t).length).length;
   $("#cnt").textContent = S.tickets.length + " 票 · 已解析 " + done + (rev ? " · 需复核 " + rev : "");
+  const nq = $("#tabQueueN"); if (nq) nq.textContent = rev ? " " + rev : "";   // 页签上的数字＝还要复核几票
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
     const [c, label] = statusOf(t), n = editedList(t).length;
     const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
@@ -1061,6 +1166,18 @@ function renderDrafts(){
       <span class="nm">${esc(k)}<br><span class="m">${esc(t.savedAt || "")} · 改 ${n} 项 · 未提交</span></span>
       <span class="st">载入</span></button>`;
   }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功后仍可在此回看。</div>`;
+  const nb = $("#tabDraftN"); if (nb) nb.textContent = keys.length ? " " + keys.length : "";
+}
+/* 左栏三页签（队列 / 主单检索 / 未保存的编辑）：从前这三张卡竖着堆，要看下面那张得先把上面滚走，
+   而这三样本来就不同时用。页签只决定哪一块看得见，上传、检索、草稿的逻辑一行没动。 */
+function railTab(name){
+  RAILTAB.cur = name;
+  for (const k of ["queue", "mawb", "draft"]){
+    const cap = k[0].toUpperCase() + k.slice(1), on = k === name;
+    const pan = $("#tab" + cap), btn = $("#railTab" + cap);
+    if (pan) pan.hidden = !on;
+    if (btn) btn.setAttribute("aria-selected", String(on));   // 读屏器靠它念"当前在哪一页"
+  }
 }
 function control(t, k){
   const v = airVal(t, k);
@@ -1070,8 +1187,24 @@ function control(t, k){
   return `<textarea data-k="${k}" rows="1"${one}` + (NUM[k] ? ` inputmode="decimal"` : "") + `>${esc(v)}</textarea>`;
 }
 /* 单行那些换成了 textarea，就得把回车挡住：这个值原样写进公司系统，换行混进 MAWB 号或件重
-   就是脏数据，而且在单行框里换行看不见（改完的人以为只有一行）。 */
-function blockEnter(e){ if (e.key === "Enter" && e.target.classList.contains("one")) e.preventDefault(); }
+   就是脏数据，而且在单行框里换行看不见（改完的人以为只有一行）。
+   回车另外兼一件事：跳到下一个待办——核对是一格一格走的，手不该离开键盘。
+   Shift+Enter 留给出真要换行的那一格；回车绝不提交：提交不可逆，只能点按钮那一下。 */
+function blockEnter(e){
+  if (e.key !== "Enter" || e.shiftKey) return;
+  if (!e.target.classList.contains("one")) return;      // 长文本那几格：回车就是换行
+  e.preventDefault();
+  const k = e.target.dataset.k;
+  if (!k) return;                                        // 主单表（data-mk）那一套待办口径不同，不接
+  const t = current(); if (!t) return;
+  const st = L.fieldStatus({flags: 0, acked: false, raw: txt(t.raw, k), air: airVal(t, k)});
+  if (st.s === "empty"){                                 // 回车=「这一格我看过了」：空着的就顺手确认掉
+    t.ackE = t.ackE || [];
+    if (!t.ackE.includes(k)) t.ackE.push(k);
+  }
+  saveDraft(t);
+  gotoNextTodo(t, k);
+}
 /* 长文本框高度跟着内容走：以前按 "\n" 数行数，收发货人整串是一整段没有换行，
    再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。 */
 function autoGrow(el){
@@ -1135,7 +1268,7 @@ function syncFhReset(){
   document.querySelectorAll(".fhslot").forEach(el => { el.innerHTML = html; });
 }
 function gripColHtml(){
-  return '<div class="grip" id="gripCol" role="separator" aria-orientation="vertical" tabindex="0" '
+  return '<div class="grip gripCol" role="separator" aria-orientation="vertical" tabindex="0" '
     + 'title="按住左右拖：调字段名列的宽窄，整列一起变（方向键同样可以）"></div>';
 }
 /* 值格右边界那道：用户 2026-10-09 明确要"单纯地改变文本框的宽度"，别让他去找页面上别的把手。
@@ -1152,18 +1285,116 @@ function resetFieldHeights(){
   render();
   toast(n ? `已恢复 ${n} 列的框高为自动` : "没有自定义过的框高", "ok");
 }
-function statusCell(t, k, fl){
-  const l2 = txt(t.raw, k), l3 = airVal(t, k);
-  const ck = checks(k, l2, l3);
-  let head = "";
-  if (fl.length) head = `<span class="badge warn">红旗 ${fl.length}</span>`;
-  else if (!l2.trim() && !l3.trim()) head = `<span class="badge">字段为空</span>`;
-  else if (!l3.trim()) head = `<span class="badge miss">航空口径空</span>`;
-  else head = `<span class="badge same">已归一</span>`;
+/* 一列的六态（口径全在 logic.js 的 fieldStatus 里，这里只负责把它喂对）。
+   flags 给的是"这一列红旗总数（含人已确认的）"，acked 给的是"该确认的都确认了"：
+   补好的缺号那类自己消掉的旗不算 acked——没人确认过它，不该显示成「已确认」，更不该配一颗撤回。 */
+function fieldRows(t, ef){
+  const all = flagsByField(t.qc).map, left = flagsByField({flags: ef || effectiveFlags(t)}).map;
+  const ackF = t.ackF || [];
+  return FIELDS.map(([k, lab, g]) => {
+    const list = all[k] || [], remain = (left[k] || []).length;
+    const manual = list.filter(f => ackF.includes(f)).length;
+    const hasFlag = remain + manual;
+    /* 输入原样留在行上（flags/acked/raw/air）：logic.js 那套 todoOf/progress 是拿同一批输入重算的，
+       只带一个算完的 st 进去，它会把这些行统统当成"空值待办"——进度分母当场变成 38（浏览器里量出来的）。 */
+    const o = {k, lab, g, flags: hasFlag,
+               acked: hasFlag ? remain === 0 && manual > 0 : (t.ackE || []).includes(k),
+               raw: txt(t.raw, k), air: airVal(t, k)};
+    o.st = L.fieldStatus(o);
+    return o;
+  });
+}
+const BADGE_CLS = {flag: "warn", confirmed: "conf", empty: "emptyb", emptyok: "conf", miss: "miss", same: "same"};
+function rowCls(r, t){
+  const s = r.st.s;
+  return s === "flag" ? "flag" : s === "empty" ? "emptyrow"
+       : s === "confirmed" || s === "emptyok" ? "acked"
+       : s === "miss" ? "missrow" : (r.k in t.airE) ? "edited" : "";
+}
+/* 段头是"本段核到什么程度"，粘在自己那张表的 thead 里（<tr> 上写 sticky 粘不住，包含块就是那一行）。
+   红旗段比空值段重：两处都有事时段头保持红，不许被抹平成琥珀。 */
+function segHeadHtml(seg){
+  const warn = seg.hard ? `<span class="sflag">⚑ ${seg.hard} 处红旗要核票面</span>`
+             : seg.soft ? `<span class="ssoft">${seg.soft} 个空栏待确认</span>`
+             : `<span class="sok">✓ 本段已清</span>`;
+  const folded = FOLD.has(seg.g);
+  return `<tr class="grp ${seg.state}">`
+    + `<th class="kcol"><span class="in"><button class="fold" type="button" data-fold="${seg.g}"`
+    + ` aria-expanded="${!folded}" title="折叠/展开这一段">${folded ? "▸" : "▾"}</button>`
+    + `<span class="gn">${esc(GROUPS[seg.g] || seg.g)}</span>${gripColHtml()}</span></th>`
+    + `<th><span class="in"><span class="cnt">${seg.cleared}/${seg.tot}</span>${warn}</span></th>`
+    + `<th class="scol">` + (seg.todo ? `<button class="btn sm" type="button" data-gack="${seg.g}"`
+        + ` title="这一段里的红旗与空栏都逐条对照票面看过了 → 一次点完（留痕与逐条点完全一样）">整段核对 ${seg.todo} 项</button>` : "")
+    + `</th></tr>`;
+}
+function statusCell(t, r){
+  const k = r.k, s = r.st.s;
+  const ck = checks(k, r.raw, r.air);
+  const acts = [];
+  if (s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与上方逐条确认同一个留痕）">红旗已核</button>`);
+  else if (s === "confirmed") acts.push(`<button class="btn sm gh" type="button" data-unackf="${esc(k)}" title="撤回：这一列的红旗回到待办">撤回</button>`);
+  if (s === "empty") acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
+  else if (s === "emptyok") acts.push(`<button class="btn sm gh" type="button" data-une="${esc(k)}" title="撤回：这一格回到待办">撤回</button>`);
   const edits = (k in t.airE) ? `<div class="note"><span class="e">已改</span>
       <button type="button" class="rs" data-restore="${esc(k)}">还原</button></div>` : "";
   const notes = ck.slice(0, 3).map(x => `<div class="note"><span class="${x[1] === "bad" ? "b" : "q"}">${esc(x[0])}</span></div>`).join("");
-  return head + edits + notes;
+  return `<span class="badge ${BADGE_CLS[s]}">${esc(r.st.label)}</span>`
+    + (acts.length ? `<div class="acts">${acts.join("")}</div>` : "") + edits + notes;
+}
+function fieldRowHtml(t, r, hide){
+  return `<tr id="f-${r.k}" class="${rowCls(r, t)}" data-hov="${r.k}" data-todo="${r.st.todo ? 1 : 0}"${hide ? " hidden" : ""}>
+      <td class="k loc"><button type="button" class="kbtn" data-jump-field="${r.k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(r.lab)}</span><span class="ky">${esc(r.k)}</span></button></td>
+      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air">${control(t, r.k)}${edgeGripHtml()}</td>
+      <td class="s" data-st="${r.k}">${statusCell(t, r)}</td></tr>`;
+}
+/* 三态提交按钮。红旗那一档与"跳过空栏"是两件事，界面上不许混成一颗按钮：
+   红＝还有未确认红旗（点了只跳到第一处，绝不发送；服务端同一道硬门，绕不过去），
+   琥珀＝红旗清完了但还有空栏没人确认（点第一下只是武装，再点才发，跳过的列进台账），
+   绿＝没有待办。外部交接稿那句"强制提交跳过 N 项"从来不该作用于红旗，这里也没让它作用。
+   只有一张模板：整页只留一份提交按钮的 id，写两处事件就只会绑上第一个。 */
+function drawSubmitBtn(t, ef, n){
+  let cls = "okGo", txt = "提交本票", tip = "没有待办了：这一票可以回传公司";
+  if (ef.length){ cls = "badGo"; txt = "还有 " + ef.length + " 个红旗未确认";
+    tip = "还有未确认的红旗：这一颗只会带你跳到第一处，不发送"; }
+  else if (n && DESK.armed){ cls = "badGo"; txt = "再按一次：跳过 " + n + " 个空栏提交";
+    tip = "再点一次就真的发给公司：这 " + n + " 个空栏没人确认过，提交时按 skipped_empty 逐列留痕"; }
+  else if (n){ cls = "warnGo"; txt = "仍有 " + n + " 项待核对";
+    tip = "点了不直接发送：先武装一次，再点才发。有未确认红旗时这一档根本不出现"; }
+  return `<button class="btn ${cls}" id="submit" type="button" title="${esc(tip)}">${txt}</button>`;
+}
+function drawSubmitCtl(t){
+  const old = $("#submit"); if (!old) return;
+  const ef = effectiveFlags(t), rows = fieldRows(t, ef);
+  const tmp = document.createElement("div");
+  tmp.innerHTML = drawSubmitBtn(t, ef, L.todoOf(rows).n);
+  old.replaceWith(tmp.firstChild);
+  $("#submit").addEventListener("click", () => submitClick(t));
+}
+/* 二次确认做在按钮上，不另立禁令：第一下只把自己变红并记下"武装了"，2.4 秒不点就收回去。
+   与作废、彻底删同一规矩——第一下不发请求。 */
+function armSubmit(t){
+  DESK.armed = true;
+  const n = L.todoOf(fieldRows(t, effectiveFlags(t))).n;
+  drawSubmitCtl(t);
+  toast("再点一次就提交这 " + n + " 个空栏（没人确认过的会逐列记进台账）。红旗不在这一档里：它必须一条一条确认", "");
+  clearTimeout(armSubmit.timer);
+  armSubmit.timer = setTimeout(() => { DESK.armed = false; drawSubmitCtl(t); }, 2400);
+}
+function submitClick(t){
+  const ef = effectiveFlags(t), rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  if (ef.length){
+    const k = firstFlagKey(t, ef);
+    if (k) jumpToField(t, k);
+    toast("还有 " + ef.length + " 个红旗未确认：" + (k ? "已跳到第一处，对着票面核完再回来点确认" : "本票红旗没指到具体字段，逐条对照票面看") + "。这一颗不会替你发送", "bad");
+    return;
+  }
+  if (todo.n && !DESK.armed){ armSubmit(t); return; }
+  DESK.armed = false;
+  submitTicket(t);
+}
+function firstFlagKey(t, ef){
+  const map = flagsByField({flags: ef || effectiveFlags(t)}).map;
+  return KEYS.find(k => (map[k] || []).length) || "";
 }
 function renderMain(){
   const el = $("#main"), t = current();
@@ -1276,30 +1507,49 @@ function renderMain(){
     $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
   }
-  const ef = effectiveFlags(t);
-  const fm = flagsByField({flags: ef}), [c, label] = statusOf(t);
-  const chips = ef.map(f => {
+  const ef = effectiveFlags(t), [c, label] = statusOf(t);
+  /* 重画一次就收回"武装"那一下：提交按钮的红态只代表"这最后一次点击会真的发送"，
+     中间人又点了别的（确认、改值、换票）就等于改了主意，不该还留着。 */
+  DESK.armed = false;
+  const rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  /* 进度分母＝刚进这张票时抓的那份待办快照。拿 38 列当分母，一眼看去全是"完成度 58%"的假象
+     （22 列本来就没印）；0/0 是 100%，不是 NaN。 */
+  if (t.todoBase == null) t.todoBase = todo.n;
+  const hard = {}, soft = {};
+  for (const r of rows){ if (r.st.s === "flag") hard[r.k] = 1; if (r.st.s === "empty") soft[r.k] = 1; }
+  const segs = L.segState(rows, hard, soft);
+  const pr = L.progress(t.todoBase, todo.n);
+  const nSoft = rows.filter(r => r.st.s === "empty").length;
+  const ackF = t.ackF || [];
+  const fid = t.qc && t.qc.fidelity;
+  /* chip 里两个动作各一个按钮：跳转（对字段）与确认（对这条提示）。
+     从前是 span 套 button，点哪儿都算跳转，确认要 stopPropagation 才不被带着走。
+     确认过的也留在这一排（灰底 + 一颗撤回）：人确认过什么，界面上就该看得见什么。 */
+  const chipOne = f => {
     const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
                               f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
-    const hard = f.startsWith("保真") || f.includes("缺失");
-    /* chip 里两个动作各一个按钮：跳转（对字段）与确认（对这条提示）。
-       从前是 span 套 button，点哪儿都算跳转，确认要 stopPropagation 才不被带着走。 */
-    const chip = `<span class="chip ${hard ? "bad" : "warn"}">` +
+    const done = ackF.includes(f), isHard = f.startsWith("保真") || f.includes("缺失");
+    return `<span class="chip ${done ? "done" : isHard ? "bad" : "warn"}">` +
       (k ? `<button type="button" class="chipb" data-jump="${k}" title="点击：跳到并高亮这个字段">${esc(f)}</button>`
          : `<span class="chipx">${esc(f)}</span>`) +
-      `<button class="ackb" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button></span>`;
-    return chip;
+      (done ? `<button class="ackb" type="button" data-unack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
+            : `<button class="ackb" type="button" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) +
+      "</span>";
+  };
+  const chips = ef.map(chipOne).join("") +
+    ((((t.qc || {}).flags) || []).filter(f => ackF.includes(f))).map(chipOne).join("");
+  const byG = {};
+  for (const r of rows) (byG[r.g] = byG[r.g] || []).push(r);
+  const segHtml = segs.map(seg => {
+    const fs = byG[seg.g] || [], folded = FOLD.has(seg.g);
+    /* 每段一张表：段头只有在自己那张表的 thead 里才粘得住（<tr> 上写 sticky 是假的，包含块就是那一行）；
+       列宽由 colgroup 给（fixed 表格只认列定义，写在 td 上不生效——这两条都是浏览器里量出来的）。 */
+    const body = folded ? `<tr class="foldrow"><td colspan="3">${seg.tot} 列折叠中：点段头的 ▸ 展开看值</td></tr>`
+      : fs.map(r => fieldRowHtml(t, r, DESK.onlyTodo && !r.st.todo && !(r.k in t.airE))).join("");
+    return `<table class="gt" id="gt-${seg.g}"${DESK.onlyTodo && !seg.todo ? " hidden" : ""}>`
+      + `<colgroup><col class="kcol"><col class="vcol"><col class="scol"></colgroup>`
+      + `<thead>${segHeadHtml(seg)}</thead><tbody>${body}</tbody></table>`;
   }).join("");
-  let rows = "", last = "";
-  for (const [k, lab, g] of FIELDS){
-    if (g !== last){ rows += `<tr class="grp"><td colspan="3">${GROUPS[g]}</td></tr>`; last = g; }
-    const fl = fm.map[k] || [];
-    rows += `<tr id="f-${k}" class="${fl.length ? "flag" : ""}">
-      <td class="k loc"><button type="button" class="kbtn" data-jump-field="${k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(lab)}</span><span class="ky">${esc(k)}</span></button></td>
-      <td class="c v" data-cell="air">${control(t, k)}${edgeGripHtml()}</td>
-      <td class="s" data-st="${k}">${statusCell(t, k, fl)}</td></tr>`;
-  }
-  const fid = t.qc && t.qc.fidelity;
   el.classList.add("has-todo");
   el.innerHTML = `
     <div class="hd">
@@ -1311,21 +1561,22 @@ function renderMain(){
     </div>
     <div class="todo">
       <span class="lbl">待办</span>
-      <span class="hint" id="editedHint">${esc(todoText(t, ef))}</span>
-      <button class="btn sm" id="jumpFirst" type="button">跳到首个红旗字段</button>
-      <label><input type="checkbox" id="onlyFlag"> 只看有红旗 / 空值的字段</label>
+      <button class="t-flag" type="button" data-jump-first="flag" id="cFlag">红旗 ${ef.length}</button>
+      <button class="t-soft" type="button" data-jump-first="empty" id="cEmpty">空值 ${nSoft}</button>
+      <span class="t-edit" id="cEdit">已改 ${Object.keys(t.airE).length}</span>
+      <button class="btn sm" id="jumpFirst" type="button">跳到首个待办</button>
+      <label><input type="checkbox" id="onlyTodo"${DESK.onlyTodo ? " checked" : ""}> 只看待核对</label>
+      <span class="bar" aria-hidden="true"><i id="barFill"></i></span>
+      <span class="t-mut" id="progTxt">${pr.done}/${pr.total}</span>
       <span class="fhslot">${fhResetHtml()}</span>
       <span class="sp"></span>
-      <span class="hint">点字段名 → 定位票面</span>
+      <span class="hint" title="中列就是航空口径 L3（可直接改）；指针停在一行上，左边票面会框出它的转录出处；点字段名定位并放大；回车跳下一个待办（Shift+Enter 才是换行）">点字段名＝定位 · 回车＝下一个</span>
     </div>
     ${chips ? `<div class="chips">${chips}</div>` : ""}
-    <table><thead><tr>
-      <th class="kcol">字段${gripColHtml()}</th><th class="g">航空口径 L3 · 已归一（可改）</th>
-      <th class="num scol">状态</th>
-    </tr></thead><tbody>${rows}</tbody></table>
+    ${segHtml}
     <div class="ft bottom">
       <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
-      <button class="btn pri" id="submit">提交本票</button>
+      ${drawSubmitBtn(t, ef, todo.n)}
       <button class="btn" id="expOne">导出本票 JSON</button>
       <button class="btn" id="expAll">导出全部已解析</button>
       <span class="sp"></span>
@@ -1336,6 +1587,8 @@ function renderMain(){
   wireMain(t);
   measureChrome();
   $("#main").querySelectorAll("textarea").forEach(autoGrow);
+  $("#barFill").style.width = pr.pct + "%";    // 宽度只能在这儿写：模板里不许出现内联样式（守卫盯着）
+  drawAnchors();                                // 确认一条红旗，票面上那个常驻锚点就要当场没
 }
 /* 吸顶高度是量出来的，不是抄下来的：顶栏在 1020-1460px 会折成两排、待办条会随红旗多少换行，
    写死一次就在折行那天压住第一行字段（--todoH 有过这个教训，--hdh 从前干脆只是个静态令牌）。
@@ -1350,20 +1603,62 @@ if (window.ResizeObserver){
   ro.observe($(".hdr"));
   ro.observe($("#main"));        // 待办条是渲染出来的、节点会换，观察整栏：内容一改高度就重算
 }
-function todoText(t, ef){
-  const empt = FIELDS.filter(x => !String(airVal(t, x[0]) || "").trim()).length;
-  return `红旗 ${ef.length} · 空值 ${empt} · 已改 ${editedList(t).length}`;
+function setTxt(sel, s){ const el = $(sel); if (el) el.textContent = s; }
+/* 待办条、五段段头、提交按钮：这三处都是"数一数还剩什么"，改一格就要一起重算。
+   只换 these 三块的innerHTML，绝不重建行（行里有正在编辑的 textarea：重建就丢焦点、打断输入法）。 */
+function refreshChrome(t){
+  const ef = effectiveFlags(t), rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  const hard = {}, soft = {};
+  for (const r of rows){ if (r.st.s === "flag") hard[r.k] = 1; if (r.st.s === "empty") soft[r.k] = 1; }
+  for (const seg of L.segState(rows, hard, soft)){
+    const th = $("#gt-" + seg.g + " thead"); if (th) th.innerHTML = segHeadHtml(seg);
+  }
+  const pr = L.progress(t.todoBase == null ? todo.n : t.todoBase, todo.n);
+  setTxt("#cFlag", "红旗 " + ef.length);
+  setTxt("#cEmpty", "空值 " + rows.filter(r => r.st.s === "empty").length);
+  setTxt("#cEdit", "已改 " + Object.keys(t.airE).length);
+  setTxt("#progTxt", pr.done + "/" + pr.total);
+  const bar = $("#barFill"); if (bar) bar.style.width = pr.pct + "%";
+  drawSubmitCtl(t);
 }
 function refreshRow(t, k){
-  const tr = $("#f-" + CSS.escape(k)); if (!tr) return;
-  const ef = effectiveFlags(t);
-  const fl = flagsByField({flags: ef}).map[k] || [];
-  tr.querySelector("[data-st]").innerHTML = statusCell(t, k, fl);
-  tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
-  const hint = $("#editedHint");
-  if (hint) hint.textContent = todoText(t, ef);
+  const tr = $("#f-" + CSS.escape(k)), ef = effectiveFlags(t), rows = fieldRows(t, ef);
+  const r = rows.find(x => x.k === k);
+  if (tr && r){
+    tr.className = rowCls(r, t);
+    tr.dataset.todo = r.st.todo ? "1" : "0";
+    tr.querySelector("[data-st]").innerHTML = statusCell(t, r);
+    tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
+  }
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
   if (row) row.innerHTML = statusOf(t)[1] + (editedList(t).length ? `<br><span class="st-edited">改 ${editedList(t).length} 项</span>` : "");
+  refreshChrome(t);
+}
+/* 跳到某一列：段是折着的先展开，"只看待核对"会把目标挡掉就临时取消勾选，然后再滚过去闪一下。
+   这两处不清，跳过去的结果就是"点了没反应"——比不点更糟。 */
+function jumpToField(t, k){
+  if (!k) return false;
+  const g = (FIELDS.find(f => f[0] === k) || [])[2];
+  const r = fieldRows(t, effectiveFlags(t)).find(x => x.k === k);
+  const hidden = (g && FOLD.has(g)) || (DESK.onlyTodo && r && !r.st.todo && !(k in t.airE));
+  if (hidden){
+    FOLD.delete(g);
+    if (DESK.onlyTodo){ DESK.onlyTodo = false; const cb = $("#onlyTodo"); if (cb) cb.checked = false; }
+    render();
+  }
+  const tr = $("#f-" + CSS.escape(k)); if (!tr) return false;
+  tr.scrollIntoView({behavior:"smooth", block:"center"});
+  tr.classList.remove("hit");
+  void tr.offsetWidth;                 // 先重排一次：连着点同一个字段第二次也要真的闪
+  tr.classList.add("hit");
+  const inp = tr.querySelector("[data-k]"); if (inp) inp.focus();
+  return true;
+}
+function gotoNextTodo(t, from){
+  const ks = L.todoOf(fieldRows(t, effectiveFlags(t))).keys;
+  const k = L.nextTodo(ks, from);
+  if (!k){ toast("待办清零：可以提交了", "ok"); return; }
+  if (!jumpToField(t, k)) toast("这一列在别的段里，先展开才看得到", "bad");
 }
 function wireMain(t){
   /* 委托挂 #main（renderMain 每次换的是它的 innerHTML，节点不毁）：只接一次，
@@ -1375,6 +1670,13 @@ function wireMain(t){
       const t2 = current(); if (!t2) return;
       enterLocate(t2, b.dataset.jumpField);
     });
+    /* 悬停那一层也走委托：五段是五张表，逐个 tr 挂监听既容易漏又要每次重画都补一遍 */
+    $("#main").addEventListener("mouseover", e => {
+      const tr = e.target.closest("tr[data-hov]");
+      const k = tr ? tr.dataset.hov : "";
+      if (k !== HOVER.k) hoverField(k);
+    });
+    $("#main").addEventListener("mouseleave", () => hoverField(""));
   }
   $("#main").querySelectorAll("[data-k]").forEach(inp => {
     const apply = () => {
@@ -1390,13 +1692,7 @@ function wireMain(t){
     const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
   }));
   $("#main").querySelectorAll("[data-jump]").forEach(ch => ch.addEventListener("click", () => {
-    const k = ch.dataset.jump; if (!k) return;
-    const row = $("#f-" + CSS.escape(k)); if (!row) return;
-    row.scrollIntoView({behavior:"smooth", block:"center"});
-    row.classList.remove("hit");
-    void row.offsetWidth;             // 先重排一次：连着点同一个字段第二次也要真的闪
-    row.classList.add("hit");
-    const inp = row.querySelector("[data-k]"); if (inp) inp.focus();
+    const t2 = current(); if (t2) jumpToField(t2, ch.dataset.jump);
   }));
   $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
     const f = b.dataset.ack;
@@ -1405,23 +1701,64 @@ function wireMain(t){
     saveDraft(t); render();
     toast("已确认：" + f.slice(0, 40) + (f.length > 40 ? "…" : "") + "（提交时留痕进台账）", "ok");
   }));
+  /* 撤回确认：红旗回到待办、那一格重新变红。留痕能撤，人才敢点——
+     但不能"顺手全撤"：那等于把别人核对过的东西抹掉，所以只撤这一条。 */
+  $("#main").querySelectorAll("[data-unack]").forEach(b => b.addEventListener("click", () => {
+    t.ackF = (t.ackF || []).filter(f => f !== b.dataset.unack);
+    saveDraft(t); render();
+  }));
+  $("#main").querySelectorAll("[data-ackf]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.ackf, list = (flagsByField({flags: effectiveFlags(t)}).map[k] || []);
+    t.ackF = t.ackF || [];
+    list.forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); });
+    saveDraft(t); render();
+    toast("已确认「" + k + "」这一列的 " + list.length + " 条红旗（逐条留痕进台账，可撤回）", "ok");
+  }));
+  $("#main").querySelectorAll("[data-unackf]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.unackf, list = ((flagsByField(t.qc).map[k] || []));
+    t.ackF = (t.ackF || []).filter(f => !list.includes(f));
+    saveDraft(t); render();
+  }));
+  $("#main").querySelectorAll("[data-acke]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.acke;
+    t.ackE = t.ackE || [];
+    if (!t.ackE.includes(k)) t.ackE.push(k);
+    saveDraft(t); render();
+    toast("已确认「" + k + "」票面本来就没印（提交时按 acked_empty 留痕）", "ok");
+  }));
+  $("#main").querySelectorAll("[data-une]").forEach(b => b.addEventListener("click", () => {
+    t.ackE = (t.ackE || []).filter(x => x !== b.dataset.une);
+    saveDraft(t); render();
+  }));
+  $("#main").querySelectorAll("[data-fold]").forEach(b => b.addEventListener("click", () => {
+    const g = b.dataset.fold;
+    if (FOLD.has(g)) FOLD.delete(g); else FOLD.add(g);
+    render();
+  }));
+  $("#main").querySelectorAll("[data-gack]").forEach(b => b.addEventListener("click", () => {
+    const g = b.dataset.gack, rows = fieldRows(t, effectiveFlags(t)).filter(r => r.g === g);
+    const map = flagsByField({flags: effectiveFlags(t)}).map;
+    t.ackF = t.ackF || [];
+    rows.forEach(r => (map[r.k] || []).forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); }));
+    t.ackE = t.ackE || [];
+    rows.forEach(r => { if (r.st.s === "empty" && !t.ackE.includes(r.k)) t.ackE.push(r.k); });
+    saveDraft(t); render();
+    toast("本段「" + (GROUPS[g] || g) + "」" + rows.length + " 列已整段核对（留痕逐列记，可撤回）", "ok");
+  }));
   $("#jumpFirst").addEventListener("click", () => {
-    const fm = flagsByField(t.qc);
-    const k = KEYS.find(x => (fm.map[x] || []).length) || (fm.rest[0] ? "" : "");
-    if (!k){ toast("本票红旗未指到具体字段，逐条对照票面看", "ok"); return; }
-    $("#f-" + CSS.escape(k)).scrollIntoView({behavior:"smooth", block:"center"});
+    const ks = L.todoOf(fieldRows(t, effectiveFlags(t))).keys;
+    if (!ks.length){ toast("这一票没有待办了：可以提交", "ok"); return; }
+    jumpToField(t, ks[0]);
   });
-  $("#onlyFlag").addEventListener("change", e => {
-    const fm = flagsByField(t.qc);
-    for (const [k] of FIELDS){
-      const row = $("#f-" + CSS.escape(k)); if (!row) continue;
-      const interesting = (fm.map[k] || []).length || !txt(t.raw, k).trim() || !airVal(t, k).trim() ||
-                          k in t.airE;
-      row.hidden = e.target.checked && !interesting;
-    }
-  });
+  $("#main").querySelectorAll("[data-jump-first]").forEach(b => b.addEventListener("click", () => {
+    const rows = fieldRows(t, effectiveFlags(t));
+    const r = rows.find(x => x.st.s === (b.dataset.jumpFirst === "flag" ? "flag" : "empty"));
+    if (!r){ toast(b.dataset.jumpFirst === "flag" ? "红旗都确认过了" : "空栏都确认过了", "ok"); return; }
+    jumpToField(t, r.k);
+  }));
+  $("#onlyTodo").addEventListener("change", e => { DESK.onlyTodo = e.target.checked; render(); });
   $("#stage").addEventListener("click", () => stageTicket(t));
-  $("#submit").addEventListener("click", () => submitTicket(t));
+  $("#submit").addEventListener("click", () => submitClick(t));
   $("#expOne").addEventListener("click", () => exportTickets([t], (t.stem || t.filename) + ".审核结果.json"));
   $("#expAll").addEventListener("click", () => exportTickets(
     S.tickets.filter(x => x.state === "done"), "分单审核_" + new Date().toISOString().slice(0, 10) + ".json"));
@@ -1493,6 +1830,10 @@ $("#drafts").addEventListener("click", e => {
   if (!row) return;
   const t = loadDraft(row.dataset.load);
   if (t){ S.tickets.push(t); S.sel = t.stem; render(); toast("已载入本机未保存的编辑：" + t.stem, "ok"); }
+});
+$("#railTabs").addEventListener("click", e => {
+  const b = e.target.closest("[data-rt]"); if (!b) return;
+  railTab(b.dataset.rt);
 });
 /* 「清空」在卡片标题栏里，不在 #drafts 列表内——挂在列表上的委托收不到它的点击（曾因此点了没反应） */
 $("#clearDrafts").addEventListener("click", () => {
@@ -1597,8 +1938,9 @@ async function saveAcct(name, password, role){
 }
 $("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
 $("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说到哪儿，入口就在哪儿
-$("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"滚过去 + 聚焦输入框"
+$("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"切到那一页 + 滚过去 + 聚焦输入框"
   setView("desk");                                // 在今日台账里点它，要先回到工作台才看得见那张卡
+  railTab("mawb");                                // 不先切页签，#mstNo 藏在 hidden 的面板里，滚动与聚焦都是空动作
   const box = $("#mstNo");
   box.scrollIntoView({behavior: "smooth", block: "center"});
   box.focus();
@@ -1721,7 +2063,8 @@ async function openHouse(stem){
     const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:"server",
                channel:d.channel, elapsed:d.elapsed,
                qc: Object.keys(d.qc || {}).length ? d.qc : null,
-               raw:d.raw || {}, air:d.air || {}, airE:mg.airE, ackF:dr.ackF || [],
+               raw:d.raw || {}, air:d.air || {}, airE:mg.airE, ackF:dr.ackF || [], ackE:dr.ackE || [],
+               todoBase:null, ll:null,
                staged: st && !st.submitted_at ? {by:st.stager, role:st.stager_role,
                                                  at:st.staged_at, edited:Object.keys(st.edits || {}).length} : null,
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
@@ -2703,7 +3046,7 @@ function bindColGrip(){
   let st = null;
   const put = w => $("#wrap").style.setProperty("--colK", w + "px");
   document.addEventListener("pointerdown", e => {
-    const g = e.target.closest && e.target.closest("#gripCol");
+    const g = e.target.closest && e.target.closest(".gripCol");
     if (!g) return;
     e.preventDefault();
     st = {x: e.clientX, w: g.closest("th").getBoundingClientRect().width, v: 0};
@@ -2715,12 +3058,12 @@ function bindColGrip(){
   });
   document.addEventListener("pointerup", () => {
     if (!st) return;
-    document.querySelectorAll("#gripCol.drag").forEach(g => g.classList.remove("drag"));
+    document.querySelectorAll(".gripCol.drag").forEach(g => g.classList.remove("drag"));
     if (st.v) localStorage.setItem(LS.colK, st.v);
     st = null;
   });
   document.addEventListener("keydown", e => {
-    const g = e.target.closest && e.target.closest("#gripCol");
+    const g = e.target.closest && e.target.closest(".gripCol");
     if (!g) return;
     const d = e.key === "ArrowLeft" ? -20 : e.key === "ArrowRight" ? 20 : 0;
     if (!d) return;
