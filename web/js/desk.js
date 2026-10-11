@@ -1862,8 +1862,11 @@ function applyRole(){
   $("#btnAcct").hidden = !admin;             // 账号管理仅管理员
   $("#btnStats").hidden = !admin;            // 统计仅管理员（/stats 与 /stats/export 后端也是这道门）
   $("#btnPurge").hidden = !admin;            // 数据清理同样仅管理员；藏按钮只是遮眼睛，门在服务端
+  $("#btnSet").hidden = !admin;              // 收纳入口本身：非管理员连「设置」都不该看见
   if (admin) purgeBadgeLoad();               // 开门就看见有几张到期了，但删除仍要人点下去
   $("#pwWarn").hidden = !(admin && PW_DEFAULT);   // 默认口令没改：把话放在管理员天天看得见的地方
+  $("#btnSetDot").hidden = !(admin && PW_DEFAULT); /* 告警收进设置之后，顶栏留一个圆点：
+      不能要求管理员先想到点开设置才知道"门禁等于没上"。完整那句在面板的账号节里。 */
   $("#btnMawb").hidden = !ME;                // 主单检索已并入本页：登录即可用，入口只在做登录时藏
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
   $("#fModelM").hidden = !admin;             // 主单链那条也是
@@ -1936,8 +1939,42 @@ async function saveAcct(name, password, role){
     if (ME && name === ME.name) await checkAuth();   // 改的是自己的口令：顶栏那颗提示要当场灭掉
   }catch(e){ acctErr("保存失败：" + (e.message || e)); }
 }
-$("#btnAcct").addEventListener("click", () => { $("#acct").hidden = false; loadAcct(); });
+/* 设置浮层：管理员入口的收纳处。开合只管这一层，里面每颗按钮打开的还是原来那张窗口。 */
+function openSet(){ $("#setWin").hidden = false; $("#btnSet").setAttribute("aria-expanded", "true"); }
+function closeSet(){ $("#setWin").hidden = true; $("#btnSet").setAttribute("aria-expanded", "false"); }
+$("#btnSet").addEventListener("click", () => { $("#setWin").hidden ? openSet() : closeSet(); });
+$("#setClose").addEventListener("click", () => { closeSet(); $("#btnSet").focus(); });
+/* 从设置里点开任何一张窗口，都要先把设置那一层收掉：两层都是全屏遮罩、同一个 z-index，
+   叠着开就是新窗口压在设置底下——点了「解析正确率」却还看着设置，比不点更像坏了（浏览器里量到的）。 */
+function openGate(id){
+  closeSet();
+  const w = $("#" + id);
+  w.hidden = false;
+  return w;
+}
+$("#btnAcct").addEventListener("click", () => { openGate("acct"); loadAcct(); });
 $("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说到哪儿，入口就在哪儿
+/* 浮层从前只有「关闭」那颗按钮能出去：键盘按 Esc 没反应，人以为页面卡住。
+   清单从 DOM 里现捞（多一张窗口自动管上，不抄手写清单），叠着开时只关最上面那张；
+   焦点还给打开它的按钮，否则下一次 Tab 要从页面顶上重走一遍。
+   登录遮罩 #gate 不在内：真正的门在服务端（未登录什么接口都调不动），但"Esc 一掀就露出页面"
+   看着像门禁失效，这个错觉不给。 */
+const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct"};
+function closeTopGate(){
+  const open = [...document.querySelectorAll(".gate:not(#gate)")].filter(g => !g.hidden);
+  if (!open.length) return false;
+  const top = open[open.length - 1];
+  top.hidden = true;
+  if (top.id === "purgeWin") PURGE.armed = false;
+  if (top.id === "setWin") closeSet();
+  /* 焦点要落在看得见的那颗入口上：子窗口的入口（统计/清理/账号）此刻藏在已经收起来的设置面板里，
+     焦点给它等于丢失；退一步落到顶栏「设置」，键盘用户还能继续。 */
+  const sel = GATE_BACK[top.id], entry = sel ? $(sel) : null;
+  const back = (entry && entry.offsetParent) ? entry : $("#btnSet");
+  if (back){ back.focus(); }
+  return true;
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape" && closeTopGate()) e.preventDefault(); });
 $("#btnMawb").addEventListener("click", () => {   // 检索已并入本页：按钮只做"切到那一页 + 滚过去 + 聚焦输入框"
   setView("desk");                                // 在今日台账里点它，要先回到工作台才看得见那张卡
   railTab("mawb");                                // 不先切页签，#mstNo 藏在 hidden 的面板里，滚动与聚焦都是空动作
@@ -2716,7 +2753,9 @@ function renderStatsRows(){
 const PURGE = {items: [], q: "", sel: {}, armed: false, days: 30, run: null};
 function purgeShown(){ return L.purgeFilter(PURGE.items, PURGE.q); }
 function purgePicked(){ return purgeShown().filter(it => PURGE.sel[it.key] === true); }
-function purgeBadge(n){ const b = $("#btnPurgeCnt"); if (b) b.textContent = n ? " " + n : ""; }
+/* 到期张数写在顶栏「设置」那颗按钮上（入口收进设置之后，徽标得跟着走——
+   否则"今天有没有票到期"只能靠记得点开设置才知道）。0 张就清空，不留一个假的 0。 */
+function purgeBadge(n){ const b = $("#btnSetCnt"); if (b) b.textContent = n ? " " + n : ""; }
 function drawPurgeRun(){
   /* 「上次自动清理」来自服务端读的那份状态文件：定时器跑在另一个进程里，web 进程既不知道
      它跑没跑、也不知道它失败过。没有这本书就说「从没跑过」，不能留一个空日期看着像跑过。 */
@@ -2874,7 +2913,7 @@ async function purgeSaveDays(){
     $("#purgeDays").value = PURGE.days;     // 被拒的那个数字不该留在框里：那是"现在满几天"的当前值
   }
 }
-$("#btnPurge").addEventListener("click", () => { $("#purgeWin").hidden = false; loadPurge(); });
+$("#btnPurge").addEventListener("click", () => { openGate("purgeWin"); loadPurge(); });
 $("#purgeClose").addEventListener("click", () => {
   $("#purgeWin").hidden = true; PURGE.armed = false;
 });
@@ -2909,7 +2948,7 @@ $("#rail").addEventListener("click", e => {
 });
 $("#viewDay").addEventListener("click", () => setView("day"));
 // 统计是一张盖在整页之上的窗口：打开时现算，改日期/分组也仍是现算（窗口里不留第二套算术）
-$("#btnStats").addEventListener("click", () => { $("#statsWin").hidden = false; loadStats(); });
+$("#btnStats").addEventListener("click", () => { openGate("statsWin"); loadStats(); });
 $("#statsClose").addEventListener("click", () => { $("#statsWin").hidden = true; });
 $("#stGo").addEventListener("click", loadStats);
 $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });

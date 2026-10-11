@@ -429,6 +429,26 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .pwwarn:hover{border-color:var(--c-line-hover)}
 .acctbox{width:560px;max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
 .acctbox .t{font-size:var(--f-base)}
+/* 设置：管理员入口的收纳浮层（顶栏从前 13 项，1620px 放不下就得折行/滚动）。
+   三节各管一件事，节里放的就是从前顶栏上那几样——皮肤沿用 .gate/.card/.f，不另起一套；
+   每颗按钮打开的还是原来那张窗口，这一层不重做功能，只收纳入口。 */
+.setbox{width:min(920px,100%);max-width:100%;padding:0}
+.setbox .t{font-size:var(--f-base)}
+.setgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;padding:14px}
+.setsec{border:1px solid var(--c-line);border-radius:var(--r-lg);padding:12px;background:var(--c-surface-2);
+  display:flex;flex-direction:column;gap:9px;min-width:0}
+.setsec .t2{margin:0;font-size:var(--f-md);color:var(--c-text-1)}
+/* 窄列里标签放框子上面：并排会把下拉挤到看不全当前选的是哪个模型 */
+.setsec .f{flex-direction:column;align-items:stretch;gap:3px}
+.setsec .f select{min-width:0;width:100%}
+.setacts{display:flex;flex-direction:column;gap:8px}
+.setacts .btn{text-align:left}
+.pwwarn.wide{width:100%;text-align:left;border-radius:var(--r-md);padding:7px 9px;font-size:var(--f-sm);
+  line-height:1.4;margin-left:0;white-space:normal}
+/* 顶栏「设置」上的小圆点：口令还是默认值才亮。告警不能要求管理员先想到点开设置。 */
+.sdot{width:8px;height:8px;border-radius:50%;background:var(--c-bad);display:inline-block;margin-left:6px;
+  vertical-align:middle}
+@media (max-width:900px){.setgrid{grid-template-columns:minmax(0,1fr)}}
 /* 统计窗口里是一张看板（六卡 + 左条形图 + 右明细表），所以窗口给到接近原型那个 1380px；
    正文自己滚，标题行放不下就换行（起止日期 + 分组 + 刷新 + 导出 + 关闭）。 */
 .statsbox{width:min(1360px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}

@@ -785,7 +785,9 @@ def test_the_panel_is_an_admin_entry_carrying_the_candidate_count():
         assert 'id="%s"' % i in page, "面板缺控件：" + i
     assert '$("#btnPurge").hidden = !admin' in js, \
         "入口只对管理员可见（与 /purge 的服务端门禁同一口径）"
-    assert "btnPurgeCnt" in js, "入口上要有候选数徽标：到期该清的得在开门时就看见"
+    # 徽标现在挂在顶栏「设置」那颗按钮上（v1.17.0 把管理员的六个入口收进一处）：
+    # 入口能收，"开门就看见有几张到期"这条不能收，否则它只能靠人记得点进设置。
+    assert "btnSetCnt" in js and '$("#btnSetCnt")' in js, "入口上要有候选数徽标：到期该清的得在开门时就看见"
     assert "if (admin) purgeBadgeLoad();" in js, \
         "徽标要在管理员登录时拉一次：只钉「purgeBadgeLoad()」这几个字的话，" \
         "把它挂到 `if (false)` 上也算过"

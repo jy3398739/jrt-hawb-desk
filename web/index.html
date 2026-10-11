@@ -13,25 +13,18 @@
   <h1>主分单审核台 · 制单台<span class="ver" id="verTag" title="当前服务端版本"></span></h1>
   <span class="svc"><span class="dot" id="svcDot" aria-hidden="true"></span><span id="svcTxt">正在连接提取服务…</span></span>
   <span class="sp"></span>
-  <label class="f" id="fModel" title="分单（HAWB）提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
-    分单模型<select id="modelSel"></select></label>
-  <label class="f" id="fModelM" title="主单（MAWB）提取用的模型，和分单各切各的。主单资料是几百字符的纯文本、没有票面图，2026-09-29 实测同一条 S2 取到 2/36 列、qwen3.8-flash 取到 18/36 列。切换后已缓存的主单解析结果按新模型自动重算">
-    主单模型<select id="modelSelM"></select></label>
-  <label class="f" id="fThink" title="思考模式（只对声明了该参数的渠道生效，现在只有 Qwen；官方书生不接受这个参数，下拉会置灰）。跟随预设=各家用自己的默认档（Qwen 是关着，省几千 reasoning token）；开=更肯想但单票更慢更贵。对照实验才开：同一天的台账混着两档，统计就分不清是模型的错还是档位的错">
-    思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
   <label class="f">复核人<input id="reviewer" type="text" placeholder="制单员姓名" size="10"></label>
-  <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span><button class="pwwarn" id="pwWarn" type="button" hidden title="管理员口令还是出厂默认值：登录门禁等于没上，点这里去「账号管理」改掉">口令未改</button></span>
+  <span class="f" id="whoWrap" hidden><span class="who" id="whoName"></span><span class="role" id="whoRole"></span></span>
   <span class="seg" role="tablist" aria-label="视图切换">
     <button class="btn sm on" id="viewDesk" type="button" role="tab" aria-selected="true">核对工作台</button>
     <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日归档</button>
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
-  <button class="btn sm" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">统计</button>
-  <!-- 数据清理：这张面板是自动清理的名册（判据＝最后一次被碰之后安静满 N 天），仅管理员。
-       按钮上的数字是"现在有几张躺够了"。真删由 systemd timer 每天跑一轮（那份要用户点头才装），
-       人这一页只剩"要提前删某几张"——所以名单默认一张都不勾。 -->
-  <button class="btn sm" id="btnPurge" hidden title="自动清理的名册：安静满 N 天的票会被定时器连票面原件与全部解析产物一起抹掉；勾选只用于提前删（仅管理员，不可恢复）">数据清理<span class="pcnt" id="btnPurgeCnt"></span></button>
-  <button class="btn sm" id="btnAcct" hidden>账号管理</button>
+  <!-- 设置：管理员专属的六样从前平铺在顶栏上，1620px 窗口实测要 2326px——视图切换被挤到
+       2036px 处，管理员就此找不到今日归档（2026-10-12 用户报）。这里只是把入口收纳：
+       三节里每颗点开的还是原来那三张窗口，门禁与状态一律不动（真门在服务端 require_admin）。
+       徽标＝现在有几张到期该清；小圆点＝管理员口令还是默认值。两样都是"不能藏进二级页"的东西。 -->
+  <button class="btn sm" id="btnSet" hidden aria-haspopup="dialog" aria-expanded="false" title="提取模型与思考档、解析正确率、数据清理、账号管理都在这儿（仅管理员）">设置<span class="pcnt" id="btnSetCnt"></span><span class="sdot" id="btnSetDot" hidden title="管理员口令还是出厂默认值：登录门禁等于没上"></span></button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
 
@@ -121,6 +114,45 @@
         <span class="sp"></span>
         <button class="btn sm bad" id="purgeGo" type="button">删除选中的票</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 设置：管理员入口的收纳处，三节。每颗按钮打开的还是原来那张窗口——这一层不重做功能，
+     只把顶栏从 13 项压回 9 项（改模型那条链、统计与清理的门禁与状态一律没动）。 -->
+<div class="gate" id="setWin" hidden>
+  <div class="card setbox">
+    <div class="t">设置<span class="sp"></span><span class="hint">仅管理员 · 改的是这台服务器</span>
+      <button class="btn sm gh" id="setClose" type="button">关闭</button></div>
+    <div class="setgrid">
+      <section class="setsec">
+        <div class="t2">提取模型</div>
+        <label class="f" id="fModel" title="分单（HAWB）提取用的模型：下拉即切换，选择会写回服务端 .env（重启后、批处理也沿用）。视觉模型才能处理扫描件；纯文本模型只吃电子单/文字层 PDF">
+          分单模型<select id="modelSel"></select></label>
+        <label class="f" id="fModelM" title="主单（MAWB）提取用的模型，和分单各切各的。主单资料是几百字符的纯文本、没有票面图，2026-09-29 实测同一条 S2 取到 2/36 列、qwen3.8-flash 取到 18/36 列。切换后已缓存的主单解析结果按新模型自动重算">
+          主单模型<select id="modelSelM"></select></label>
+        <label class="f" id="fThink" title="思考模式（只对声明了该参数的渠道生效，现在只有 Qwen；官方书生不接受这个参数，下拉会置灰）。跟随预设=各家用自己的默认档（Qwen 是关着，省几千 reasoning token）；开=更肯想但单票更慢更贵。对照实验才开：同一天的台账混着两档，统计就分不清是模型的错还是档位的错">
+          思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
+        <p class="hint hintp flush">三条都当场生效，写回服务端 <b>.env</b>：重启后与批处理沿用同一份。</p>
+      </section>
+      <section class="setsec">
+        <div class="t2">数据与统计</div>
+        <div class="setacts">
+          <button class="btn" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">解析正确率…</button>
+          <!-- 数据清理：这张面板是自动清理的名册（判据＝最后一次被碰之后安静满 N 天），仅管理员。
+               真删由 systemd timer 每天跑一轮（那份要用户点头才装），人这一页只剩"要提前删某几张"
+               ——所以名单默认一张都不勾。"有几张到期"那个数现在挂在顶栏「设置」按钮上。 -->
+          <button class="btn" id="btnPurge" hidden title="自动清理的名册：安静满 N 天的票会被定时器连票面原件与全部解析产物一起抹掉；勾选只用于提前删（仅管理员，不可恢复）">数据清理…</button>
+        </div>
+        <p class="hint hintp flush">统计与清理各自还是一张窗口；清理那张的名册默认一张都不勾，勾选只用于提前删。</p>
+      </section>
+      <section class="setsec">
+        <div class="t2">账号</div>
+        <div class="setacts"><button class="btn" id="btnAcct" hidden>账号管理…</button></div>
+        <button class="pwwarn wide" id="pwWarn" type="button" hidden title="管理员口令还是出厂默认值：登录门禁等于没上，点这里去「账号管理」改掉">
+          管理员口令还是默认值 · 点这里去改</button>
+        <p class="hint hintp flush">制单员与录入员的口令也在这里下发；改自己的口令：上方填 admin + 新口令保存。</p>
+      </section>
     </div>
   </div>
 </div>
