@@ -126,13 +126,18 @@ _LEDGER_LOCK = threading.Lock()        # 同进程内多制单员并发提交（
 
 
 def safe_stem(stem: str):
-    """URL/请求体里的 stem 只当单段文件名的那半段用：带 '/'、'\\'、'..'、空名一律不认。
+    """URL/请求体里的 stem 只当单段文件名的那半段用：带 '/'、'\\'、'..'、空名、太长一律不认。
 
     暂存文件的路径是 `STAGED_DIR/<stem>.json`，stem 由前端给——不先剥掉穿越就拼路径，
     ../../ 就能写到服务器上任何地方。转录目录那侧从前在 server 里有一份同样的判断，
-    现在两边共用这一份（写文件的入口比读文件的入口更需要它）。"""
+    现在两边共用这一份（写文件的入口比读文件的入口更需要它）。
+
+    长度这一格是 VM 上补的：Linux 单段文件名上限 255 字节，一个 300 字的 stem 会让 `stat`
+    直接抛 ENAMETOOLONG（本机 pathlib 只回 False，所以这种"区别"只有部署到 Linux 才现形）。
+    上限取 120——上传那一步（server.py 的 `[:120]`）本来就只会造出这么长的 stem，
+    超过它的名字不是这台系统写出来的，不认。"""
     name = str(stem or "").replace("\\", "/").split("/")[-1]
-    if not name or name in (".", "..") or name != str(stem or ""):
+    if not name or name in (".", "..") or name != str(stem or "") or len(name) > 120:
         return None
     return name
 

@@ -343,6 +343,13 @@ def test_a_bad_name_is_refused_and_produces_no_plan_at_all():
             assert purge.plan("hawb", bad, 30, now=NOW) is None, "这个 stem 没被挡掉：" + repr(bad)
         for bad in ("99../1", "999 957 64373/../x", "", "small", "99995764373;rm"):
             assert purge.plan("mawb", bad, 30, now=NOW) is None, "这个主单号没被挡掉：" + repr(bad)
+        # 上面那条"x"*300 在本机是"碰巧"过的（Windows 的 is_file() 对超长路径只回 False），
+        # Linux 单段上限 255 字节，stat 直接抛 ENAMETOOLONG——v1.15.0 在 VM 上第一次跑回归就是这么炸的。
+        # 所以这一格要在校验那一步就挡掉（上传那边本来就限 120 字，超过 120 的 stem 不是这台系统写出来的），
+        # 而"读不出的路径"也必须等于"不在盘上"，不许把整次删除崩掉。
+        assert store.safe_stem("x" * 300) is None, "safe_stem 只管分隔符不管长度：" + repr("x" * 8) + "…要判非法"
+        assert purge._json(config.OUTPUT_QC_DIR / ("x" * 300 + ".json")) == {}, \
+            "一个读不出来的路径要把这张票当不在盘上，不是抛出去"
 
 
 def test_a_key_written_into_the_void_ledger_by_hand_still_gets_no_plan():

@@ -91,9 +91,12 @@ def _mtime_iso(p: Path) -> str:
 
 
 def _json(path: Path) -> dict:
-    if not path.is_file():
-        return {}
+    """读一份落盘的 JSON，**读不出就当没有**。这里的 try 必须把 `is_file()` 一起包住：
+    单段文件名超过 Linux 的 255 字节上限时 `stat` 是直接抛 ENAMETOOLONG 的，
+    而清理这一路不能因为"有一个路径没法 stat"就整次崩掉——它要说的是这张票不在盘上。"""
     try:
+        if not path.is_file():
+            return {}
         got = json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
