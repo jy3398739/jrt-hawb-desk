@@ -8,6 +8,7 @@
 """
 import contextlib
 import json
+import os
 import re
 import tempfile
 from datetime import datetime, timedelta
@@ -336,6 +337,56 @@ def test_the_tombstone_lands_before_a_single_byte_is_deleted():
         assert "S1" in store.ledger(), "半途失败却已经把台账条目删了：这张票从此查无此票"
         assert (config.ARCHIVE_DIR / stem).exists() or "S1" in [c["key"].split("|")[1]
                                                                 for c in purge.candidates(days=30, now=NOW)]
+
+
+def test_the_tombstone_file_is_not_readable_by_the_whole_machine():
+    """purged.jsonl 里虽然没有票面内容，但有 void_by 与 by（两个人名）和"哪些票被抹了"。
+    这台机器上凡是带人名的账本都收 600（submitted.json 含复核人姓名、users.json 含口令哈希、
+    .env 含令牌），新建这一本凭什么按 umask 落成 644？efreight-vm 是多服务共用的机器。"""
+    if os.name == "nt":
+        return                       # Windows 的 chmod 只管只读位（这条由 VM 回归覆盖）
+    with _world() as t:
+        a = _ticket(t, "S1")
+        _age_void("hawb", a, OLD)
+        purge.purge([{"kind": "hawb", "key": "hawb|" + a}], by="admin", days=30, now=NOW)
+        assert config.PURGED_LEDGER.stat().st_mode & 0o777 == 0o600, "删除凭据这本要 600"
+        b = _ticket(t, "S2", hawb="JRT9")
+        _age_void("hawb", b, OLD)
+        purge.purge([{"kind": "hawb", "key": "hawb|" + b}], by="宛平", days=30, now=NOW)
+        assert config.PURGED_LEDGER.stat().st_mode & 0o777 == 0o600, "第二次追加不许把权限改回去"
+
+
+def test_a_fresh_tombstone_file_asks_for_600_when_it_is_opened():
+    """上一条在 Windows 上是空跳（st_mode 看不出 chmod），所以这条查"要权限的方式"本身，两台机器都咬得住：
+    权限要在打开新建那一次就给（os.open 的 mode 只在真的新建时生效，已存在则被内核忽略），
+    而不是先按 umask 落成 644、再补一次 chmod——补的那一段时间里 output/ 是同机其它服务读得到的目录，
+    而这个名字与人名已经写进去了。"""
+    with _world() as t:
+        seen = []
+        real_open = os.open
+        want = config.PURGED_LEDGER.name
+
+        def spy(path, flags, mode=None, **kw):
+            if Path(path).name == want:
+                seen.append(mode)
+            return (real_open(path, flags, mode, **kw) if mode is not None
+                    else real_open(path, flags, **kw))
+
+        purge.os.open = spy
+        try:
+            a = _ticket(t, "S1")
+            _age_void("hawb", a, OLD)
+            purge.purge([{"kind": "hawb", "key": "hawb|" + a}], by="admin", days=30, now=NOW)
+            assert seen and all(m == 0o600 for m in seen), \
+                "打开 purged.jsonl 那一次就要 600（这台机器上有人名），不能靠默认 umask"
+            before = len(seen)
+            b = _ticket(t, "S2", hawb="JRT9")
+            _age_void("hawb", b, OLD)
+            purge.purge([{"kind": "hawb", "key": "hawb|" + b}], by="宛平", days=30, now=NOW)
+            assert len(seen) > before, "第二张也要走同一句（文件已存在时那个 mode 会被内核忽略）"
+            assert all(m == 0o600 for m in seen)
+        finally:
+            purge.os.open = real_open
 
 
 def test_the_tombstone_keeps_the_numbers_but_never_the_ticket_content():

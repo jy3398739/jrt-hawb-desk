@@ -16,6 +16,7 @@
   3. 共享：一张主单的原件与缓存，归它名下所有分单共用。清一张分单绝不能顺手把主单删了。
 """
 import json
+import os
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -232,7 +233,11 @@ def _row(p):
 def _append_tombstone(row, by):
     rec = dict(row, by=str(by or ""))
     config.PURGED_LEDGER.parent.mkdir(parents=True, exist_ok=True)
-    with config.PURGED_LEDGER.open("a", encoding="utf-8") as f:
+    # 0600 要在"打开新建"那一次就给：这本里有 void_by 与 by（人名）。先按默认 umask 落成 644
+    # 再补一次 chmod，中间那个窗口里 output/ 在这台共用机上别的进程就读得到了。
+    # 文件已存在时这个 mode 被内核忽略——不会把运维手工调过的模式改回去。
+    fd = os.open(str(config.PURGED_LEDGER), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    with os.fdopen(fd, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     return rec
 
