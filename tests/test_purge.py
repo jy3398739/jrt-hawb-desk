@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""彻底删除（数据清理）：候选、计划、执行。
+"""自动清理（彻底删除）：判据怎么算、一张票要动哪些路径、执行的顺序、自动那一路的入口。
 
 这一段是全系统里唯一会**不可逆抹掉数据**的地方，所以用例的重点不是"删得掉"，而是那几条
-"不许删"：没作废过的票、作废了但没满保留期的票、名字里带穿越的票、主单下面还挂着别的分单的票。
-执行顺序也钉住——先写凭据再删文件最后才动台账；反过来做，半途崩一次就留下一张
-"文件还在盘上、但台账里已经查无此票"的孤儿数据，那种数据比没删更难对付。
+"不许删"：没安静满 N 天的票、盘上时间读不出来的票、名字里带穿越的票、主单下面还挂着别的分单的票、
+刚发给公司一次的主单。执行顺序也钉住——先写凭据再删文件最后才动台账，而且**能算出安静时间的那三处
+排在最后删**；反过来做，半途崩一次就留下一张"文件还在盘上、但名册再也算不出它安静了多久"的孤儿数据，
+那种数据比没删更难对付。
 """
 import contextlib
+import io
 import json
 import os
 import re
@@ -37,7 +39,7 @@ def _world():
            config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR, config.PREVIEW_DIR, config.STAGED_DIR,
            config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.VOID_LEDGER,
            config.MAWB_SOURCE_DIR, config.MASTER_DIR, config.MASTER_LEDGER, config.PURGED_LEDGER,
-           config.PURGE_AFTER_DAYS, auth.USERS_FILE, config.ENV_FILE)
+           config.PURGE_RUN_STATE, config.PURGE_AFTER_DAYS, auth.USERS_FILE, config.ENV_FILE)
     with tempfile.TemporaryDirectory() as d:
         t = Path(d)
         config.INPUT_DIR = t / "input"
@@ -55,9 +57,10 @@ def _world():
         config.MASTER_DIR = t / "output" / "master"
         config.MASTER_LEDGER = t / "output" / "master_submitted.json"
         config.PURGED_LEDGER = t / "output" / "purged.jsonl"
+        config.PURGE_RUN_STATE = t / "output" / "purge_last_run.json"
         config.PURGE_AFTER_DAYS = 30
         auth.USERS_FILE = t / "users.json"
-        # 保留期写的是 .env，而回归跑完会核对 .env 有没有被改过（config.ENV_FILE 不吃
+        # 安静期写的是 .env，而回归跑完会核对 .env 有没有被改过（config.ENV_FILE 不吃
         # 环境变量，只能在测试里把属性指到盘外）——不然这套用例会真去改运维机上的配置。
         config.ENV_FILE = t / ".env"
         for p in (config.INPUT_DIR, config.ARCHIVE_DIR, config.TRANSCRIPT_DIR,
@@ -72,115 +75,221 @@ def _world():
              config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR, config.PREVIEW_DIR, config.STAGED_DIR,
              config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR, config.VOID_LEDGER,
              config.MAWB_SOURCE_DIR, config.MASTER_DIR, config.MASTER_LEDGER, config.PURGED_LEDGER,
-             config.PURGE_AFTER_DAYS, auth.USERS_FILE, config.ENV_FILE) = old
+             config.PURGE_RUN_STATE, config.PURGE_AFTER_DAYS, auth.USERS_FILE,
+             config.ENV_FILE) = old
 
 
-def _ticket(t, stem, mawb="999-95764373", hawb="JRT28645", sent=True, master=True):
-    """在盘上摆一张"经手过"的票：原件、L1/L2/L3/红旗、预览、暂存、台账、幂等锁。"""
+def _backdate(paths, at):
+    """把刚写出来的文件与归档目录的 mtime 一起倒到 at。
+
+    不倒不行：夹具里的每一份都是**此刻**写的，而判据看的是"最后一次被碰"——
+    不倒就每张票都像是刚被碰过，满期的候选永远是空，整套用例就只在验"什么都不删"。"""
+    ts = datetime.fromisoformat(str(at)).timestamp()
+    for p in paths:
+        try:
+            os.utime(p, (ts, ts))
+        except OSError:
+            pass
+
+
+def _ticket(t, stem, mawb="999-95764373", hawb="JRT28645", sent=True, master=True,
+            touched=OLD, void=False):
+    """在盘上摆一张"经手过"的票：原件、L1/L2/L3/红旗、预览、暂存、台账、幂等锁。
+
+    touched 就是它"最后一次被碰"的时刻（写进 qc.processed_at，并把盘上时间一起倒过去）；
+    void 才打作废戳——v1.15.0 起自动清理的判据是安静满 N 天，作废只是行上的一个标记。"""
+    made = [config.INPUT_DIR / (stem + ".pdf")]
     (config.INPUT_DIR / (stem + ".pdf")).write_bytes(b"RAW-UPLOAD")
     a = config.ARCHIVE_DIR / stem
     a.mkdir(parents=True, exist_ok=True)
     (a / (stem + ".pdf")).write_bytes(b"ORIGINAL")
     (a / "manifest.json").write_text('{"md5":"x"}', encoding="utf-8")
+    made.append(a)
     for p in (config.TRANSCRIPT_DIR / (stem + ".json"),):
         p.write_text('{"flags":[]}', encoding="utf-8")
+        made.append(p)
     # qc 里要带 source_name：input 那一格是按它去找的，缺了就等于这条路径没被测到。
     # 再带两格票面内容：凭据那条用例是「扫有没有混进票面内容」，夹具里没有内容的话
     # 它就是在扫一份空字符串——把 _row 改成整份抄走也不会红。
-    (config.OUTPUT_QC_DIR / (stem + ".json")).write_text(
-        '{"flags":[],"source_name":"%s.pdf","GOODS_INFO":"STEEL PARTS",'
-        '"SHIPPER_INFO_NAME":"SHIPPER CO LTD"}' % stem, encoding="utf-8")
+    # processed_at 是「安静满 N 天」三个来源里的第一个。
+    (config.OUTPUT_QC_DIR / (stem + ".json")).write_text(json.dumps(
+        {"flags": [], "source_name": stem + ".pdf", "processed_at": str(touched),
+         "GOODS_INFO": "STEEL PARTS", "SHIPPER_INFO_NAME": "SHIPPER CO LTD"},
+        ensure_ascii=False), encoding="utf-8")
+    made.append(config.OUTPUT_QC_DIR / (stem + ".json"))
     # raw/air 里要真的带上 stem：all_hawbs.json 是从这些文件汇总出来的，
     # 记录里不含 stem 的话「聚合副本删没删干净」那条用例就是空的，永远绿。
     (config.OUTPUT_RAW_DIR / (stem + ".json")).write_text(
         '{"source_file":"%s","HAWB_NO":"%s"}' % (stem, hawb), encoding="utf-8")
+    made.append(config.OUTPUT_RAW_DIR / (stem + ".json"))
     (config.OUTPUT_AIR_DIR / (stem + ".json")).write_text(
         '{"source_file":"%s","MAWB_NO":"%s","HAWB_NO":"%s"}' % (stem, mawb, hawb),
         encoding="utf-8")
+    made.append(config.OUTPUT_AIR_DIR / (stem + ".json"))
     (config.PREVIEW_DIR / (stem + ".pdf")).write_bytes(b"PREVIEW")
-    (config.STAGED_DIR / (stem + ".json")).write_text('{"air_final":{}}', encoding="utf-8")
+    made.append(config.PREVIEW_DIR / (stem + ".pdf"))
+    # 暂存记录里最后一次事件的时间是第二个来源（staged 文件本身也要倒）
+    (config.STAGED_DIR / (stem + ".json")).write_text(json.dumps(
+        {"stem": stem, "air_final": {}, "staged_at": str(touched),
+         "events": [{"by": "宛平", "role": "reviewer", "at": str(touched), "edits": {}}]},
+        ensure_ascii=False), encoding="utf-8")
+    made.append(config.STAGED_DIR / (stem + ".json"))
     if sent:
         store.mark_submitted(stem, mawb, hawb, "宛平", {"mode": "mock"})
         # 真提交过才会留下幂等锁：不摆上盘，「锁也要删」这一条就是空的
-        company_api.guard_file(store.number_key(mawb, hawb)).write_text(
-            '{"key":"k"}', encoding="utf-8")
+        lock = company_api.guard_file(store.number_key(mawb, hawb))
+        lock.write_text('{"key":"k"}', encoding="utf-8")
+        made.append(lock)
     if master:
         k = store.norm_no(mawb)
-        (config.MASTER_DIR / (k + ".json")).write_text('{"mawb":"%s"}' % k, encoding="utf-8")
+        mc = config.MASTER_DIR / (k + ".json")
+        mc.write_text('{"mawb":"%s"}' % k, encoding="utf-8")
         md = config.MAWB_SOURCE_DIR / k
         md.mkdir(parents=True, exist_ok=True)
         (md / "m.pdf").write_bytes(b"MASTER-ORIGINAL")
-    store.void_row("hawb", stem, "admin")
-    # 作废戳默认落在 NOW 上（=「刚作废」）。void_row 打的是机器当前时刻，而本机时钟可以
-    # 以比 NOW 晚好几个小时——不覆写一次，"负龄"会让刚作废的票直接算成够老，
-    # 保留期那条不变式就悄悄没被测到。
-    _age_void("hawb", stem, NOW)
+        made += [mc, md]      # 主单那两处的 mtime 就是主单的「最后被碰」
+    if void:
+        store.void_row("hawb", stem, "admin")
+        _age_void("hawb", stem, touched)
+    _backdate(made, touched)
     return stem
 
 
+def _touch_staged(stem, at):
+    """昨天有人改了它并暂存：暂存记录里最后一条事件的时间就变了——三处来源里取最晚的那一个。"""
+    p = config.STAGED_DIR / (stem + ".json")
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    rec["events"].append({"by": "admin", "role": "admin", "at": str(at), "edits": {"WEIGHT": {}}})
+    rec["staged_at"] = str(at)
+    p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+    ts = datetime.fromisoformat(str(at)).timestamp()
+    os.utime(p, (ts, ts))
+
+
+def _touch_archive(stem, at):
+    """归档目录被人事后动过（手工放回原件、目录被复制）：目录 mtime 也算一处来源。"""
+    a = config.ARCHIVE_DIR / stem
+    ts = datetime.fromisoformat(str(at)).timestamp()
+    os.utime(a, (ts, ts))
+
+
 def _paths(p):
-    return {str(x) for x in list(p["files"]) + list(p["dirs"])}
+    """这张票的落点全集。删的顺序由 remove() 分段管，这里只管"有哪些"。"""
+    return {str(x) for x in list(p["files"]) + list(p["dirs"]) + list(p.get("sources") or [])}
 
 
-# ── 一、唯一不变式：没作废过的票删不了 ────────────────────────────────────────────
+# ── 一、唯一判据：最后一次被碰之后安静满 N 天（v1.15.0 起不再看作废）──────────────
 
-def test_a_ticket_that_was_never_voided_is_never_a_candidate():
+def test_a_quiet_ticket_is_a_candidate_even_if_nobody_voided_it():
+    """判据从"谁点过作废"换成"在盘上安静躺满 N 天"。制单员不点作废，数据就永远留在服务器上
+    越积越多——那正是这次要修的：管理员要能把够日子的票清掉，不管中间有没有人做过判断。"""
     with _world() as t:
-        stem = _ticket(t, "S1")
-        store.unvoid_row("hawb", stem)
-        assert purge.candidates(days=30, now=NOW) == [], "没打作废戳的票进了候选"
-        assert purge.plan("hawb", stem, 30, now=NOW) is None, "没作废的票居然能算出删除计划"
+        stem = _ticket(t, "S1", touched=OLD)
+        assert store.voided_map() == {}, "夹具不该自己动作废戳：作废现在只是个标记"
+        got = purge.candidates(days=30, now=NOW)
+        assert [c["key"] for c in got] == ["hawb|" + stem], "安静 40 天的票没进候选"
+        assert purge.plan("hawb", stem, 30, now=NOW) is not None
 
 
-def test_a_voided_ticket_younger_than_the_window_is_not_a_candidate():
+def test_a_ticket_touched_yesterday_is_not_a_candidate():
+    """安静期就是让人回头查旧票的窗口：昨天刚碰过的，今天不能因为"反正满 30 天的日子早就过了"
+    而被抹掉——上一版只看 qc.processed_at 就会这样多删。"""
     with _world() as t:
-        stem = _ticket(t, "S1")
-        store.void_row("hawb", stem, "admin")          # 刚作废（时刻就是现在）
+        stem = _ticket(t, "S1", touched=NOW)
         assert purge.candidates(days=30, now=NOW) == []
         assert purge.plan("hawb", stem, 30, now=NOW) is None, \
-            "保留期是给人反悔用的，刚作废就允许删等于没有保留期"
+            "刚被碰过的票能算出删除计划，等于没有安静期"
 
 
-def test_an_aged_voided_ticket_is_a_candidate_with_the_columns_the_panel_shows():
+def test_the_touch_time_is_the_latest_of_the_three_places():
+    """三处取最晚：qc.processed_at（解析）、staged 里最后一条事件（人改过并暂存）、
+    archive/<stem>/ 的目录 mtime（事后被动过）。只看其中一处都会多删。"""
     with _world() as t:
-        stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
+        stem = _ticket(t, "S1", touched=OLD)
+        assert purge.candidates(days=30, now=NOW), "先确认这张本身是候选，否则下面的断言是空的"
+        _touch_staged(stem, NOW)
+        assert purge.candidates(days=30, now=NOW) == [], "上周有人复核并暂存过它，就不算安静"
+        a = config.ARCHIVE_DIR / stem
+        _touch_archive(stem, OLD)                       # 先把目录收回去，单独验第三处
+        ts = datetime.fromisoformat(NOW).timestamp()
+        os.utime(a / "manifest.json", (ts, ts))
+        assert purge.candidates(days=30, now=NOW) == [], "归档目录里的文件刚被换过"
+
+
+def test_a_master_just_sent_to_the_company_is_not_quiet():
+    """主单的安静时间要把「发给公司那一次」算进去：提交只动 master_submitted.json，
+    缓存与原件目录的 mtime 一个都不会变——只看那两处就会把一张昨天刚发给公司的主单当"躺够了"删掉。"""
+    with _world() as t:
+        m = "176-62400004"
+        _ticket(t, "S1", mawb=m, hawb="JRT7", sent=False, master=True, touched=OLD)
+        k = store.norm_no(m)
+        assert purge.plan("mawb", k, 30, now=NOW) is not None, \
+            "先确认这张主单本来就该在名册上，否则下面的断言是空的"
+        store.mark_master_submitted(k, "宛平", {"mode": "mock"})
+        assert purge.plan("mawb", k, 30, now=NOW) is None, "刚发给公司的主单被当成安静够了"
+        assert "还没安静满" in purge.refuse("mawb", k, 30, now=NOW), \
+            "拒的是安静期这一道闸门；名下的分单那条闸门别替它顶罪"
+
+
+def test_an_unreadable_touch_is_never_aged():
+    """时刻读不出来（有人手工改过 json、或将来换了时间格式），一律当"还没满期"。
+    这条判据只能往"少删"一侧错：猜成"早就满了"就等于给一张没人核对过的票开了门。"""
+    with _world() as t:
+        stem = _ticket(t, "S1", touched=OLD)
+        p = config.OUTPUT_QC_DIR / (stem + ".json")
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        rec["processed_at"] = "不是个时刻"
+        p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        st = config.STAGED_DIR / (stem + ".json")
+        st.unlink()                                     # 没暂存过：这处来源也空
+        ts = datetime.fromisoformat(NOW).timestamp()
+        os.utime(config.ARCHIVE_DIR / stem, (ts, ts))   # 目录此刻被动过 → 读得出且不旧
+        assert purge.candidates(days=30, now=NOW) == []
+        assert purge.plan("hawb", stem, 30, now=NOW) is None
+
+
+def test_the_candidate_row_says_how_long_it_has_been_quiet_and_whether_it_was_voided():
+    """面板要答"这张为什么在这儿"：安静了多少天（判据）、最后一次被碰的时刻，
+    外加一个作废标记（信息，不是准入）。"""
+    with _world() as t:
+        stem = _ticket(t, "S1", touched=OLD, void=True)
         got = purge.candidates(days=30, now=NOW)
         assert [c["key"] for c in got] == ["hawb|" + stem]
         c = got[0]
-        assert c["in_ledger"] is True, "在不在提交台账要如实报——管理员要抹的就是有证据的那批"
-        assert c["void_by"] == "admin" and c["void_at"] == OLD
+        assert c["quiet_at"] == OLD and c["idle_days"] == 40, \
+            "满期的理由得写在行上：管理员看的是「为什么这张能删」"
+        assert c["voided"] is True and c["void_by"] == "admin" and c["void_at"] == OLD
+        assert c["in_ledger"] is True, "在不在提交台账要如实报——自动抹掉的也可能是有证据的那批"
         assert c["mawb"] == "999-95764373" and c["hawb"] == "JRT28645"
         assert c["bytes"] > 0, "面板那一列本机占用得有数，不是摆个空位"
 
 
-def test_the_retention_window_comes_from_config_not_from_the_request():
-    """POST 里带 days=0 就能删掉刚作废的票的话，保留期就成了摆设。
+def test_a_never_voided_ticket_still_shows_up_as_unvoided():
+    """没作废的票进名单时，那一格要写"没作废"而不是把空串糊成一格——
+    管理员要能一眼看出这张是"没人判断过、纯粹躺够了"，还是"谁收起来过"。"""
+    with _world() as t:
+        stem = _ticket(t, "S1", touched=OLD)
+        c = purge.candidates(days=30, now=NOW)[0]
+        assert c["voided"] is False and c["void_by"] == "" and c["void_at"] == ""
+
+
+def test_the_window_comes_from_config_not_from_the_request():
+    """POST 里带 days=0 就能删掉昨天的票的话，安静期就成了摆设。
     执行侧只读服务端那一份，天数由调用方（服务端）传进来，请求体里没有这个口。"""
     with _world() as t:
-        stem = _ticket(t, "S1")
+        stem = _ticket(t, "S1", touched=NOW)
         assert purge.plan("hawb", stem, days=0, now=NOW) is not None, "days=0 时应当立刻可算（这是预览用的能力）"
         r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
-        assert r[0]["ok"] is False and "保留" in r[0]["error"]
+        assert r[0]["ok"] is False, "执行侧采信了请求带来的天数"
+        assert r[0]["ok"] is False and "安静" in r[0]["error"]
         assert (config.ARCHIVE_DIR / stem).exists(), "拒绝之外还得多手：文件一个都不许动"
 
 
 # ── 二、计划要覆盖"删干净"的每一个落点 ────────────────────────────────────────────
 
-def test_an_unreadable_void_stamp_never_counts_as_aged():
-    """作废本里的时刻读不出来（有人手工改过、或将来换了时间格式），一律当"还没满期"。
-    这条判据只能往"少删"一侧错：猜成"早就满了"就等于给一张没人核对过的票开了门。"""
-    with _world() as t:
-        stem = _ticket(t, "S1")
-        _age_void("hawb", stem, "2026/09/01 不是个 ISO 时刻")
-        assert purge.plan("hawb", stem, 30, now=NOW) is None
-        assert purge.candidates(days=30, now=NOW) == []
-
-
 def test_the_hawb_plan_lists_every_place_that_ticket_has_data():
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         p = purge.plan("hawb", stem, 30, now=NOW)
         f, dr = _paths(p), {str(x) for x in p["dirs"]}
         for want in (str(config.INPUT_DIR / (stem + ".pdf")),
@@ -203,7 +312,6 @@ def test_the_master_files_are_left_alone_while_siblings_still_reference_them():
         a = _ticket(t, "S1")
         store.unvoid_row("hawb", a)
         b = _ticket(t, "S2")
-        _age_void("hawb", b, OLD)
         p = purge.plan("hawb", b, 30, now=NOW)
         assert not any("mawb_source" in x for x in _paths(p)), "删分单却把主单原件列进来了"
         assert not any(str(config.MASTER_DIR) in x for x in _paths(p)), "删分单却把主单缓存列进来了"
@@ -257,7 +365,6 @@ def test_a_never_submitted_ticket_still_carries_its_numbers():
     只剩一个 stem。号要从 air 那份取回来（它本来就是这张票的 L3 结果）。"""
     with _world() as t:
         stem = _ticket(t, "S1", mawb="074-55430340", hawb="VC54380", sent=False)
-        _age_void("hawb", stem, OLD)
         p = purge.plan("hawb", stem, 30, now=NOW)
         assert p["in_ledger"] is False
         assert p["mawb"] == "074-55430340" and p["hawb"] == "VC54380", \
@@ -286,7 +393,6 @@ def test_the_loading_state_never_wipes_the_controls_it_is_about_to_fill():
 def test_no_planned_path_escapes_the_known_roots():
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         p = purge.plan("hawb", stem, 30, now=NOW)
         roots = [config.INPUT_DIR, config.ARCHIVE_DIR, config.TRANSCRIPT_DIR,
                  config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR, config.OUTPUT_QC_DIR,
@@ -304,19 +410,68 @@ def test_the_upload_copy_is_skipped_when_its_recorded_name_is_not_a_single_segme
         stem = _ticket(t, "S1")
         q = config.OUTPUT_QC_DIR / (stem + ".json")
         q.write_text('{"source_name":"../../etc/passwd"}', encoding="utf-8")
-        _age_void("hawb", stem, OLD)
         p = purge.plan("hawb", stem, 30, now=NOW)
         assert not any("passwd" in x for x in _paths(p))
 
 
 # ── 三、执行：顺序、幂等、逐张成败 ────────────────────────────────────────────────
 
+def test_the_time_sources_are_deleted_last():
+    """判据换成"安静了多久"之后多出来的一条硬要求：三处时间来源里，qc 与 staged 要排在
+    删除清单的最后、归档目录排在它们之后（remove 是先 files 后 dirs）。顺序反过来的话，
+    中途崩一次就可能把 qc 与 staged 都删了而 preview 还留着——那时安静时间再也算不出来，
+    _aged 只能判"没满"，这张票就从名册上消失了，剩下那半截文件永远没人再来收。
+    （孤儿数据这条不变式原本盯的是台账索引，现在同样的坑会出在"时间"上。）"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        p = purge.plan("hawb", stem, 30, now=NOW)
+        derived = [str(x) for x in p["files"]]
+        assert len(derived) >= 6, "派生物没铺满，这条就成了空断言：" + " ".join(derived)
+        qc = str(config.OUTPUT_QC_DIR / (stem + ".json"))
+        st = str(config.STAGED_DIR / (stem + ".json"))
+        assert qc not in derived and st not in derived, \
+            "qc 是名册的扫描键、staged 是时间来源，两个都不许排在派生物那一段里"
+        second = [str(x) for x in list(p["dirs"]) + list(p["sources"])]
+        assert second[-2:] == [st, qc], "最后两个动的必须是 staged 再 qc（qc 撑到最后）：" + " ".join(second)
+        assert str(config.ARCHIVE_DIR / stem) in second, "归档目录也是时间来源之一，要在第二段里"
+        # 主单同理：名册是按 master/<key>.json 扫的，它必须最后一个动
+        # （另起一张没提交过的：同主单下只要有已提交的分单，共享那道闸门就会先把主单挡掉，
+        #   那时的 None 是闸门给的，不是这一段在验的东西）
+        other = _ticket(t, "S9", mawb="888-12345678", hawb="M9", sent=False)
+        k = store.norm_no("888-12345678")
+        m = purge.plan("mawb", k, 0, now=NOW)
+        assert m is not None and [str(x) for x in m["sources"]] == [str(config.MASTER_DIR / (k + ".json"))], \
+            "主单缓存要排在第二段最后，否则它一没、剩下的原件目录就再也没人来收了"
+
+
+def test_a_half_deleted_ticket_stays_on_the_roster():
+    """半途崩掉的那张，下一轮必须还在名册里——否则它就以"算不出安静时间"的方式永久漏掉。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        real = Path.unlink
+        boom = [str(config.PREVIEW_DIR / (stem + ".pdf"))]
+
+        def flaky(self, *a, **k):
+            if str(self) in boom:
+                raise OSError("模拟盘坏了")
+            return real(self, *a, **k)
+
+        Path.unlink = flaky
+        try:
+            r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
+        finally:
+            Path.unlink = real
+        assert r[0]["ok"] is False
+        assert [c["key"] for c in purge.candidates(days=30, now=NOW)] == ["hawb|" + stem], \
+            "删了一半的票不再出现在名册上：剩下的文件永远没人来收了"
+        assert purge.plan("hawb", stem, 30, now=NOW) is not None
+
+
 def test_the_tombstone_lands_before_a_single_byte_is_deleted():
     """中途崩掉时，凭据必须已经在盘上、台账条目必须还没动——
     这样那张票还在候选里，能被重新挑出来删完，而不是变成查无此票的孤儿数据。"""
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         real = Path.unlink
         boom = [str(config.PREVIEW_DIR / (stem + ".pdf"))]
 
@@ -339,6 +494,66 @@ def test_the_tombstone_lands_before_a_single_byte_is_deleted():
                                                                 for c in purge.candidates(days=30, now=NOW)]
 
 
+def test_an_auto_run_is_labelled_as_auto_and_never_fakes_a_void_stamp():
+    """自动档要能一眼看出来（by 是 "auto"、who 留空、auto 为真），而且它**绝不替人补一个作废戳**：
+    voided.json 记的是"谁把这一行收起来了"，让定时器往里写一笔就等于把没人做过的判断
+    写成有人做过——那本台账之后还要拿去解释正确率与台账计数的。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="auto", days=30,
+                        now=NOW, auto=True)
+        assert r[0]["ok"] is True
+        line = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
+        assert line["auto"] is True and line["by"] == "auto" and line["who"] == ""
+        assert store.voided_map() == {}, "自动档往作废本里写了一笔：那是伪造出来的判断"
+        # 自动档不许把账算到某个人头上：调用方哪怕传进来一个名字，by 也必须是 "auto"
+        # （光传 by="auto" 去验，`"by": "auto" if auto else who` 改成 `"by": who` 一样绿）
+        stem2 = _ticket(t, "S2", hawb="JRT8")
+        purge.purge([{"kind": "hawb", "key": "hawb|" + stem2}], by="宛平", days=30,
+                    now=NOW, auto=True)
+        line2 = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
+        assert line2["by"] == "auto" and line2["who"] == "", "自动那一跑被记成了某个人的手笔"
+
+
+def test_a_manual_click_keeps_the_login_name_in_the_credential():
+    """人工档反过来要留得下人名：管理员挑出来按下去的，和日子到了自己走的，
+    事后翻这本要分得清——这两件事的问责人是不同的。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="宛平", days=30, now=NOW)
+        line = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
+        assert line["auto"] is False and line["by"] == "宛平" and line["who"] == "宛平"
+
+
+def test_the_credential_records_whether_this_ticket_had_been_voided():
+    """作废降级成凭据里的一个标记：躺够日子被自动清掉的票里，会混着"谁收起来过"的那些——
+    对账时这两类是不同的故事（一类是有人判过不作数，一类只是再没人动过）。"""
+    with _world() as t:
+        a = _ticket(t, "S1", void=True)
+        b = _ticket(t, "S2", hawb="JRT8", void=False)
+        purge.purge([{"kind": "hawb", "key": "hawb|" + a}, {"kind": "hawb", "key": "hawb|" + b}],
+                    by="auto", days=30, now=NOW, auto=True)
+        lines = [json.loads(x) for x in config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()]
+        by_key = {x["stem"]: x for x in lines}
+        assert by_key[a]["voided"] is True and by_key[a]["void_by"] == "admin"
+        assert by_key[b]["voided"] is False and by_key[b]["void_by"] == ""
+        assert by_key[a]["quiet_at"] == OLD and by_key[a]["idle_days"] == 40, \
+            "删的理由（安静了多少天）也要留在凭据里，不然过半年没人知道当时为什么删它"
+
+
+def test_a_refused_item_says_why_in_terms_of_the_quiet_window():
+    """拒绝的理由要说人话并且说对接的是哪一道闸门：面板与定时器都靠这句话告诉管理员
+    "为什么这张不能删"，只回"不在候选里"等于什么都没答。"""
+    with _world() as t:
+        fresh = _ticket(t, "S1", touched=NOW)
+        r = purge.purge([{"kind": "hawb", "key": "hawb|" + fresh}], by="admin", days=30, now=NOW)
+        assert "安静" in r[0]["error"] and "30" in r[0]["error"], r[0]["error"]
+        r = purge.purge([{"kind": "hawb", "key": "hawb|../escape"}], by="admin", days=30, now=NOW)
+        assert "不合法" in r[0]["error"], "带穿越的键要有自己的那句，不能混进「没满期」"
+        r = purge.purge([{"kind": "hawb", "key": "hawb|ghost"}], by="admin", days=30, now=NOW)
+        assert "查无" in r[0]["error"], "盘上根本没有的票要说查无，不是「安静不够」"
+
+
 def test_the_tombstone_file_is_not_readable_by_the_whole_machine():
     """purged.jsonl 里虽然没有票面内容，但有 void_by 与 by（两个人名）和"哪些票被抹了"。
     这台机器上凡是带人名的账本都收 600（submitted.json 含复核人姓名、users.json 含口令哈希、
@@ -347,11 +562,9 @@ def test_the_tombstone_file_is_not_readable_by_the_whole_machine():
         return                       # Windows 的 chmod 只管只读位（这条由 VM 回归覆盖）
     with _world() as t:
         a = _ticket(t, "S1")
-        _age_void("hawb", a, OLD)
         purge.purge([{"kind": "hawb", "key": "hawb|" + a}], by="admin", days=30, now=NOW)
         assert config.PURGED_LEDGER.stat().st_mode & 0o777 == 0o600, "删除凭据这本要 600"
         b = _ticket(t, "S2", hawb="JRT9")
-        _age_void("hawb", b, OLD)
         purge.purge([{"kind": "hawb", "key": "hawb|" + b}], by="宛平", days=30, now=NOW)
         assert config.PURGED_LEDGER.stat().st_mode & 0o777 == 0o600, "第二次追加不许把权限改回去"
 
@@ -375,13 +588,11 @@ def test_a_fresh_tombstone_file_asks_for_600_when_it_is_opened():
         purge.os.open = spy
         try:
             a = _ticket(t, "S1")
-            _age_void("hawb", a, OLD)
             purge.purge([{"kind": "hawb", "key": "hawb|" + a}], by="admin", days=30, now=NOW)
             assert seen and all(m == 0o600 for m in seen), \
                 "打开 purged.jsonl 那一次就要 600（这台机器上有人名），不能靠默认 umask"
             before = len(seen)
             b = _ticket(t, "S2", hawb="JRT9")
-            _age_void("hawb", b, OLD)
             purge.purge([{"kind": "hawb", "key": "hawb|" + b}], by="宛平", days=30, now=NOW)
             assert len(seen) > before, "第二张也要走同一句（文件已存在时那个 mode 会被内核忽略）"
             assert all(m == 0o600 for m in seen)
@@ -392,7 +603,6 @@ def test_a_fresh_tombstone_file_asks_for_600_when_it_is_opened():
 def test_the_tombstone_keeps_the_numbers_but_never_the_ticket_content():
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
         line = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
         assert line["mawb"] == "999-95764373" and line["hawb"] == "JRT28645"
@@ -402,10 +612,20 @@ def test_the_tombstone_keeps_the_numbers_but_never_the_ticket_content():
             assert secret not in json.dumps(line), "凭据里混进了票面内容：" + secret
 
 
+def test_a_deleted_ticket_leaves_no_dangling_key_behind():
+    """票没了，两本索引里的条目得跟着没。`voided.json` 留着 `hawb|S1` 就是一个指向
+    已经不存在的东西的键：统计与「只看作废」还可能把它翻出来，而它再也进不了任何一轮清理。"""
+    with _world() as t:
+        stem = _ticket(t, "S1", void=True)
+        assert store.ledger() and store.voided_map(), "夹具没把这张票摆进两本索引，下面的断言是空的"
+        purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
+        assert stem not in store.ledger(), "台账条目还留着：文件没了、账上还有一张"
+        assert store.voided_map() == {}, "作废本里留了个悬空键"
+
+
 def test_purging_twice_is_a_no_op_and_does_not_raise():
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         first = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
         again = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
         assert first[0]["ok"] is True
@@ -417,11 +637,10 @@ def test_purging_twice_is_a_no_op_and_does_not_raise():
 def test_a_batch_reports_each_ticket_rather_than_failing_the_whole_run():
     with _world() as t:
         a = _ticket(t, "S1")
-        b = _ticket(t, "S2", hawb="JRT9")
-        _age_void("hawb", a, OLD)
+        b = _ticket(t, "S2", hawb="JRT9", touched=NOW)     # 昨天刚被碰过
         r = purge.purge([{"kind": "hawb", "key": "hawb|" + a},
                          {"kind": "hawb", "key": "hawb|" + b}], by="admin", days=30, now=NOW)
-        assert [x["ok"] for x in r] == [True, False], "第二张没满保留期，不能跟着第一张一起被删"
+        assert [x["ok"] for x in r] == [True, False], "第二张没满安静期，不能跟着第一张一起被删"
         assert (config.ARCHIVE_DIR / b).exists(), "同批里没过检查的票也被删了"
 
 
@@ -430,7 +649,6 @@ def test_the_database_is_asked_to_drop_the_same_ticket():
     就是假话。回归一律离线，所以这里不连库——只看那一句调用真发了、报的是这张票。"""
     with _world() as t:
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         seen = []
         real = db_writer.delete_ticket
         db_writer.delete_ticket = lambda sf: seen.append(sf)
@@ -446,7 +664,6 @@ def test_the_aggregates_and_the_render_cache_do_not_keep_the_ticket_alive():
         stem = _ticket(t, "S1")
         store.rebuild_summary()
         (config.OUTPUT_RAW_DIR / "all_hawbs.json").read_text(encoding="utf-8")
-        _age_void("hawb", stem, OLD)
         server._RENDER_CACHE[stem, 1, 2.0] = b"PNG"
         purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
         assert not any(stem in json.dumps(v) for v in _jsons(config.OUTPUT_RAW_DIR / "all_hawbs.json")), \
@@ -457,7 +674,8 @@ def test_the_aggregates_and_the_render_cache_do_not_keep_the_ticket_alive():
 
 
 def _age_void(kind, key, at):
-    """把作废戳改成指定时刻——保留期按它算，测试里不能拿"机器现在"当历史。"""
+    """把作废戳改成指定时刻。判据改了之后它不再是"到期时间"的输入，
+    但行上的标记与凭据里那一格记的就是这个时刻，测试里不能拿"机器现在"当历史。"""
     data = store.voided_map()
     data[store.void_key(kind, key)]["at"] = at
     store._write_ledger(data, config.VOID_LEDGER)
@@ -513,14 +731,13 @@ def test_post_purge_ignores_any_days_the_request_brings_and_refuses_off_list_ite
     with _world() as t:
         c = _client(t)
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
-        keep = _ticket(t, "S2", hawb="JRT9")
+        keep = _ticket(t, "S2", hawb="JRT9", touched=NOW)
         got = c.post("/purge", json={"days": 0, "items": [{"kind": "hawb", "key": "hawb|" + stem},
                                                           {"kind": "hawb", "key": "hawb|" + keep},
                                                           {"kind": "hawb", "key": "hawb|不存在"}]})
         r = got.json()["results"]
         assert [x["ok"] for x in r] == [True, False, False], \
-            "请求里带 days=0 就把没满保留期的第二张也删了——保留期只认服务端那一份"
+            "请求里带 days=0 就把没满安静期的第二张也删了——安静期只认服务端那一份"
         assert (config.ARCHIVE_DIR / keep).exists()
         assert c.post("/purge", json={"items": [{"kind": "hawb", "key": "hawb|../../etc"}]}).json()["results"][0]["ok"] is False
 
@@ -529,11 +746,13 @@ def test_the_panel_endpoints_answer_in_the_shape_the_front_end_draws_from():
     with _world() as t:
         c = _client(t)
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         j = c.get("/purge/candidates").json()
         assert j["days"] == 30 and len(j["items"]) == 1
         assert j["total_bytes"] >= j["items"][0]["bytes"] > 0
         assert {"kind", "key", "mawb", "hawb", "void_by", "void_at", "in_ledger", "bytes"} <= set(j["items"][0])
+        assert {"voided", "quiet_at", "idle_days"} <= set(j["items"][0]), \
+            "判据改了：行上要能答「这张安静了多少天、有没有人动作废过」"
+        assert j["last_run"] == {}, "从没跑过自动清理时要是空的，不能是一个像跑过的默认时间"
         assert c.post("/purge/config", json={"days": 15}).json()["days"] == 15
         assert c.post("/purge/config", json={"days": 0}).status_code == 400
         assert c.get("/purge/config").json()["days"] == 15
@@ -545,10 +764,9 @@ def test_the_server_never_hands_the_browser_absolute_paths_or_delete_plans():
     with _world() as t:
         c = _client(t)
         stem = _ticket(t, "S1")
-        _age_void("hawb", stem, OLD)
         raw = c.get("/purge/candidates").text
         assert str(t) not in raw, "响应里带了服务器绝对路径"
-        for leak in ("files", "dirs", "drop"):
+        for leak in ("files", "dirs", "sources", "drop"):
             assert '"%s"' % leak not in raw, "%s 这种执行细节不该上界面" % leak
 
 
@@ -699,12 +917,195 @@ def test_a_batch_reports_each_ticket_to_the_operator():
         "只报个成功数就够了：那正是把失败那张糊过去的那写法"
 
 
-def test_nothing_to_purge_says_why_and_where_to_create_a_candidate():
-    js = web_src.part("js/desk.js")
-    i = js.index("function renderPurge(")
-    body = js[i:js.index("\nfunction ", i + 1)]
-    assert "还没作废" in body or "先作废" in body, \
-        "空列表要说明为什么是空的：这个功能只收已作废满保留期的票，不写清楚就会被当成系统坏了"
+def test_nothing_on_the_roster_says_why_and_what_would_change_it():
+    """空名单不能是一句"没有票"：这一页现在说的是"没有躺够日子的票"，
+    管理员要能看出下一步是什么（等，还是把安静期改短），而不是以为系统坏了。"""
+    js = _jsCode()
+    body = _fn(js, "renderPurge")
+    # 只切空态那一段：整函数里"安静/天"到处都有，扫全文的那句断言等于没断（变异验证抓出来的）
+    head = body.split("if (!PURGE.items.length){", 1)
+    assert len(head) == 2, "renderPurge 里那段空态没了"
+    seg = head[1].split("purgeDrawGo();", 1)[0]
+    assert "安静" in seg and "天" in seg, "空态要说清是「没躺够日子」，不是「没有票」"
+    assert "PURGE.days" in seg, "空态要把当下那个窗口报出来：天数是从服务端来的那一个，不是抄死的"
+    for banned in ("要先作废", "先点作废", "已作废且满"):
+        assert banned not in js, "判据改了，面板里还挂着旧口径的那句话：" + banned
+
+
+def test_the_panel_says_when_the_last_auto_run_happened():
+    """定时器是另一个进程；面板不显示"上次跑成什么样"，失败就只有日志里有——
+    而 systemd 日志不是管理员会去翻的地方。"""
+    page = web_src.part("index.html")
+    js = _jsCode()
+    assert 'id="purgeRun"' in page, "面板上要有那句「上次自动清理」的位置"
+    assert "PURGE.run" in js, "服务端给的那份状态要存在面板状态里，别只拼一次字符串"
+    assert "从没跑过" in js, "没有状态时要说「从没跑过」，不能留一个空日期看着像跑过"
+    # 光钉字符串不够：`PURGE.run = null` 照样留着那句「从没跑过」，而它永远显示的是没跑过
+    assert "j.last_run" in _fn(js, "loadPurge"), "那句状态没接候选接口返回的 last_run"
+
+
+def test_the_row_names_the_quiet_days_that_put_it_on_the_roster():
+    """判据换成了"安静了多久"，那一格就必须上屏：管理员看名单要能答"这张为什么能删"，
+    而作废只是标记——没人点过作废的那张得写出来，不能糊成一个空格。"""
+    body = _fn(_jsCode(), "renderPurge")
+    assert "idle_days" in body, "安静了多少天没上屏：删的理由看不见"
+    assert "voided" in body, "作废标记没按事实写"
+
+
+def test_the_roster_is_not_pre_selected():
+    """不可逆操作不"开门就全选、点两下抹光"：默认一张都不勾，
+    要提前删的人必须自己逐张勾一遍（自动那一轮本来就不经过这个面板）。"""
+    js = _jsCode()
+    assert "PURGE.sel[it.key] === true" in js, \
+        "默认必须是未勾选（旧写法 !== false 等于开门就全选）"
+    assert "PURGE.sel[it.key] !== false" not in js, "这句还是默认全选"
+    assert 'if (allOn) { PURGE.sel[it.key] = true; continue; }' not in js   # 全选按钮自己判
+
+
+# ── 五、自动那一路：run_purge.py 与它留下的状态 ──────────────────────────────────
+
+def _run(cap, argv):
+    import run_purge
+    buf = io.StringIO()
+    rc = run_purge.main(argv, out=buf)
+    cap.append(buf.getvalue())
+    return rc
+
+
+def test_run_purge_dry_run_names_the_tickets_and_deletes_nothing():
+    """先给用户看名单，再决定要不要动手——这一条是整个自动化的刹车：
+    不带 --auto 时它**什么都不许删**，也不写"跑过"的状态（没跑过就别报时间）。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        out = []
+        rc = _run(out, [])
+        text = out[0]
+        assert rc == 0
+        assert stem in text and "999-95764373" in text, "dry-run 要说清是哪张票、号是多少"
+        assert "420" in text or "KB" in text or "B" in text, "每张要占多少字节得报出来"
+        assert (config.ARCHIVE_DIR / stem).exists(), "没带 --auto 就把票删了"
+        assert not config.PURGED_LEDGER.exists(), "dry-run 不该留删除凭据"
+        assert not config.PURGE_RUN_STATE.exists(), "dry-run 没跑过，别写一个假的上次运行时间"
+
+
+def test_run_purge_auto_clears_the_roster_and_reports_each_ticket():
+    with _world() as t:
+        # 不带主单那两份：否则两张分单删完后，它们共用的主单会**新**进名册（那是下一条用例）
+        a = _ticket(t, "S1", master=False)
+        b = _ticket(t, "S2", hawb="JRT8", master=False)
+        out = []
+        rc = _run(out, ["--auto"])
+        assert rc == 0, "全成都得退 0"
+        assert not (config.ARCHIVE_DIR / a).exists() and not (config.ARCHIVE_DIR / b).exists()
+        state = json.loads(config.PURGE_RUN_STATE.read_text(encoding="utf-8"))
+        assert state["checked"] == 2 and state["removed"] == 2 and state["failed"] == 0
+        assert state["days"] == 30 and state["at"]
+        assert purge.candidates(days=30, now=NOW) == []
+        lines = [json.loads(x) for x in config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()]
+        assert all(x["auto"] is True and x["by"] == "auto" for x in lines)
+
+
+def test_the_master_joins_the_roster_only_after_its_siblings_are_gone():
+    """共享那道闸门的另一半：删完同主单下所有已提交的分单之后，主单自己才进名单——
+    自动清理工信它不该在这一轮顺手把主单原件抽走（那是同主单下别的票还要对账的场景）。"""
+    with _world() as t:
+        m = "235-96146363"
+        _ticket(t, "SIB-A", mawb=m, hawb="S1A")
+        _ticket(t, "SIB-B", mawb=m, hawb="S1B")
+        keys = [c["key"] for c in purge.candidates(days=30, now=NOW)]
+        assert "mawb|" + store.norm_no(m) not in keys, "名下还有已提交分单，主单不该在名单上"
+        out = []
+        _run(out, ["--auto"])
+        got = purge.candidates(days=30, now=NOW)
+        assert [c["key"] for c in got] == ["mawb|" + store.norm_no(m)], \
+            "兄弟票都清完了，主单要自己进名单，下一轮由它把原件与缓存收走"
+        assert (config.MAWB_SOURCE_DIR / store.norm_no(m)).is_dir(), "上一轮就把主单原件删了"
+        _run(out, ["--auto"])
+        assert purge.candidates(days=30, now=NOW) == []
+        assert not (config.MAWB_SOURCE_DIR / store.norm_no(m)).exists()
+
+
+def test_run_purge_reports_a_failure_instead_of_swallowing_it():
+    """定时器最怕的就是"失败了只躺在日志里"：退出码要非 0，状态里要写着几张没删掉、为什么，
+    面板顶上那句「上次自动清理」才看得见它。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        real = Path.unlink
+        boom = [str(config.PREVIEW_DIR / (stem + ".pdf"))]
+
+        def flaky(self, *a, **k):
+            if str(self) in boom:
+                raise OSError("模拟盘坏了")
+            return real(self, *a, **k)
+
+        Path.unlink = flaky
+        out = []
+        try:
+            rc = _run(out, ["--auto"])
+        finally:
+            Path.unlink = real
+        assert rc != 0, "有一张没删掉还退 0，timer 与运维都看不见"
+        state = json.loads(config.PURGE_RUN_STATE.read_text(encoding="utf-8"))
+        assert state["failed"] == 1 and state["removed"] == 0
+        assert state["errors"] and stem in state["errors"][0], "状态里要点名是哪张、为什么"
+
+
+def test_run_purge_on_an_empty_roster_says_so_and_still_stamps_the_run():
+    """名册空着也要留一行"跑过、0 张"：管理员要能分清"定时器没跑"与"跑了但没到期"——
+    这两件事的处理动作完全相反。"""
+    with _world() as t:
+        _ticket(t, "S1", touched=NOW)
+        out = []
+        rc = _run(out, ["--auto"])
+        assert rc == 0
+        assert "没有" in out[0] or "0 张" in out[0]
+        state = json.loads(config.PURGE_RUN_STATE.read_text(encoding="utf-8"))
+        assert state["checked"] == 0 and state["removed"] == 0 and state["failed"] == 0
+
+
+def test_the_candidates_endpoint_carries_the_last_auto_run():
+    """面板那句「上次自动清理」不能前端自己猜：它来自服务端读的那份状态。"""
+    with _world() as t:
+        c = _client(t)
+        assert c.get("/purge/candidates").json()["last_run"] == {}
+        purge.write_run_state([{"ok": True, "key": "hawb|S1", "removed": [], "error": ""}], 30)
+        j = c.get("/purge/candidates").json()
+        assert j["last_run"]["removed"] == 1 and j["last_run"]["failed"] == 0
+        assert j["last_run"]["at"], "跑过的时间要一起给，不然那句说明没头没尾"
+
+
+def test_the_timer_unit_is_shipped_but_not_enabled():
+    """定时这件事交给 systemd 而不是 web 进程（Restart=always 会把进程内循环每次重置，
+    而失败只有日志看得见）。但装 timer 是**改这台共用机的系统配置**，得用户点头：
+    文件与说明跟着部署走，脚本一行都不许替它 enable/start。"""
+    svc = (config.BASE_DIR / "deploy" / "hawb-purge.service").read_text(encoding="utf-8")
+    tm = (config.BASE_DIR / "deploy" / "hawb-purge.timer").read_text(encoding="utf-8")
+    assert "run_purge.py --auto" in svc, "oneshot 要跑的就是那个入口，不是前端那个口"
+    assert "Type=oneshot" in svc
+    assert "OnCalendar=" in tm and "Persistent=true" in tm, "机器关机错过一夜，开机要能补跑一次"
+    for f in ("sync.sh", "release.sh"):
+        body = (config.BASE_DIR / "deploy" / f).read_text(encoding="utf-8")
+        assert not re.search(r"systemctl\s+(enable|start)[^\n]*purge", body), \
+            f + " 自作主张把 timer 装上了：那是需要人明确同意的一次系统改动"
+    readme = (config.BASE_DIR / "deploy" / "README-ubuntu.md").read_text(encoding="utf-8")
+    assert "hawb-purge.timer" in readme and "未启用" in readme, \
+        "说明里要写清这两份文件是备好的、没装的——否则下一个人会以为自动清理已经在跑"
+
+
+def test_the_roster_and_the_credential_never_carry_ticket_content():
+    """自动清票会绕过"人先看过这张票"这一步，所以那句老规矩更要钉死：
+    名册与凭据都只准带号、时间与文件名，一格里都不许出现收发货人或货物内容。"""
+    with _world() as t:
+        stem = _ticket(t, "S1")
+        # 名册按接口给出去的那一份算（绝对路径本来就被剥掉了，那不该算泄漏）
+        raw = json.dumps([{k: v for k, v in i.items()
+                           if k not in ("files", "dirs", "sources", "drop")}
+                          for i in purge.candidates(days=30, now=NOW)], ensure_ascii=False)
+        purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="auto", days=30,
+                    now=NOW, auto=True)
+        raw += config.PURGED_LEDGER.read_text(encoding="utf-8")
+        for secret in ("STEEL", "SHIPPER", "GOODS_INFO"):
+            assert secret not in raw, "名单或凭据里混进了票面内容：" + secret
 
 
 # ── 切片小工具：切不到就给一条干净的断言，不是一句 ValueError ──────────────────────

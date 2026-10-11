@@ -2358,13 +2358,29 @@ function renderStatsRows(){
   }).join("");
 }
 /* ── 数据清理（仅管理员）──────────────────────────────────────────────────────
-   这页删的是不可逆的东西，所以三条规矩钉死在这里：候选只由服务端算（搜索框只过滤、不放宽）、
+   这一页删的是不可逆的东西，所以三条规矩钉死在这里：名单只由服务端算（搜索框只过滤、不放宽）、
    第一下只把按钮换成"确认"而不发任何请求、执行结果逐张点名而不是一句"成功"。
-   界面上绝不出现服务器绝对路径或"要删哪些文件"——那是服务端 plan 的事。 */
-const PURGE = {items: [], q: "", sel: {}, armed: false, days: 30};
+   界面上绝不出现服务器绝对路径或"要删哪些文件"——那是服务端 plan 的事。
+   v1.15.0 起这份名单同时是自动清理的名册：判据是「最后一次被碰之后安静满 N 天」，
+   定时器（另一个进程，见 deploy/hawb-purge.timer）每天删一轮，人这一页只剩"要提前删"这一个动作。
+   所以默认一张都不勾：不可逆操作不该开门就全选、点两下抹光。 */
+const PURGE = {items: [], q: "", sel: {}, armed: false, days: 30, run: null};
 function purgeShown(){ return L.purgeFilter(PURGE.items, PURGE.q); }
-function purgePicked(){ return purgeShown().filter(it => PURGE.sel[it.key] !== false); }
+function purgePicked(){ return purgeShown().filter(it => PURGE.sel[it.key] === true); }
 function purgeBadge(n){ const b = $("#btnPurgeCnt"); if (b) b.textContent = n ? " " + n : ""; }
+function drawPurgeRun(){
+  /* 「上次自动清理」来自服务端读的那份状态文件：定时器跑在另一个进程里，web 进程既不知道
+     它跑没跑、也不知道它失败过。没有这本书就说「从没跑过」，不能留一个空日期看着像跑过。 */
+  const r = PURGE.run, b = $("#purgeRun");
+  if (!r || !r.at){ b.innerHTML = "上次自动清理：<b>从没跑过</b>"
+    + '<span class="sub">定时器那一份（deploy/hawb-purge.timer）还没装。装上之前，躺够的票只进这份名册，不会自己消失。</span>'; return; }
+  const bad = Number(r.failed) || 0;
+  b.innerHTML = "上次自动清理：" + esc(L.shortTime(r.at)) + " · 查了 " + (Number(r.checked) || 0)
+    + " 张，删掉 " + (Number(r.removed) || 0) + " 张"
+    + (bad ? ' · <b class="pkr-b">' + bad + ' 张没删掉</b>' : " · 没有失败")
+    + (bad && (r.errors || []).length ? '<span class="sub">' + esc(r.errors.join("；")) + "</span>" : "")
+    + '<span class="sub">窗口：安静满 ' + (Number(r.days) || 0) + " 天</span>";
+}
 
 async function loadPurge(){
   /* 加载态写进 #purgeList，不能写 #purgeBox：那颗盒子里装着搜索框、总数、全选和删除键，
@@ -2377,15 +2393,18 @@ async function loadPurge(){
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     PURGE.items = j.items || []; PURGE.days = j.days || 30;
+    PURGE.run = j.last_run || null;
     PURGE.sel = {}; PURGE.armed = false;      // 换一批数据就把勾选清掉：留着会指向已经不存在的票
     $("#purgeDays").value = PURGE.days;
     renderPurge();
     purgeBadge(PURGE.items.length);
   }catch(e){
     /* 读不到就当没有：留着上一批的话，人会把一次没成功的读过去当成"这些票还排着等删"。
-       徽标同理清掉——算不出来的数字不该继续挂在那儿。 */
-    PURGE.items = []; PURGE.sel = {}; PURGE.armed = false;
+       徽标同理清掉——算不出来的数字不该继续挂在那儿。上次自动清理那一句也一样：
+       这一次没读到，就不能拿上一批的状态接着说"跑过、删了几张"。 */
+    PURGE.items = []; PURGE.sel = {}; PURGE.armed = false; PURGE.run = null;
     list.innerHTML = `<div class="empty empty-err">读候选失败：${esc(e.message || e)}</div>`;
+    $("#purgeRun").innerHTML = "上次自动清理：<b>读不到</b>";
     $("#purgeNote").hidden = true;
     purgeDrawGo();
     purgeBadge(0);
@@ -2399,19 +2418,22 @@ async function purgeBadgeLoad(){
 }
 function renderPurge(){
   const shown = purgeShown(), picked = purgePicked(), sum = L.purgeSum(picked);
+  drawPurgeRun();
   $("#purgeNote").hidden = !PURGE.items.length;      // 没得可删时这句是噪音，但只要有候选就常驻
   if (!PURGE.items.length){
     $("#purgeSum").textContent = "";
-    $("#purgeList").innerHTML = '<div class="empty">现在没有到期可删的票。<b>这个面板只收已作废且满保留期的票</b>'
-      + "——要先作废（那一步随时能翻回来）才会进这里，等满保留期再回来删。"
-      + '<span class="sub">没作废过的票在这里搜不到，也不是搜到就能删：服务端每次都重算候选。</span></div>';
+    $("#purgeList").innerHTML = '<div class="empty">没有安静满 ' + esc(PURGE.days) + ' 天的票。'
+      + "<b>进这份名册只看一件事：这张票最后一次被碰（上传、复核、暂存、回传）之后，又安静躺满了几天</b>"
+      + "——躺够了由定时器删，没人点过作废也一样会进来。要现在就删，只有把上面那个天数改短，"
+      + '它在盘上多待的每一天都是公司回头对账时还能查到的那一天。<span class="sub">一张都没有不等于清理坏了：'
+      + "看上面那句「上次自动清理」到底跑过没有。</span></div>";
     purgeDrawGo();
     return;
   }
   $("#purgeSum").textContent = `选中 ${picked.length} / ${shown.length} 张 · 本机 ${L.purgeBytes(sum.bytes)}`;
   if (!shown.length){
     $("#purgeList").innerHTML = '<div class="empty">按这个过滤词没有候选票。过滤只往下筛：'
-      + "搜一个没作废过的号，这里也不会把它变出来。</div>";
+      + "还没满安静期的号，在这里搜也不会把它变成能删的。</div>";
     purgeDrawGo();
     return;
   }
@@ -2419,14 +2441,22 @@ function renderPurge(){
     + '<col style="width:42px"><col><col style="width:124px"><col style="width:96px">'
     + '<col style="width:132px"><col style="width:72px"><col style="width:84px">'
     + '</colgroup><thead><tr><th></th><th>票</th><th>主单号</th><th>分单号</th>'
-    + '<th>谁作废的 · 何时</th><th>回传</th><th>本机占用</th></tr></thead><tbody>'
+    + '<th>为什么在这儿 · 作废</th><th>回传</th><th>本机占用</th></tr></thead><tbody>'
     + shown.map(it => {
-      const on = PURGE.sel[it.key] !== false;
-      /* 「回传」那一列是这页最该看清的一格：已回传的票，删掉的就是"这张票发过什么"的凭据
+      const on = PURGE.sel[it.key] === true;
+      /* 「回传」那一列是这页最要紧的一格：已回传的票，删掉的就是"这张票发过什么"的凭据
          （删除时它会转成 purged.jsonl 里的一行号与文件名，票面内容不留）。 */
       const ev = it.in_ledger
         ? '<span class="pke" title="这张票回传过公司。删掉之后本机只剩一行删除凭据（号与文件名），收发货人与货物内容一律不留">已回传</span>'
         : '<span class="pkn2">未回传</span>';
+      /* 第一格回答"这张为什么能删"：判据就是安静了多少天，所以它必须在行上，
+         而不是藏在 tooltip 里——作废那一格降成纯信息，没人点过也要如实写出来。 */
+      const quiet = `<span class="pkq" title="最后一次被碰：${esc(it.quiet_at || "—")}">`
+        + "安静 " + (it.idle_days == null ? "?" : esc(it.idle_days)) + " 天</span>";
+      const vd = it.voided
+        ? `<span class="pkv" title="作废时刻：${esc(it.void_at || "—")}">作废 `
+          + `${esc(it.void_by || "?")} ${esc(String(it.void_at || "").slice(5, 10))}</span>`
+        : '<span class="pkv pkv0">没人点过作废</span>';
       /* 每一行都要说得出"这是哪张票"：只暂存过、没提交过的票在台账里没有条目，
          两格号可能都是空的，那时票名（归档目录名，运维拿它去盘上找东西）就是唯一的身份。
          勾选框的 aria-label 也一样：五行共用一句，读屏器分不出勾的是哪一张。 */
@@ -2438,7 +2468,7 @@ function renderPurge(){
         + `<span class="pks" title="票名（服务器上的归档名）：${esc(name)}">${esc(name)}</span></td>`
         + `<td class="tno"><span class="pkn">${esc(it.mawb || "—")}</span></td>`
         + `<td class="tno"><span class="pkn">${esc(it.hawb || "—")}</span></td>`
-        + `<td><span class="pkv">${esc(it.void_by || "—")} · ${esc(L.shortTime(it.void_at))}</span></td>`
+        + `<td>${quiet}${vd}</td>`
         + `<td>${ev}</td><td class="pkb">${esc(L.purgeBytes(it.bytes))}</td></tr>`;
     }).join("") + "</tbody></table>";
   purgeDrawGo();
@@ -2488,10 +2518,10 @@ async function purgeSaveDays(){
       headers: {"Content-Type": "application/json"}, body: JSON.stringify({days: v})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
-    toast("保留期已设为 " + j.days + " 天");
-    loadPurge();                                     // 保留期一变，名单就跟着变
+    toast("安静期已设为 " + j.days + " 天");
+    loadPurge();                                     // 安静期一变，名单就跟着变
   }catch(e){
-    toast("保留期没改掉：" + (e.message || e), "bad");
+    toast("安静期没改掉：" + (e.message || e), "bad");
     $("#purgeDays").value = PURGE.days;     // 被拒的那个数字不该留在框里：那是"现在满几天"的当前值
   }
 }
@@ -2504,7 +2534,8 @@ $("#purgeQuery").addEventListener("input", e => {
   PURGE.q = e.target.value; PURGE.armed = false; renderPurge();
 });
 $("#purgeAll").addEventListener("click", () => {
-  const shown = purgeShown(), allOn = shown.every(it => PURGE.sel[it.key] !== false);
+  const shown = purgeShown();                          // 只翻当前过滤出来的那几张
+  const allOn = shown.length > 0 && shown.every(it => PURGE.sel[it.key] === true);
   shown.forEach(it => { PURGE.sel[it.key] = !allOn; });
   PURGE.armed = false; renderPurge();
 });

@@ -350,6 +350,9 @@ MASTER_LEDGER = Path(os.getenv("MASTER_LEDGER", str(BASE_DIR / "output" / "maste
 # 就是"这张票存在过、什么时候被谁删的、删之前台账里是哪些号"。所以它只存号与文件名，
 # 不存收发货人、货物、地址——留的是"有过这件事"，不是"票上写了什么"。
 PURGED_LEDGER = Path(os.getenv("PURGED_LEDGER", str(BASE_DIR / "output" / "purged.jsonl")))
+# 上次自动清理跑成什么样（一份小 json）：定时器是独立进程，web 进程既不知道它跑没跑、
+# 也不知道它失败过。不写在盘上，面板就只能对管理员静默失败。
+PURGE_RUN_STATE = Path(os.getenv("PURGE_RUN_STATE", str(BASE_DIR / "output" / "purge_last_run.json")))
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))
@@ -364,9 +367,10 @@ VLM_RETRIES = int(os.getenv("VLM_RETRIES", "3"))
 VLM_TIMEOUT = float(os.getenv("VLM_TIMEOUT", "300"))
 VLM_TIMEOUT_TRIES = int(os.getenv("VLM_TIMEOUT_TRIES", "2"))
 IMAGE_LONG_EDGE = int(os.getenv("IMAGE_LONG_EDGE", "0"))  # 0=原图(魔搭接受PNG)；网络慢可设1600
-# 保留期：作废满多少天才允许彻底删除。只给区间不给"0 天"——0 天等于没有保留期，
-# 而这段留的就是人反悔与同事发现"这张票不该作废"的时间。运维填了非法值不报错，
-# 但也不能让一个坏数字变成"随时可删"，所以落回默认 30。
+# 安静期：一张票最后一次被碰（解析 / 暂存改动 / 归档目录被动）之后要躺满多少天，才允许自动清理
+# 把它连票面原件一起抹掉。只给区间不给"0 天"——0 天等于"落盘即可删"，那正是这批要修的毛病。
+# 这个数决定的是「公司回头对账、出事追认时还查得到多久的票」，值由人自己填；
+# 运维填了非法值不报错，但也不能让一个坏数字变成"随时可删"，所以落回默认 30。
 PURGE_DAYS_RANGE = (1, 3650)
 
 

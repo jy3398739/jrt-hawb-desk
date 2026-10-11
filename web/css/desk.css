@@ -486,6 +486,16 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 .purge-note{margin:0;padding:9px 16px;font-size:var(--f-sm);color:var(--c-bad-text);
   background:var(--c-bad-bg);border-bottom:1px solid var(--c-bad-line)}
 .purge-note b{font-weight:var(--w-semi)}
+/* 这句是"自动那一轮跑成什么样"：定时器在另一个进程里，不写在这上面失败就只有日志看得见。
+   它不是警告色——跑成功与从没跑过都不该 red，只有"几张没删掉"那一支才用危险文字档。 */
+.purge-run{margin:0;padding:8px 16px;font-size:var(--f-sm);color:var(--c-text-2);line-height:1.5;
+  background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
+.purge-run b{font-weight:var(--w-semi);color:var(--c-text-1)}
+.purge-run .sub{display:block;font-size:var(--f-xs);color:var(--c-text-3);font-family:var(--mono);
+  font-variant-numeric:tabular-nums}
+/* 只有"几张没删掉"那一支是危险色。选择器要写成 `.purge-run b.pkr-b`：单写 `.pkr-b`
+   会被上面那条 `.purge-run b` 顶掉（同为元素+类，后者更具体），浏览器里量出来就是一行黑字。 */
+.purge-run b.pkr-b{color:var(--c-bad-text)}
 .purge-body{overflow:auto;padding:0 16px 12px}
 .purge-bar{display:flex;align-items:center;gap:10px;padding:11px 0 9px;flex-wrap:wrap;row-gap:6px}
 .purge-q{flex:1;min-width:200px;border:1px solid var(--c-line);border-radius:var(--r-md);
@@ -505,6 +515,11 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 .pk-mawb{color:var(--c-accent);background:var(--c-accent-soft);border:1px solid var(--c-accent-line)}
 .pkn,.pkv{font-family:var(--mono);font-variant-numeric:tabular-nums}
 .pkn{color:var(--c-text-2)}.pkv{color:var(--c-text-3);font-size:var(--f-xs)}
+/* 这一列答的是"这张为什么在这儿"：安静天数是判据，占第一行；作废只是信息，压在第二行，
+   没人点过作废也要如实占一行——那正是"纯粹躺够了"和"谁收起来过"的区别。 */
+.pkq,.purge-t .pkv{display:block;line-height:1.45}
+.pkq{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:var(--f-xs);color:var(--c-text-2)}
+.pkv0{color:var(--c-text-3)}
 /* 票名那一格：没提交过的票两号皆空，它是这一行唯一的身份，所以要读得出但不能比号还抢眼。 */
 .pks{margin-left:7px;font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-3)}
 .pkb{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--c-text-2)}

@@ -179,7 +179,9 @@ def test_text_tokens_pass_wcag_aa_on_their_real_backgrounds():
     for fg, bgs in (("--c-accent", ["--c-surface", "--c-bg", "--c-surface-2", "--c-accent-soft"]),
                     ("--c-ok-text", ["--c-surface", "--c-bg", "--c-ok-bg", "--c-accent-sel"]),
                     ("--c-warn-text", ["--c-surface", "--c-bg", "--c-warn-bg", "--c-warn-strip", "--c-edited"]),
-                    ("--c-bad-text", ["--c-surface", "--c-bg", "--c-bad-bg", "--c-accent-sel"]),
+                    ("--c-bad-text", ["--c-surface", "--c-bg", "--c-bad-bg", "--c-accent-sel",
+                                      # 清理面板顶上那句「上次自动清理」的失败那一支，压在工具栏灰底上
+                                      "--c-surface-2"]),
                     # 今日归档那两支：分单徽标压在自己的青绿底上，附件链接压在白底/表头灰底/主单浅底上
                     ("--c-sub-text", ["--c-surface", "--c-bg", "--c-surface-2", "--c-sub-bg"]),
                     ("--c-attach", ["--c-surface", "--c-bg", "--c-surface-2"])):

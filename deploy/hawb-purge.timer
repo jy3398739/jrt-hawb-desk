@@ -1,0 +1,14 @@
+# 自动清理的定时器。**备好、未装**——要管理员明确点头再 enable（见 hawb-purge.service 头两行）。
+[Unit]
+Description=每天凌晨跑一次 HAWB 自动清理
+
+[Timer]
+# 每天 04:10 一次：这时段没人上班核对，也不与备份窗口重叠。要改频率就改这一行 + daemon-reload。
+OnCalendar=*-*-* 04:10:00
+# 机器关机/停机错过了这一班，开机后补跑一次——不然"每天一次"会变成"看运气"
+Persistent=true
+AccuracySec=1min
+Unit=hawb-purge.service
+
+[Install]
+WantedBy=timers.target

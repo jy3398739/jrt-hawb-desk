@@ -1,0 +1,25 @@
+# 自动清理的一次运行（systemd oneshot）。**这份与 hawb-purge.timer 是备好的、没装的**：
+# 装它等于改这台共用机的系统配置，要管理员明确点头再执行下面两行。
+#   sudo cp deploy/hawb-purge.{service,timer} /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now hawb-purge.timer
+#
+# 为什么做成独立 oneshot 而不是塞进审核台进程：hawb-desk 是 Restart=always，进程内起循环
+# 等于每次重启就把计时器重置一遍，而失败只躺在日志里，谁都不知道上次到底跑没跑。
+# 这一步跑完会把结果写进 output/purge_last_run.json，审核台「数据清理」面板顶上那句
+# 「上次自动清理」读的就是它。
+[Unit]
+Description=HAWB 审核台自动清理：删掉安静满 PURGE_AFTER_DAYS 天的票
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/jrt-hawb/release/hawb_extractor
+# --auto 才会真删；不带它只打名单。安静期只有 .env 里那一份，命令行传不进天数。
+ExecStart=/home/ubuntu/jrt-hawb/release/hawb_extractor/.venv/bin/python -X utf8 run_purge.py --auto
+User=ubuntu
+Environment=PYTHONIOENCODING=utf-8
+# 只删本地文件、不碰模型也不碰公司接口；留一点余量给 stat 归档目录那一轮。
+MemoryHigh=256M
+MemoryMax=512M
+# 名册是服务端重算的，跑一次几秒；TimeoutStartSec 只是兜底，别让半截进程挂着。
+TimeoutStartSec=1800

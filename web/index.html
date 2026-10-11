@@ -27,9 +27,10 @@
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">统计</button>
-  <!-- 数据清理（彻底删除已作废满保留期的票）：仅管理员。按钮上的数字是"现在有几张到期了"，
-       开门就看得见，但删除永远是人点下去的那一下——不做大半夜自己抹一批数据的定时器。 -->
-  <button class="btn sm" id="btnPurge" hidden title="彻底删除已作废且满保留期的票：连票面原件与全部解析产物一起抹掉（仅管理员，不可恢复）">数据清理<span class="pcnt" id="btnPurgeCnt"></span></button>
+  <!-- 数据清理：这张面板是自动清理的名册（判据＝最后一次被碰之后安静满 N 天），仅管理员。
+       按钮上的数字是"现在有几张躺够了"。真删由 systemd timer 每天跑一轮（那份要用户点头才装），
+       人这一页只剩"要提前删某几张"——所以名单默认一张都不勾。 -->
+  <button class="btn sm" id="btnPurge" hidden title="自动清理的名册：安静满 N 天的票会被定时器连票面原件与全部解析产物一起抹掉；勾选只用于提前删（仅管理员，不可恢复）">数据清理<span class="pcnt" id="btnPurgeCnt"></span></button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
@@ -88,18 +89,26 @@
 </div>
 
 <!-- 数据清理：一张票散在十几个地方（原件、L1/L2/L3、红旗、预览、暂存、台账、幂等锁、页图缓存、
-     库里的行），所以这里删的是「已作废且满保留期」的票——没作废过的票无论怎么搜都不该出现。
+     库里的行），所以删除要一份覆盖全部落点的计划，而这个计划只能由服务端算。
+     v1.15.0 起进名单的判据是「最后一次被碰之后安静躺满 N 天」，不再看作废过没有——
+     作废在这一页只是行上的一个标记。真删由定时器每天跑一轮，这张面板是它的名册，
+     也是"想提前删掉某几张"的唯一手工口子，所以名单默认一张都不勾。
      这句「公司那一侧删不掉」常驻在列表上方，不是一次性 toast：它是点删除之前唯一该看见的话。 -->
 <div class="gate" id="purgeWin" hidden>
   <div class="card purgebox">
     <div class="t">数据清理<span class="sp"></span>
-      <label class="f">作废满<input id="purgeDays" class="days-in" type="number" min="1" max="3650" step="1"
-             aria-label="保留期天数"><span class="u">天</span></label>
+      <label class="f">安静满<input id="purgeDays" class="days-in" type="number" min="1" max="3650" step="1"
+             aria-label="安静期天数"><span class="u">天</span></label>
       <button class="btn sm" id="purgeDaysSave" type="button">保存</button>
       <button class="btn sm gh" id="purgeClose" type="button">关闭</button>
     </div>
-    <p class="purge-note" id="purgeNote"><b>删除不可恢复。</b>公司系统（j9 AMS）里已经录进去的那一份
-      这台机器删不掉，需要的话请另行走公司流程处理；这里删掉的只是本台的票面原件与全部解析产物。</p>
+    <!-- 自动清理跑在另一个进程里（systemd timer）。这句要是没有，失败就只有 journalctl 看得见，
+         而那不是管理员会去翻的地方。 -->
+    <p class="purge-run" id="purgeRun" role="status" aria-live="polite"></p>
+    <p class="purge-note" id="purgeNote"><b>删除不可恢复。</b>下面这份就是自动清理的名册：安静满 N 天的票，
+      定时器每天来删一轮，不用谁先做什么。在这一页勾选只用于「想提前删掉某几张」——名单默认一张都不勾。
+      公司系统（j9 AMS）里已经录进去的那一份这台机器删不掉，需要的话请另行走公司流程处理；
+      这里删掉的只是本台的票面原件与全部解析产物。</p>
     <div class="purge-body" id="purgeBox">
       <div class="purge-bar">
         <input class="purge-q" id="purgeQuery" type="search" placeholder="按主单号 / 分单号 / 票名过滤候选"

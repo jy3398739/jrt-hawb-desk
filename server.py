@@ -1023,31 +1023,35 @@ def purge_config_get(_: None = Depends(require_admin)):
 
 @app.post("/purge/config")
 def purge_config_set(body: PurgeDays, _: None = Depends(require_admin)):
-    """保留期只存在这一份。执行删除时服务端重读它，**不看请求里带的天数**——
-    不然带一个 days=0 就能删掉刚作废的票，保留期成了摆设。"""
+    """安静期只存在这一份。执行删除时服务端重读它，**不看请求里带的天数**——
+    不然带一个 days=0 就能删掉昨天刚被碰过的票，安静期成了摆设。"""
     got = purge.set_retention(body.days)
     if got is None:
-        raise HTTPException(400, "保留期要填 %d-%d 之间的整数天" % config.PURGE_DAYS_RANGE)
+        raise HTTPException(400, "安静期要填 %d-%d 之间的整数天" % config.PURGE_DAYS_RANGE)
     return {"days": got}
 
 
 @app.get("/purge/candidates")
-def purge_candidates(days: int = Query(0, ge=0, description="0=用服务端那份保留期；填数字只做假设预览"),
+def purge_candidates(days: int = Query(0, ge=0, description="0=用服务端那份安静期；填数字只做假设预览"),
                      brief: int = Query(0, ge=0, le=1, description="1=只数条数，不去 stat 归档目录"),
                      _: None = Depends(require_admin)):
     """面板与顶栏徽标同一份数据。这里的 days 只能用来"如果改成 N 天会捞出哪些"，
-    它不授权任何删除——POST 那边会按服务端保留期重算一遍。"""
+    它不授权任何删除——POST 那边会按服务端安静期重算一遍。
+    last_run 顺带一起给：定时器是另一个进程，不告诉界面"上次跑成什么样"就是静默失败。"""
     d = purge.retention() if not days else days
     items = purge.candidates(days=d, with_bytes=not brief)
     return {"days": purge.retention(), "preview_days": d,
-            "items": [{k: v for k, v in i.items() if k not in ("files", "dirs", "drop")} for i in items],
-            "total_bytes": sum(i["bytes"] for i in items)}
+            "items": [{k: v for k, v in i.items()
+                       if k not in ("files", "dirs", "sources", "drop")} for i in items],
+            "total_bytes": sum(i["bytes"] for i in items),
+            "last_run": purge.read_run_state()}
 
 
 @app.post("/purge")
 def purge_run(body: PurgeItems, request: Request, _: None = Depends(require_admin)):
-    """逐张执行、逐张报成败：一批里有一张卡住，不许把其余的报成已删。
-    名单外的项（没作废 / 没满保留期 / 票早就不在了）由 purge 自己拒，不靠前端没勾。"""
+    """人工那一路：逐张执行、逐张报成败，一批里有一张卡住不许其余的假报已删。
+    不在名册里的项（没满安静期 / 票早就不在了 / 主单名下还有分单）由 purge 自己拒，
+    不靠前端没勾。自动那一路走 run_purge.py，不经这个口。"""
     who = auth.session_user(request) or {}
     results = purge.purge(body.items or [], by=str(who.get("name") or ""))
     return {"results": results, "days": purge.retention()}

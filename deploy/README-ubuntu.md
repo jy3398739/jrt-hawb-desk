@@ -81,6 +81,33 @@ curl -s http://127.0.0.1:8020/health        # 期望 "ok":true 且 "stale_files"
   内存闸撞满是整个服务被杀，不是只杀一张票——别为了跑得快把它调到整机水位。
 - 端口选 8020：8000/8010 已被同机其他服务占用。
 
+### 5b. 自动清理的 timer（**文件已备好，未启用**）
+
+`deploy/hawb-purge.service` + `deploy/hawb-purge.timer` 是备好的、**没有装**的：
+`sync.sh` 与 `release.sh` 都不会 enable/start 它——那是改这台共用机的系统配置，要人明确点头。
+
+先看名单再决定要不要开（这一步什么都不删）：
+
+```bash
+cd ~/jrt-hawb/release/hawb_extractor
+.venv/bin/python -X utf8 run_purge.py            # 只打印"安静满 N 天的有哪几张、各占多少"
+```
+
+要点：判据是**最后一次被碰之后安静满 `PURGE_AFTER_DAYS` 天**（不是"谁点过作废"——
+那样等于把维护成本还给人），满期就删、没满不删；主单在它名下还有已提交分单时不进名单。
+确认要开再执行：
+
+```bash
+sudo cp deploy/hawb-purge.service deploy/hawb-purge.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now hawb-purge.timer
+systemctl list-timers hawb-purge.timer          # 看下一班是几点
+sudo systemctl start hawb-purge.service         # 想立刻手动跑一次也可以
+```
+
+跑完在审核台「数据清理」面板顶上能看到「上次自动清理：时间 / 删了几张 / 有没有失败」——
+那句话读的是 `output/purge_last_run.json`，定时器是独立进程，不写下来就是静默失败。
+`journalctl -u hawb-purge.service -n 40` 是同一件事的另一半（逐张成败与没删掉的原因）。
+
 ## 6. nginx（对外入口）
 
 把 `deploy/nginx-hawb-location.conf` 里的 `location` 块贴进 443 的 `server{}` 内、
