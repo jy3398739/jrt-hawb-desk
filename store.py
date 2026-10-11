@@ -527,6 +527,33 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
     return rows
 
 
+def day_last_date() -> str:
+    """这台机器**最近有票的那一天**（YYYY-MM-DD），没有记录返回空串。
+
+    只为一句话：今日台账空着的时候，要能答"是没票还是坏了"。日期由服务端算——
+    台账是本机的、不共享，而服务器与浏览器还可能不同时区（VM 跑 UTC，
+    北京早上八点前上传的票会落在前一天），前端猜出来的"今天"未必是这里的那天。
+    与 day_rows 同一口径：分单质检记录 + 主单缓存，坏文件跳过不拖挂整页。"""
+    best = ""
+    keys = ("processed_at", "updated_at", "started_at")   # 分单质检记的是 processed_at，
+    for d in (config.OUTPUT_QC_DIR, config.MASTER_DIR):   # 主单缓存是 updated_at/started_at（与 master_rows 同一口径）
+        if not d.exists():
+            continue
+        for f in d.glob("*.json"):
+            try:
+                rec = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            when = ""
+            for k in keys:
+                when = str(rec.get(k) or "")[:10]
+                if len(when) == 10:
+                    break
+            if len(when) == 10 and when > best:
+                best = when
+    return best
+
+
 def day_rows(date: str) -> list:
     """某一天经手过的票，**分单与主单合一张表按时间排**（今日台账那一页读的就是它）。
 

@@ -225,14 +225,19 @@ def test_enter_jumps_to_next_todo_without_submitting():
     assert "nextTodo" in js
 
 
-def test_topbar_is_single_row_but_its_height_is_still_measured():
-    """交接稿要「单行不折行」，可以；但吸顶偏移必须继续实测——写死 52px 正是
-    v1.3.0「表头压住第一行」与 v1.10.3「[hidden] 被 display 顶掉」同族的坑。"""
+def test_topbar_wraps_so_the_view_switch_stays_reachable():
+    """顶栏想做单行，1620px 窗口实测那一排要 2326px——「今日归档」排在 2036px 处，
+    管理员就这么找不到台账了（用户："管理员账号我找不到今天台账了"）。所以顶栏必须能折行；
+    但每个控件内部不折行（「分单模型」被拆成两截比折行难读）。高度仍旧由 JS 实测——
+    写死 52px 正是 v1.3.0「表头压住第一行」与 v1.10.3「[hidden] 被 display 顶掉」同族的坑。"""
     js, css = _js(), _css()
     body = _fn(js, "measureChrome")
     assert "--hdh" in body and "offsetHeight" in body, "顶栏高度不再实测了"
-    assert re.search(r"\.hdr\{[^}]*white-space:nowrap", css), "顶栏没做成单行"
-    assert re.search(r"\.hdr\{[^}]*overflow-x:auto", css), "单行之后窄窗口要有横向兜底"
+    assert re.search(r"\.hdr\{[^}]*flex-wrap:wrap", css), "顶栏不许再强制单行：视图切换会被挤出视野"
+    assert ".hdr>*{white-space:nowrap}" in css, "折行要折在控件之间，不是把一句标签拆成两截"
+    assert not re.search(r"\.hdr\{[^}]*overflow-x:auto", css), \
+        "能折行就别再留横向滚动——那条滚动条就是「看不见入口」的帮凶（没人知道往右拖）"
+
 
 
 def test_left_rail_tabs_exist_and_are_wired():

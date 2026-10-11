@@ -332,3 +332,38 @@ def test_a_staged_ticket_carries_the_uploader_and_the_model_too():
         assert row["uploader"] == "马殿齐" and row["uploader_role"] == "reviewer", row
         assert row["model"] == "qwen3.8-flash", row
         assert row["reviewed_by_inputter"] is True and row["stager"] == "刘明", row
+
+
+def test_an_empty_day_says_when_the_last_ticket_was():
+    """空白一页最容易被当成坏了（用户："今天台账里面为什么没有内容了"）。
+    空的那天要答出「最近有票的是哪天」，日期只能由服务端算：台账是本机的，
+    而且服务器与浏览器时区可能不同（VM 跑 UTC，北京早上八点前的票会落在前一天）。"""
+    with _sandbox():
+        _ticket("昨天的票", when="2026-09-30")
+        _ticket("更早的票", when="2026-09-21")
+        assert store.day_last_date() == "2026-09-30"
+        login = TestClient(server.app)
+        login.post("/login", json={"name": "admin", "password": "admin123"})
+        j = login.get("/day", params={"date": "2026-10-12"}).json()
+        assert j["rows"] == [] and j["last_date"] == "2026-09-30", j
+        # 有票的那天：last_date 仍是"最近有记录的一天"，不是被查询的那天
+        assert login.get("/day", params={"date": "2026-09-30"}).json()["last_date"] == "2026-09-30"
+
+
+def test_a_broken_qc_file_does_not_erase_the_last_date():
+    """算"最近哪天有票"和列台账一样要逐行容错：一份坏 JSON 不该把整页问句变成"从没记录"。"""
+    with _sandbox():
+        _ticket("好票", when="2026-10-01")
+        (config.OUTPUT_QC_DIR / "坏票.json").write_text("{不是 JSON", encoding="utf-8")
+        assert store.day_last_date() == "2026-10-01"
+
+
+def test_the_empty_day_offers_a_way_to_the_last_one():
+    """光说"没票"不够：那一句要把人带到还有票的那天（点一下就行），而且日期只能用服务端给的那个。"""
+    js = web_src.part("js/desk.js")
+    seg = js[js.index("这一天这台机器没经手过票"):]
+    seg = seg[:seg.index("return;")]
+    assert "data-day=" in seg and "VIEW.lastDate" in seg, "空态里没有那个可点的日期"
+    assert "这台机器还没有过任何台账记录" in seg, "从没记录过的那种空要照实说，别报一个假日期"
+    h = js[js.index('$("#dayBox").addEventListener("click"'):]
+    assert "[data-day]" in h[:600] and "loadDay(true)" in h[:900], "那颗日期没接上翻过去的动作"

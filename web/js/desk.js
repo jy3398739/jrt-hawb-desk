@@ -2271,7 +2271,7 @@ $("#mstResult").addEventListener("click", async e => {
    今日台账读 /day：那一天这台机器经手过哪些票、谁提交的、还有几张没回公司。
    统计读 /stats：模型那一版与人最后定下的那一版逐列比（数只在 stats.py 算一处）。
    公司的发送状态不在这两张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
-const VIEW = {cur: "desk", rows: [], date: ""};
+const VIEW = {cur: "desk", rows: [], date: "", lastDate: ""};
 const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;
 function syncCards(){
@@ -2305,7 +2305,7 @@ async function loadDay(fade){
     const r = await fetch(BASE + "/day" + (picked && picked !== VIEW.date ? "?date=" + encodeURIComponent(picked) : ""));
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
-    VIEW.date = j.date; VIEW.rows = j.rows || [];
+    VIEW.date = j.date; VIEW.rows = j.rows || []; VIEW.lastDate = j.last_date || "";
     $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
     renderDay(fade !== false);
   }catch(e){
@@ -2498,10 +2498,16 @@ function renderDay(fade){
   const subs = L.daySubCounts(live);
   const rows = L.dayOrder(L.dayFilter(live, DV.filter), DV.sort);
   if (!rows.length){
+    /* 空着的一页必须自己回答"是没票还是坏了"（用户："今天台账里面为什么没有内容了"）。
+       最近有票的那天由 /day 带回来（本机台账 + 时区差，前端猜不出），点一下就翻过去。 */
     $("#dayBox").innerHTML = VIEW.rows.length
       ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。"
           : "当前筛选下没有票。换个档位，或把「只看作废」勾上翻回作废的那些。") + '</div>'
-      : '<div class="empty">这一天这台机器没经手过票。换个日期，或点「刷新」。</div>';
+      : (VIEW.lastDate && VIEW.lastDate !== VIEW.date
+          ? `<div class="empty">这一天这台机器没经手过票。最近有票的是 `
+            + `<button type="button" class="lk" data-day="${esc(VIEW.lastDate)}" title="翻到那一天">`
+            + `${esc(VIEW.lastDate)}</button>（点一下就过去；换日期也可以用上面那个日期框）。</div>`
+          : '<div class="empty">这台机器还没有过任何台账记录。</div>');
     dvSyncCollapse();
     return;
   }
@@ -2977,6 +2983,10 @@ $("#dayBox").addEventListener("click", e => {
   }
   const o = e.target.closest("[data-open]");
   if (o){ setView("desk"); openHouse(o.dataset.open); return; }
+  const dy = e.target.closest("[data-day]");
+  if (dy){                                 // 空那天上那个「最近有票的是 X」：翻过去，不是让人自己去改日期框
+    $("#dayDate").value = dy.dataset.day; VIEW.date = ""; loadDay(true); return;
+  }
   const m = e.target.closest("[data-mopen]");
   if (m){                                  // 主单行：回工作台按这个号检索，核对区自己会出来
     setView("desk");

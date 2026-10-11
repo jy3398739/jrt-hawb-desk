@@ -791,7 +791,9 @@ def day(date: str = "", _: None = Depends(require_web)):
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
     rows = store.day_rows(d)
     who = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
-    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who)}
+    # last_date：空着的那一天要能答"最近有票的是哪天"（前端自己算不出：台账在本机、时区也可能不同）
+    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who),
+            "last_date": store.day_last_date()}
 
 
 class VoidBody(BaseModel):
