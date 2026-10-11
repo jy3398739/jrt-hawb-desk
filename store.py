@@ -476,10 +476,15 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except Exception:
             continue                     # 一条坏记录不该拖挂整页（与 load_qc 同口径）
+        stem = f.stem
         when = str(rec.get("processed_at", ""))
-        if date and not when.startswith(date):
+        # 那一天做过两件事之一就算这一天的票：把它读出来（processed_at）、把它发回公司
+        # （提交台账那一次）。只认前者的话，"今天提交的票"在这页一张都不显示——2026-10-12
+        # 用户提交完四张票就是这么以为票丢了。一张票因此会出现在它动过的每一天。
+        sent = str((led.get(stem) or {}).get("submitted_at") or "")
+        if date and not when.startswith(date) and not sent.startswith(date):
             continue
-        found.append((f.stem, rec))
+        found.append((stem, rec))
     found.sort(key=lambda kv: str(kv[1].get("processed_at")))
     want_mawb = norm_no(mawb) if mawb else ""
     rows = []
@@ -531,9 +536,8 @@ def day_last_date() -> str:
     """这台机器**最近有票的那一天**（YYYY-MM-DD），没有记录返回空串。
 
     只为一句话：今日台账空着的时候，要能答"是没票还是坏了"。日期由服务端算——
-    台账是本机的、不共享，而服务器与浏览器还可能不同时区（VM 跑 UTC，
-    北京早上八点前上传的票会落在前一天），前端猜出来的"今天"未必是这里的那天。
-    与 day_rows 同一口径：分单质检记录 + 主单缓存，坏文件跳过不拖挂整页。"""
+    台账是本机的、不共享，而服务器与浏览器还可能各用各的时钟，前端猜出来的"今天"未必是这里的那天。
+    与 day_rows 同一口径：分单质检记录 + 主单缓存 + 提交台账里那一次发送，坏文件跳过不拖挂整页。"""
     best = ""
     keys = ("processed_at", "updated_at", "started_at")   # 分单质检记的是 processed_at，
     for d in (config.OUTPUT_QC_DIR, config.MASTER_DIR):   # 主单缓存是 updated_at/started_at（与 master_rows 同一口径）
@@ -551,6 +555,10 @@ def day_last_date() -> str:
                     break
             if len(when) == 10 and when > best:
                 best = when
+    for e in _load_ledger().values():                     # 只有提交、没有解析的那一天同样算"有票"
+        when = str(e.get("submitted_at") or "")[:10]
+        if len(when) == 10 and when > best:
+            best = when
     return best
 
 

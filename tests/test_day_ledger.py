@@ -337,7 +337,9 @@ def test_a_staged_ticket_carries_the_uploader_and_the_model_too():
 def test_an_empty_day_says_when_the_last_ticket_was():
     """空白一页最容易被当成坏了（用户："今天台账里面为什么没有内容了"）。
     空的那天要答出「最近有票的是哪天」，日期只能由服务端算：台账是本机的，
-    而且服务器与浏览器时区可能不同（VM 跑 UTC，北京早上八点前的票会落在前一天）。"""
+    而且台账是本机的、不共享，浏览器那台机器的"今天"未必等于这台机器的"今天"
+    （2026-10-12 实测 VM 用的是本地时钟：processed_at == 文件 mtime == journal 时间，
+    从前留档里"VM 跑 UTC"那句是错的）。"""
     with _sandbox():
         _ticket("昨天的票", when="2026-09-30")
         _ticket("更早的票", when="2026-09-21")
@@ -367,3 +369,56 @@ def test_the_empty_day_offers_a_way_to_the_last_one():
     assert "这台机器还没有过任何台账记录" in seg, "从没记录过的那种空要照实说，别报一个假日期"
     h = js[js.index('$("#dayBox").addEventListener("click"'):]
     assert "[data-day]" in h[:600] and "loadDay(true)" in h[:900], "那颗日期没接上翻过去的动作"
+
+
+# ── 五、提交那一天也算经手过（2026-10-12 用户："我刚刚用宛平的账号提交了几票，
+#       但是在今日归档里并没有我提交的内容啊"）──────────────────────────────────────
+
+
+def test_a_ticket_submitted_today_is_todays_row_even_if_it_was_parsed_earlier():
+    """这一页从前只认 processed_at（解析那天）。宛平 07:24 提交的四张票是 admin 前几天传的，
+    于是提交完在这页一张都找不到——人问的是「今天发了哪些票」，页面答的是「今天读了哪些票」。
+    两个日期都算：解析那天照样有它（那是它被读出来的日子），提交那天也要有它。"""
+    with _sandbox():
+        _ticket("上周解析今天发", when="2026-08-02")
+        store.mark_submitted("上周解析今天发", "999-95764373", "JRT28643", "宛平",
+                             receipt={"accepted": 1}, company_action="updated")
+        today = [r["stem"] for r in store.day_rows(TODAY)]
+        assert "上周解析今天发" in today, "今天提交的票必须出现在今天，不然制单员提交完在这页找不到自己的活"
+        assert "上周解析今天发" in [r["stem"] for r in store.day_rows("2026-08-02")], \
+            "解析那天不该因为它后来被人提交就丢掉这一行"
+        row = [r for r in store.day_rows(TODAY) if r["stem"] == "上周解析今天发"][0]
+        assert row["processed_at"].startswith("2026-08-02") and row["submitted"]["at"].startswith(TODAY), \
+            "两个时间都得留在行上：界面要说得出这一行为什么会出现在今天"
+
+
+def test_a_day_that_only_borrowed_a_neighbour_activity_stays_empty():
+    """反向闸门：把提交日算进来不等于「哪天都算」。只动过两天的票，中间那天必须是空的。"""
+    with _sandbox():
+        _ticket("中间没动过", when="2026-08-02")
+        store.mark_submitted("中间没动过", "999-95764373", "JRT28643", "宛平", receipt={"accepted": 1})
+        assert store.day_rows("2026-08-03") == [], "解析日与提交日之间的空档不该被填上"
+        assert [r["stem"] for r in store.day_rows("2026-08-02")] == ["中间没动过"]
+
+
+def test_a_ticket_parsed_and_submitted_the_same_day_appears_once():
+    with _sandbox():
+        _ticket("今天就今天", when=TODAY)
+        store.mark_submitted("今天就今天", "999-95764373", "JRT28643", "宛平", receipt={"accepted": 1})
+        assert [r["stem"] for r in store.day_rows(TODAY)] == ["今天就今天"], \
+            "两条判据命中同一张票只出一条，别把一张票列成两行"
+
+
+def test_the_last_day_with_tickets_counts_submissions_too():
+    """空态那句「最近有票的是 X」要跟这一页同一口径：只有提交、没有解析的那一天同样算有票。"""
+    with _sandbox():
+        _ticket("旧票今天发", when="2026-08-02")
+        store.mark_submitted("旧票今天发", "999-95764373", "JRT28643", "宛平", receipt={"accepted": 1})
+        assert store.day_last_date() == TODAY, "今天提交了票却答最近有票的是八月，那句话就错了"
+
+
+def test_the_day_page_says_which_two_dates_it_matches():
+    """口径改了就得写在脸上：不然下一个人还是会把「今天没行」读成「今天的票丢了」。"""
+    page = web_src.part("index.html")
+    line = [l for l in page.splitlines() if 'id="dayDate"' in l]
+    assert line and "解析" in line[0] and "提交" in line[0], "日期那颗没说要按哪两个日期算"
