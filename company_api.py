@@ -228,9 +228,14 @@ def _fingerprint(record: dict) -> str:
                                      default=str).encode("utf-8")).hexdigest()
 
 
-def _guard_file(key: str):
-    """锁文件只放哈希：主/分单号里有横杠与空格，别拿它们拼路径。"""
+def guard_file(key: str):
+    """锁文件只放哈希：主/分单号里有横杠与空格，别拿它们拼路径。
+    公开给 purge 用——彻底删除一张票要连带把这把锁清掉，
+    不然同名新票（重传同一张）会被一张已经不存在了的旧锁拦住。"""
     return config.SUBMIT_GUARD_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest()[:16] + ".json")
+
+
+_guard_file = guard_file     # 旧名字留着：本文件内与测试里都还在叫它
 
 
 def _post_guarded(key: str, record: dict, path: str, wrapper: str, api_key: str) -> dict:

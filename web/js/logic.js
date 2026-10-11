@@ -165,6 +165,39 @@ const L = {
     return {shown: all.slice(0, k), more: all.length > k ? all.length - k : 0};
   },
 
+  /* ── 数据清理面板 ──────────────────────────────────────────────────────────────
+     全站唯一会不可逆抹数据的那一页，所以界面上每个数都由这三个纯函数给，node 断输入输出。
+     最要紧的是 purgeFilter：搜索框**只能从候选里往下筛**，它不是"输个号就能删一张票"的入口
+     ——那扇门在服务端（重算候选 + 拒绝名单外），界面这层连放宽的能力都不该有。 */
+  purgeBytes(n){
+    // null/"" 是"这个数没算"（徽标那条路径就不算字节），与 0 是两回事：都显示成 0 B 会让人以为真的一字节
+    if (n === null || n === undefined || n === "") return "—";
+    const v = Number(n);
+    if (!(v >= 0)) return "—";            // 负数与 NaN 都是算坏了：别照着一个坏数显示
+    if (v < 1024) return Math.round(v) + " B";
+    const u = ["KB", "MB", "GB"];
+    let x = v / 1024, i = 0;
+    while (x >= 1024 && i < u.length - 1){ x = x / 1024; i += 1; }
+    return x.toFixed(1) + " " + u[i];
+  },
+  purgeFilter(items, q){
+    const all = items || [], s = String(q === null || q === undefined ? "" : q).trim().toUpperCase();
+    if (!s) return all.slice();
+    // 去掉非字母数字再比一次：235-96146363 与 23596146363 是同一种号的两种写法，要一起命中
+    const flat = s.replace(/[^0-9A-Z]/g, "");
+    return all.filter(x => {
+      const it = x || {};
+      return [it.key, it.mawb, it.hawb, it.stem, it.void_by].some(v => {
+        const t = String(v === null || v === undefined ? "" : v).toUpperCase();
+        return t.indexOf(s) >= 0 || (!!flat && t.replace(/[^0-9A-Z]/g, "").indexOf(flat) >= 0);
+      });
+    });
+  },
+  purgeSum(items){
+    const all = items || [];
+    return {n: all.length, bytes: all.reduce((a, x) => a + ((x && x.bytes) || 0), 0)};
+  },
+
   /* 打开主单 / 重新解析之后，把本机草稿并回当前解析。
      人改过的列照单恢复；只有"草稿当时的原值 ≠ 现在解析出的原值"的列才算打架——
      底层解析动了，人对着旧值改的那一格可能已经不对，要点名复核。

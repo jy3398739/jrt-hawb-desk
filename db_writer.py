@@ -50,6 +50,20 @@ def _params(rec: dict, qc: dict):
     return p
 
 
+def delete_ticket(source_file: str) -> int:
+    """彻底删除一张票时，把库里那两行一起删掉（两张表都按 source_file 主键，与 upsert 同一个键）。
+    没配 DB_URL 就直接返回 0——本机与 VM 现在的常态是只出 Excel，那不是错误。"""
+    if not config.DB_URL or not str(source_file or "").strip():
+        return 0
+    eng = create_engine(config.DB_URL)
+    n = 0
+    for table in ("hawb_raw", "hawb_air"):
+        with eng.begin() as conn:
+            n += conn.execute(text(f"DELETE FROM {table} WHERE source_file = :s"),
+                              {"s": source_file}).rowcount or 0
+    return n
+
+
 def write_kind(engine, kind: str):
     table = f"hawb_{kind}"
     rows = _load(kind)

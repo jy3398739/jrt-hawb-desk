@@ -27,6 +27,9 @@
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
   <button class="btn sm" id="btnStats" hidden title="解析正确率：模型那一版与人定下的那一版逐列比（仅管理员）">统计</button>
+  <!-- 数据清理（彻底删除已作废满保留期的票）：仅管理员。按钮上的数字是"现在有几张到期了"，
+       开门就看得见，但删除永远是人点下去的那一下——不做大半夜自己抹一批数据的定时器。 -->
+  <button class="btn sm" id="btnPurge" hidden title="彻底删除已作废且满保留期的票：连票面原件与全部解析产物一起抹掉（仅管理员，不可恢复）">数据清理<span class="pcnt" id="btnPurgeCnt"></span></button>
   <button class="btn sm" id="btnAcct" hidden>账号管理</button>
   <button class="btn sm gh" id="btnLogout" hidden>退出</button>
 </header>
@@ -81,6 +84,35 @@
       <button class="btn sm gh" id="statsClose" type="button">关闭</button>
     </div>
     <div class="statsbody" id="stBox"></div>
+  </div>
+</div>
+
+<!-- 数据清理：一张票散在十几个地方（原件、L1/L2/L3、红旗、预览、暂存、台账、幂等锁、页图缓存、
+     库里的行），所以这里删的是「已作废且满保留期」的票——没作废过的票无论怎么搜都不该出现。
+     这句「公司那一侧删不掉」常驻在列表上方，不是一次性 toast：它是点删除之前唯一该看见的话。 -->
+<div class="gate" id="purgeWin" hidden>
+  <div class="card purgebox">
+    <div class="t">数据清理<span class="sp"></span>
+      <label class="f">作废满<input id="purgeDays" class="days-in" type="number" min="1" max="3650" step="1"
+             aria-label="保留期天数"><span class="u">天</span></label>
+      <button class="btn sm" id="purgeDaysSave" type="button">保存</button>
+      <button class="btn sm gh" id="purgeClose" type="button">关闭</button>
+    </div>
+    <p class="purge-note" id="purgeNote"><b>删除不可恢复。</b>公司系统（j9 AMS）里已经录进去的那一份
+      这台机器删不掉，需要的话请另行走公司流程处理；这里删掉的只是本台的票面原件与全部解析产物。</p>
+    <div class="purge-body" id="purgeBox">
+      <div class="purge-bar">
+        <input class="purge-q" id="purgeQuery" type="search" placeholder="按主单号 / 分单号 / 票名过滤候选"
+               aria-label="过滤候选">
+        <span class="purge-sum" id="purgeSum" role="status" aria-live="polite"></span>
+      </div>
+      <div class="purge-list" id="purgeList"></div>
+      <div class="purge-foot">
+        <button class="btn sm" id="purgeAll" type="button">全选 / 全不选</button>
+        <span class="sp"></span>
+        <button class="btn sm bad" id="purgeGo" type="button">删除选中的票</button>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -70,8 +70,8 @@ def _fn(js, name):
     用例要红在「这条规则没实现」，红在「切片切崩了」等于没红。"""
     i = js.find("function " + name + "(")
     assert i >= 0, "desk.js 里还没有 %s 这个函数" % name
-    j = js.find("\nfunction ", i + 1)
-    return js[i:j] if j > 0 else js[i:i + 3000]
+    m = re.compile(r"\n(?:async\s+)?function ").search(js, i + 1)
+    return js[i:m.start()] if m else js[i:i + 3000]
 
 
 def _after(js, needle, span=700):

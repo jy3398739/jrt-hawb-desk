@@ -283,8 +283,8 @@ def set_model(choice: str) -> dict:
     return info
 
 
-def persist_model_choice(choice: str, env_key: str = "VLM_MODEL") -> None:
-    """把选择写回 .env 的某一行（默认 VLM_MODEL；主单链传 MASTER_VLM_MODEL）。
+def persist_env(env_key: str, value: str) -> None:
+    """把一项配置写回 .env 的那一行（模型选择、思考档、保留期都走这里）。
     其余行逐字保留，写临时文件再原子替换，重启后与 CLI/批处理都照它走。
     换行风格照抄原文件：Windows 上 write_text 会把 \\n 统统翻成 \\r\\n，把一份 LF 的 .env 整篇改脏。"""
     raw = ""
@@ -295,15 +295,20 @@ def persist_model_choice(choice: str, env_key: str = "VLM_MODEL") -> None:
     out, hit = [], False
     for ln in raw.splitlines():
         if not ln.lstrip().startswith("#") and ln.strip().startswith(env_key + "="):
-            out.append(f"{env_key}={choice}")
+            out.append(f"{env_key}={value}")
             hit = True
         else:
             out.append(ln)
     if not hit:
         if out and out[-1].strip():
             out.append("")
-        out.append(f"{env_key}={choice}")
+        out.append(f"{env_key}={value}")
     atomic.write_text(ENV_FILE, nl.join(out) + nl, mode=0o600)   # .env 里放着令牌：新建就收 600
+
+
+def persist_model_choice(choice: str, env_key: str = "VLM_MODEL") -> None:
+    """模型那两档的旧调用口（默认 VLM_MODEL；主单链传 MASTER_VLM_MODEL）。"""
+    persist_env(env_key, choice)
 
 # === 目录 ===
 BASE_DIR = Path(__file__).resolve().parent
@@ -340,6 +345,11 @@ MASTER_DIR = Path(os.getenv("MASTER_DIR", str(BASE_DIR / "output" / "master")))
 # 主单提交台账：mawb2 回传成功后逐条记（主单号→复核人/时间/回执/确认过的红旗/提交前快照）。
 # 单独一张表是因为分单台账以 stem 为键，而主单没有 stem。
 MASTER_LEDGER = Path(os.getenv("MASTER_LEDGER", str(BASE_DIR / "output" / "master_submitted.json")))
+# 删除凭据本（只追加的 jsonl）：彻底删除一张票之前先在这里落一行。
+# 为什么删干净了还要留这一行：删掉之后要是公司那边对这张票有争议，唯一还能回答的
+# 就是"这张票存在过、什么时候被谁删的、删之前台账里是哪些号"。所以它只存号与文件名，
+# 不存收发货人、货物、地址——留的是"有过这件事"，不是"票上写了什么"。
+PURGED_LEDGER = Path(os.getenv("PURGED_LEDGER", str(BASE_DIR / "output" / "purged.jsonl")))
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))
@@ -354,6 +364,22 @@ VLM_RETRIES = int(os.getenv("VLM_RETRIES", "3"))
 VLM_TIMEOUT = float(os.getenv("VLM_TIMEOUT", "300"))
 VLM_TIMEOUT_TRIES = int(os.getenv("VLM_TIMEOUT_TRIES", "2"))
 IMAGE_LONG_EDGE = int(os.getenv("IMAGE_LONG_EDGE", "0"))  # 0=原图(魔搭接受PNG)；网络慢可设1600
+# 保留期：作废满多少天才允许彻底删除。只给区间不给"0 天"——0 天等于没有保留期，
+# 而这段留的就是人反悔与同事发现"这张票不该作废"的时间。运维填了非法值不报错，
+# 但也不能让一个坏数字变成"随时可删"，所以落回默认 30。
+PURGE_DAYS_RANGE = (1, 3650)
+
+
+def _days_env(default: int = 30) -> int:
+    lo, hi = PURGE_DAYS_RANGE
+    try:
+        v = int(str(os.getenv("PURGE_AFTER_DAYS", "")).strip())
+    except (TypeError, ValueError):
+        return default
+    return v if lo <= v <= hi else default
+
+
+PURGE_AFTER_DAYS = _days_env()
 
 # === 电子单 Excel → PDF（LibreOffice 无头转换，转完走 VLM 通道）===
 SOFFICE_PATH = os.getenv("SOFFICE_PATH", "").strip()  # 留空则自动探测常见安装位置

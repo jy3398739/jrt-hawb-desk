@@ -473,6 +473,52 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 .stfoot{margin:12px 0 2px;font-size:var(--f-sm);color:var(--c-text-3)}
 .stfoot b{color:var(--c-text-2);font-weight:var(--w-semi)}
 .stbelow{margin-top:12px}     /* 两栏之下再挂一块（空状态说明 / 分组表）时与上面那一排拉开距离 */
+
+/* ── 数据清理面板（仅管理员，删的是不可逆的东西）────────────────────────────────
+   样式上刻意不"好看"：这是一张会抹数据的表，越朴素越像在提醒人慢一点。
+   危险色只用 --c-bad 一族（填充那一支与文字那一支各归各，见 tokens.css 开头那段）。 */
+.pcnt{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--c-warn-text);margin-left:5px}
+.purgebox{width:min(880px,100%);max-width:100%;padding:0;max-height:88vh;display:flex;flex-direction:column}
+.purgebox .t{font-size:var(--f-base);flex-wrap:wrap;row-gap:6px}
+.purgebox .t .u{font-size:var(--f-sm);color:var(--c-text-2)}
+.days-in{width:72px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+/* 这句必须常驻在列表上方：它是点删除之前唯一该看见的话。写成 toast 就等于没写。 */
+.purge-note{margin:0;padding:9px 16px;font-size:var(--f-sm);color:var(--c-bad-text);
+  background:var(--c-bad-bg);border-bottom:1px solid var(--c-bad-line)}
+.purge-note b{font-weight:var(--w-semi)}
+.purge-body{overflow:auto;padding:0 16px 12px}
+.purge-bar{display:flex;align-items:center;gap:10px;padding:11px 0 9px;flex-wrap:wrap;row-gap:6px}
+.purge-q{flex:1;min-width:200px;border:1px solid var(--c-line);border-radius:var(--r-md);
+  padding:6px 9px;font-size:var(--f-md)}
+.purge-q:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
+.purge-sum{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:var(--f-sm);color:var(--c-text-2)}
+.purge-t{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--f-sm)}
+.purge-t thead th{text-align:left;font-weight:var(--w-normal);color:var(--c-text-3);font-size:var(--f-xs);
+  background:var(--c-surface-2);border-bottom:1px solid var(--c-line-strong);padding:6px 9px;white-space:nowrap}
+.purge-t tbody td{padding:7px 9px;border-bottom:1px solid var(--c-line-soft);vertical-align:middle;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.purge-t tbody tr:last-child td{border-bottom:0}
+.purge-t tbody tr:hover td{background:var(--c-accent-glow)}
+.pk-hawb,.pk-mawb{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:var(--r-sm);
+  font-size:var(--f-xs);font-weight:var(--w-semi)}
+.pk-hawb{color:var(--c-sub-text);background:var(--c-sub-bg);border:1px solid var(--c-sub-line)}
+.pk-mawb{color:var(--c-accent);background:var(--c-accent-soft);border:1px solid var(--c-accent-line)}
+.pkn,.pkv{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.pkn{color:var(--c-text-2)}.pkv{color:var(--c-text-3);font-size:var(--f-xs)}
+/* 票名那一格：没提交过的票两号皆空，它是这一行唯一的身份，所以要读得出但不能比号还抢眼。 */
+.pks{margin-left:7px;font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-3)}
+.pkb{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--c-text-2)}
+/* 「已回传」是这一页最要紧的一格：它说的是"删掉的就是发过什么的凭据"，得比旁边重。 */
+.pke{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:var(--r-sm);
+  font-size:var(--f-xs);font-weight:var(--w-semi);color:var(--c-warn-text);background:var(--c-warn-bg);
+  border:1px solid var(--c-warn-line)}
+.pkn2{font-size:var(--f-xs);color:var(--c-text-3)}
+.purge-foot{display:flex;align-items:center;gap:10px;padding:11px 0 2px;border-top:1px solid var(--c-line);
+  position:sticky;bottom:0;background:var(--c-surface)}
+.purge-foot .sp{flex:1}
+.btn.bad:disabled{opacity:.5;cursor:not-allowed}
+.btn.bad:not(:disabled){color:var(--c-bad-text);border-color:var(--c-bad-line);background:var(--c-bad-bg)}
+.btn.bad:not(:disabled):hover{border-color:var(--c-bad-text);color:var(--c-bad-text)}
 /* 首屏入场：六张卡按 0.04s 一档步进淡入，随后两栏与口径条跟上。这个动画只挂在骨架上，
    明细 tbody 由 renderStatsRows 单独重画——挂到行身上的话，每点一次分段筛选整表就闪一遍。 */
 .stkpi,.stpanel,.stscope{animation:stFade var(--dur-slow) both}

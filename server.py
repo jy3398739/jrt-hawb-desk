@@ -53,6 +53,7 @@ import config
 import desk_queue
 import jobs
 import master_pipeline
+import purge
 import stats
 import store
 import xlsx2pdf
@@ -995,6 +996,61 @@ def layout(stem: str, _: None = Depends(require_web)):
 # 键含 scale，FIFO 挡 8 张（A4 @2x 一张 PNG 约 0.5-2MB，最坏十几 MB，够用也够小）。
 _RENDER_CACHE: dict = {}
 _RENDER_SCALE = (1, 3)
+
+
+def _drop_render_cache(key: str) -> None:
+    """彻底删除一张票时把它的页图从缓存里摘掉。不清这一步，删完还能从内存缓存里
+    把已经"人间蒸发"的票面翻出来——那张 PNG 正是这整件事要抹掉的东西。"""
+    for k in [k for k in _RENDER_CACHE if k[0] == key]:
+        _RENDER_CACHE.pop(k, None)
+
+
+purge.CACHE_HOOKS.append(_drop_render_cache)
+
+
+class PurgeItems(BaseModel):
+    items: list = []
+
+
+class PurgeDays(BaseModel):
+    days: "str | int" = ""          # 界面填的是文本，接口也可能收到数字：两种都接，非法值统一 400
+
+
+@app.get("/purge/config")
+def purge_config_get(_: None = Depends(require_admin)):
+    return {"days": purge.retention(), "range": list(config.PURGE_DAYS_RANGE)}
+
+
+@app.post("/purge/config")
+def purge_config_set(body: PurgeDays, _: None = Depends(require_admin)):
+    """保留期只存在这一份。执行删除时服务端重读它，**不看请求里带的天数**——
+    不然带一个 days=0 就能删掉刚作废的票，保留期成了摆设。"""
+    got = purge.set_retention(body.days)
+    if got is None:
+        raise HTTPException(400, "保留期要填 %d-%d 之间的整数天" % config.PURGE_DAYS_RANGE)
+    return {"days": got}
+
+
+@app.get("/purge/candidates")
+def purge_candidates(days: int = Query(0, ge=0, description="0=用服务端那份保留期；填数字只做假设预览"),
+                     brief: int = Query(0, ge=0, le=1, description="1=只数条数，不去 stat 归档目录"),
+                     _: None = Depends(require_admin)):
+    """面板与顶栏徽标同一份数据。这里的 days 只能用来"如果改成 N 天会捞出哪些"，
+    它不授权任何删除——POST 那边会按服务端保留期重算一遍。"""
+    d = purge.retention() if not days else days
+    items = purge.candidates(days=d, with_bytes=not brief)
+    return {"days": purge.retention(), "preview_days": d,
+            "items": [{k: v for k, v in i.items() if k not in ("files", "dirs", "drop")} for i in items],
+            "total_bytes": sum(i["bytes"] for i in items)}
+
+
+@app.post("/purge")
+def purge_run(body: PurgeItems, request: Request, _: None = Depends(require_admin)):
+    """逐张执行、逐张报成败：一批里有一张卡住，不许把其余的报成已删。
+    名单外的项（没作废 / 没满保留期 / 票早就不在了）由 purge 自己拒，不靠前端没勾。"""
+    who = auth.session_user(request) or {}
+    results = purge.purge(body.items or [], by=str(who.get("name") or ""))
+    return {"results": results, "days": purge.retention()}
 
 
 @app.get("/render/{stem}")

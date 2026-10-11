@@ -303,6 +303,77 @@ def test_desk_clickables_are_real_buttons_with_visible_focus():
     assert "min-height" in sm[:200], "触屏/拖拽目标要够大（原先 .btn.sm 只有 22px 高）"
 
 
+def _call_args(text: str, name: str):
+    """抓 name( 的实参，每个调用一组（顶层逗号切开）。
+    字符串里的括号/逗号不算，`//` 注释整行跳过：注释里举一个坏例子不该把守卫判红。
+    只用于守卫，解析不了就抛——静默跳过等于给守卫开了个洞。"""
+    out = []
+    for m in re.finditer(r"(?<!function )" + re.escape(name) + r"\(", text):
+        i, depth, buf, args, q = m.end(), 1, "", [], None
+        n = len(text)
+        while i < n:
+            c = text[i]
+            if q:
+                if c == "\\":
+                    i += 2
+                    continue
+                if c == q:
+                    q = None
+                buf += c
+                i += 1
+                continue
+            if c in "\"'`":
+                q = c
+                buf += c
+            elif c == "/" and text[i + 1:i + 2] == "/":
+                nl = text.find("\n", i)
+                i = n if nl < 0 else nl
+                continue
+            elif c in "([{":
+                depth += 1
+                buf += c
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    args.append(buf)
+                    break
+                buf += c
+            elif c == "," and depth == 1:
+                args.append(buf)
+                buf = ""
+            else:
+                buf += c
+            i += 1
+        else:
+            raise AssertionError(f"{name}( 有个没闭合的调用，守卫没法判")
+        out.append(args)
+    return out
+
+
+def test_toast_second_argument_is_a_real_class():
+    """toast(msg, kind) 的第二参是直接拼进 class 的（"toast " + kind），所以它只能是
+    desk.css 里真存在的类别。传布尔会得到 class="toast true"：一个不存在的类——
+    错误提示退化成中性气泡（.toast.bad 的红底没了），而 9 秒停留那条分支只认 kind==="bad"，
+    错误于是 3.5 秒自己消失，而那正是要人拿去改的东西。数据清理那批就是这样写出三处
+    `, true)`，493 条回归全绿没人发现：纯字符串拼接的类名，CSS 与 JS 两头都不报错。"""
+    js = _code(web_src.part("js/desk.js"))
+    css = _code(web_src.part("css/desk.css"))
+    kinds = set(re.findall(r"\.toast\.([a-z]+)\b", css)) - {"on"}   # .on 是淡入态，不是类别
+    assert kinds == {"bad", "ok"}, f"toast 的类别该和样式同源，现在样式里是：{sorted(kinds)}"
+    offenders = []
+    for args in _call_args(js, "toast"):
+        if len(args) < 2:
+            continue                                              # 只给消息：走默认中性气泡
+        second = args[-1].strip()
+        if second in ('""', "''"):
+            continue                                              # 显式中性气泡，跟省略第二参一样
+        m = re.fullmatch(r'"([a-z]+)"|\'([a-z]+)\'', second)
+        if not (m and (m.group(1) or m.group(2)) in kinds):
+            offenders.append(second[:60])
+    assert not offenders, ("toast 的第二参要写成一类真实存在的类别字符串（bad/ok）：\n"
+                           + "\n".join(sorted(set(offenders))[:24]))
+
+
 
 def test_health_says_which_build_is_running():
     """部署是手工 tar 推文件，中断/漏推就会新旧混跑；stale_files 只说"有些文件比进程新"，

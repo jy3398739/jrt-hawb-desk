@@ -317,6 +317,28 @@ def unvoid_row(kind: str, key: str) -> bool:
     return True
 
 
+def drop_submitted(stem: str) -> bool:
+    """从提交台账里去掉一条——只给彻底删除（purge）用。
+    这里不做"软删标记"：那张票回传过公司的事实，已经由 purge 先写进 purged.jsonl 了。"""
+    with _LEDGER_LOCK:
+        data = _load_ledger()
+        if stem not in data:
+            return False
+        data.pop(stem)
+        _write_ledger(data)
+    return True
+
+
+def drop_master_submitted(mawb_key: str) -> bool:
+    """同上，主单那本（按归一化主单号存）。"""
+    with _LEDGER_LOCK:
+        data = _load_ledger(config.MASTER_LEDGER)
+        if data.pop(str(mawb_key or ""), None) is None:
+            return False
+        _write_ledger(data, config.MASTER_LEDGER)
+    return True
+
+
 def _void_of(v: dict, kind: str, key: str):
     """这一行的作废信息（没有则 None）。主单按归一化号找，与写入端同一套归一。"""
     k = kind + "|" + (norm_no(str(key or "")) if kind == "mawb" else str(key or ""))
