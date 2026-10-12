@@ -1059,8 +1059,7 @@ async function submitTicket(t, ackNoReview){
           // 第三道门：服务器说这张票没有录入员复核过的暂存记录。问一次，点了确认才重发；
           // 不点就当没发生过——绝不能自己替他确认。
           t.state = "done"; render();
-          if (confirm((d.message || "这张票没有录入员复核过的暂存记录。") +
-                      "\n\n确认「未经录入员复核，仍要回传公司」？")) submitTicket(t, true);
+          if (confirm(d.message || "这张票没有录入员复核过的暂存记录。")) submitTicket(t, true);
           return;
         }
         if (d && Array.isArray(d.flags) && d.flags.length){
@@ -2281,8 +2280,7 @@ async function mvSubmit(ackNoReview){
         toast(MV.msg, "bad");
       } else if (r.status === 400 && d.ack === "no_inputter_review"){
         // 与分单同一条门：没人复核过要多点一次确认，点才算；不点什么都不发
-        if (confirm((d.message || "这条主单没有录入员复核过的暂存记录。") +
-                    "\n\n确认「未经录入员复核，仍要回传公司」？")) mvSubmit(true);
+        if (confirm(d.message || "这条主单没有录入员复核过的暂存记录。")) mvSubmit(true);
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};

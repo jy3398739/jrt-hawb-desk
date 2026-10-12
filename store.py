@@ -194,7 +194,7 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
                    acked_flags: list = None, edited_fields: list = None,
                    sent_fingerprint: str = "", company_action: str = "",
                    air_sent: dict = None, stager: str = "", staged_at: str = "",
-                   no_inputter_review: bool = False,
+                   no_inputter_review: bool = False, inputter_self_submit: bool = False,
                    skipped_empty: list = None, acked_empty: list = None) -> dict:
     """记一笔提交（覆盖同 stem 旧记录，重提交以最新为准）。返回写进去的条目。
     acked_flags：复核员在审核台点「确认无误」放行的红旗原文，留痕备查。
@@ -221,6 +221,8 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
                  "air_sent": air_sent if isinstance(air_sent, dict) else {},
                  "stager": str(stager or ""), "staged_at": str(staged_at or ""),
                  "no_inputter_review": bool(no_inputter_review),
+                 # 录入员本人核对完直接发（没有暂存那一步）：单独一档，不进"未经复核"那个对照组
+                 "inputter_self_submit": bool(inputter_self_submit),
                  "receipt": receipt or {}}
         if isinstance((receipt or {}).get("before"), dict):
             entry["before"] = receipt["before"]
@@ -253,7 +255,8 @@ def ledger() -> dict:
 def mark_master_submitted(mawb: str, reviewer: str, receipt: dict = None,
                           acked_flags: list = None, snapshot: dict = None,
                           ams_sent: dict = None, stager: str = "", staged_at: str = "",
-                          no_inputter_review: bool = False) -> dict:
+                          no_inputter_review: bool = False,
+                          inputter_self_submit: bool = False) -> dict:
     """主单提交台账（键=归一化主单号）。与分单台账分开：那边以 stem 为键，主单没有原件 stem。
     snapshot 存提交前公司侧的 AMS_RECORD——整表写回会把没给的列写成 NULL，出事时要能看出抹掉了什么。
     ams_sent/stager/no_inputter_review 与分单台账同一套含义：发了什么值、发之前谁核对过。"""
@@ -267,6 +270,7 @@ def mark_master_submitted(mawb: str, reviewer: str, receipt: dict = None,
                  "ams_sent": ams_sent if isinstance(ams_sent, dict) else {},
                  "stager": str(stager or ""), "staged_at": str(staged_at or ""),
                  "no_inputter_review": bool(no_inputter_review),
+                 "inputter_self_submit": bool(inputter_self_submit),
                  "receipt": receipt or {}, "snapshot": snapshot or {}}
         data[key] = entry
         _write_ledger(data, config.MASTER_LEDGER)

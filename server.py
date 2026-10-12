@@ -351,6 +351,7 @@ def master_result(mawb: str, _: None = Depends(require_web)):
 class MasterSubmitBody(BaseModel):
     mawb: str = ""
     reviewer: str = ""
+    reviewer_role: str = ""      # 一律由服务端按会话覆写：请求里写什么都不认
     ams: dict = {}
     acked_flags: list = []
     acked_no_review: bool = False
@@ -393,6 +394,7 @@ def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
     接口不通/没配 → 502，绝不写台账。
     署名同样取登录会话，不认前端传的名字。"""
     body.reviewer = str(user.get("name") or "")
+    body.reviewer_role = str(user.get("role") or "")
     try:
         out = master_pipeline.submit_master(body.model_dump())
         LOG.info("主单提交 who=%s %s 模式=%s 公司=%s 确认旗=%d 条",
@@ -502,13 +504,21 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         # 确认之后台账留 no_inputter_review，否则以后答不出"跳过复核直接发的那批错得多不多"。
         st = store.load_staged(stem) or {}
         reviewed = store.reviewed_by_inputter(st)
+        # 提交人自己就是录入员：这次提交即他的核对。确认仍点一次（没有暂存那一步的逐字段留痕），
+        # 但话要说准，且台账记 inputter_self_submit、不记"未经录入员复核"——那一档是"制单员
+        # 跳过复核直发"的对照组，混进录入员自己的提交，对照就废了（2026-10-12 郭健康现场）。
+        self_submit = (not reviewed) and str(user.get("role") or "") == "inputter"
         if not reviewed and not tk.get("acked_no_review"):
             raise HTTPException(400, {
-                "message": f"{hawb} 没有录入员复核过的暂存记录：确认「未经录入员复核，仍要回传公司」后再提交",
+                "message": (f"{hawb} 你就是录入员：这次提交即视为你的核对"
+                            "（这张票没有暂存那一步的逐字段留痕）" if self_submit else
+                            f"{hawb} 没有录入员复核过的暂存记录："
+                            "确认「未经录入员复核，仍要回传公司」后再提交"),
                 "ack": "no_inputter_review"})
-        passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty))
+        passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty,
+                       skipped_empty, self_submit))
     results, codes = [], []
-    for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty in passed:
+    for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty, self_submit in passed:
         # 逐张收集成败，不在第一张错上 raise：/submit 收的是列表，前面几张已经写进公司库了，
         # 让它们随异常一起消失，调用方就分不清"没发出去"和"发出去了但没回执"，
         # 再点一次等于第二次整表写回。
@@ -533,7 +543,8 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                                      company_action=str(receipt.get("action") or ""),
                                      air_sent=rec, stager=st.get("stager") or "",
                                      staged_at=st.get("staged_at") or "",
-                                     no_inputter_review=not reviewed,
+                                     no_inputter_review=not reviewed and not self_submit,
+                                     inputter_self_submit=self_submit,
                                      skipped_empty=skipped_empty, acked_empty=acked_empty)
         if st:
             store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)

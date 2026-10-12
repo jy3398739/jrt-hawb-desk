@@ -381,3 +381,27 @@ def test_desk_has_a_master_stage_button_next_to_the_submit_one():
         "acked_no_review 必须只在人确认之后才带"
     assert 'addEventListener("click", () => mvSubmit())' in js, \
         "直接把 mvSubmit 当监听器会把 MouseEvent 当成 ackNoReview，等于默认替人确认"
+
+
+def test_a_master_the_inputter_sends_himself_is_not_marked_unreviewed():
+    """与分单同一条：录入员本人直发主单，确认照点一次，台账记的是 inputter_self_submit，
+    不是「未经录入员复核」。两条链统一的是机制，不是各自再判一次。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mself_"))
+    old = _isolate(tmp)
+    undo = _stub_live()
+    try:
+        inp = _acct("刘明", "inputter", "in-123456")
+        assert inp.get("/company/mawb", params={"mawb": "176-62400004"}).status_code == 200
+        ams = dict(AMS, GOODS_NAME="PISTON ROD ASSY")
+        body = {"mawb": "176-62400004", "reviewer": "刘明", "ams": ams, "acked_flags": []}
+        r = inp.post("/master/submit", json=body)
+        assert r.status_code == 400, r.text
+        d = r.json()["detail"]
+        assert "你就是录入员" in d["message"] and "未经录入员复核" not in d["message"], d
+        body["acked_no_review"] = True
+        assert inp.post("/master/submit", json=body).status_code == 200
+        e = store.master_ledger()["17662400004"]
+        assert e["inputter_self_submit"] is True and e["no_inputter_review"] is False, e
+    finally:
+        undo()
+        _restore(old, tmp)

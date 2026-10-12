@@ -281,9 +281,16 @@ def submit_master(payload: dict) -> dict:
         raise MasterFlagged("主单还有未确认的红旗，逐条点「确认无误」后才能回传公司：\n" +
                             "\n".join(left), left)
     reviewed = store.reviewed_by_inputter(cached)
+    # 提交人自己就是录入员时，这次提交就是他的核对：确认仍要点一次（这一次没有暂存那一步的
+    # 逐字段留痕，得让人知道），但台账不许记成「未经录入员复核」——那一档是"制单员跳过复核
+    # 直发"的对照组，混进录入员自己的提交，对照就废了（2026-10-12 现场：录入员被这样问）。
+    self_submit = (not reviewed) and str(p.get("reviewer_role") or "") == "inputter"
     if not reviewed and not p.get("acked_no_review"):
-        raise MasterNeedsAck(f"主单 {mawb} 没有录入员复核过的暂存记录："
-                             "确认「未经录入员复核，仍要回传公司」后再提交")
+        raise MasterNeedsAck(
+            f"主单 {mawb} 你就是录入员：这次提交即视为你的核对"
+            "（这张主单没有暂存那一步的逐字段留痕）" if self_submit else
+            f"主单 {mawb} 没有录入员复核过的暂存记录："
+            "确认「未经录入员复核，仍要回传公司」后再提交")
     # 只发调用方给过的列（clean_ams 会丢掉没给的）：公司写口是整表写回，
     # "这次没碰"要由 company_api 用库里的现值补齐，"人工清空"才是显式 null。
     res = company_api.submit_master({"mawb": mawb, "ams": mf.clean_ams(ams)})
@@ -291,6 +298,7 @@ def submit_master(payload: dict) -> dict:
                                 snapshot=res.get("before"), ams_sent=ams,
                                 stager=cached.get("stager") or "",
                                 staged_at=cached.get("staged_at") or "",
-                                no_inputter_review=not reviewed)
+                                no_inputter_review=not reviewed and not self_submit,
+                                inputter_self_submit=self_submit)
     mark_master_sent(mawb, reviewer)
     return res

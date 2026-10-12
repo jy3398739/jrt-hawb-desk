@@ -630,3 +630,34 @@ def test_a_batch_reports_which_tickets_made_it_when_one_does_not():
     finally:
         server._company_submit = old_submit
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_an_inputter_submitting_himself_is_not_counted_as_unreviewed():
+    """录入员本人直接提交：确认这一步照旧点一次（这次提交没有暂存那一步的逐字段留痕，得让人
+    知道），但话要说准、数要记对。2026-10-12 现场：郭健康是录入员，提交时却被问「没有录入员
+    复核过的暂存记录」，点下去这张票就进了「未经录入员复核」那一档——那一档是给"制单员跳过
+    复核直发"准备的对照组，把录入员自己的提交算进去，数就说谎了。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_self_"))
+    try:
+        with _desk_dirs(tmp):
+            inp = _login_as("刘明", "in-123456", "inputter")
+            tk = _clean_ticket()
+            no_ack = dict(tk)
+            no_ack.pop("acked_no_review")
+            r = inp.post("/submit", json={"tickets": [no_ack]})
+            assert r.status_code == 400, "点一次确认这一步要留着：这次提交确实没有暂存留痕"
+            d = r.json()["detail"]
+            assert d.get("ack") == "no_inputter_review" and "你就是录入员" in d["message"], d
+            assert "未经录入员复核" not in d["message"], "对录入员说这句是在否认他的身份"
+            assert inp.post("/submit", json={"tickets": [tk]}).status_code == 200
+            e = store.ledger()["CLA26090022"]
+            assert e["inputter_self_submit"] is True and e["no_inputter_review"] is False, e
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_confirm_wording_comes_from_the_server_only():
+    """确认框那两行从前是前端把一句硬话接在服务器 message 后面：服务器换成「你就是录入员」
+    之后，后面那半句还在，等于系统替自己说了一句它不该说的话。话只由服务端出，前端只画。"""
+    js = web_src.part("js/desk.js")
+    assert "确认「未经录入员复核，仍要回传公司」" not in js, "前端还在自己拼那句确认话"

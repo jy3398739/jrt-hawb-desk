@@ -94,7 +94,8 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
                 "doc": [], "inp": [], "comparable": 0, "fields": [],
                 "model": qc.get("model") or staged.get("model") or "",
                 "uploader": qc.get("uploader") or "", "uploader_role": qc.get("uploader_role") or "",
-                "stager": "", "no_inputter_review": True, "when": _when(stem, qc, staged, entry),
+                "stager": "", "no_inputter_review": True, "inputter_self_submit": False,
+                "when": _when(stem, qc, staged, entry),
                 "source_name": qc.get("source_name") or stem}
     final = final if isinstance(final, dict) else (staged.get("air_final") or {})
     keys = [k for k in _keys() if _nonempty(model.get(k)) or _nonempty(final.get(k))]
@@ -122,6 +123,7 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
             "uploader_role": qc.get("uploader_role") or staged.get("uploader_role") or "",
             "stager": staged.get("stager") or entry.get("stager") or "",
             "no_inputter_review": bool(entry.get("no_inputter_review", True)),
+            "inputter_self_submit": bool(entry.get("inputter_self_submit", False)),
             "when": _when(stem, qc, staged, entry),
             "source_name": qc.get("source_name") or stem}
 
@@ -166,7 +168,8 @@ def _rate(numerator: float, denominator: float):
 _CN = {"stem": "票名", "state": "状态", "when": "解析时刻", "model": "模型",
        "model_choice": "渠道预设", "uploader": "上传人", "uploader_role": "上传人角色",
        "stager": "暂存人", "comparable": "可比列数", "total": "改动列数",
-       "no_inputter_review": "未经录入员复核", "legacy": "无逐字段留痕(历史)",
+       "no_inputter_review": "未经录入员复核", "inputter_self_submit": "录入员本人直发",
+       "self_submit": "录入员本人直发张数", "legacy": "无逐字段留痕(历史)",
        "field": "列", "edits": "被改次数", "tickets": "票数", "fields": "可比列数",
        "clean": "零改动票数", "clean_rate": "一次通过率", "acc_field": "逐字段准确率",
        "acc_after_review": "复核后准确率（能不能对接看这个）", "edits_total": "改动列合计",
@@ -202,6 +205,10 @@ def summary(rows: list, group_by: str = None) -> dict:
            # 这个数会随谁把工作停在暂存一档而涨——而它是拿去看要不要对接的数。
            "unreviewed": sum(1 for r in usable
                              if r.get("no_inputter_review") and r.get("state") == "submitted"),
+           # 录入员本人核对完直接发的，单独一档：它不是"跳过复核"，混进上面那个数，
+           # 那个对照组就废了（2026-10-12 现场：录入员一提交就被记成"未经录入员复核"）
+           "self_submit": sum(1 for r in usable
+                              if r.get("inputter_self_submit") and r.get("state") == "submitted"),
            "by_field": sorted(by_field.values(), key=lambda e: (-e["edits"], e["field"]))}
     if group_by in GROUPS:
         buckets: dict = {}

@@ -92,11 +92,12 @@ def _stage(stem, final, by, role):
     return store.stage_ticket(stem, final, by, role)
 
 
-def _send(stem, mawb, hawb, sent, reviewer, stager="", no_review=True):
+def _send(stem, mawb, hawb, sent, reviewer, stager="", no_review=True, self_submit=False):
     return store.mark_submitted(stem, mawb, hawb, reviewer, {"mode": "mock"},
                                 air_sent=sent, stager=stager,
                                 staged_at=TODAY + "T10:00:00" if stager else "",
-                                no_inputter_review=no_review)
+                                no_inputter_review=no_review,
+                                inputter_self_submit=self_submit)
 
 
 def test_per_field_accuracy_and_who_moved_it():
@@ -376,3 +377,17 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
     per = js[i:i + 2400]
     assert "r.model" not in per, "页面上模型那一列没删干净"
     assert "r.stem" in per and "title" in per, "票名要从这一列挪走但别丢掉：找回原件全靠它"
+
+
+def test_an_inputter_self_submit_gets_its_own_bucket():
+    """「未经录入员复核」是给"制单员跳过复核直发"准备的对照组；录入员本人核对完直接发的
+    票不是它——单独一档 self_submit，两个数各说各的（2026-10-12 现场：录入员一提交就被
+    记进"未经复核"，那批的正确率就永远对不上）。"""
+    with _world():
+        m = _parsed("C9", {"DEST_NAME": "AMS"}, uploader="刘明", role="inputter")
+        _send("C9", "235-96146363", "C9", m, "刘明", no_review=False, self_submit=True)
+        r = {x["stem"]: x for x in stats.collect()}["C9"]
+        assert r["inputter_self_submit"] is True and r["no_inputter_review"] is False, r
+        s = stats.summary([r])
+        assert s["unreviewed"] == 0, "录入员本人直发不许算进那个对照组"
+        assert s["self_submit"] == 1
