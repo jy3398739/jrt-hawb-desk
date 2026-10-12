@@ -11,7 +11,7 @@ const L = {
   esc(s){ return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); },
   /* 角色名是给登录者看的身份提示：说错了比不说更糟（录入员被写成"制单员"会以为自己没登进去）。
      后端将来加角色，宁可原样显示，也别替他猜一个别人的身份。 */
-  roleCn(role){ return ({admin:"管理员", reviewer:"制单员", inputter:"录入员"})[role] || String(role); },
+  roleCn(role){ return ({admin:"管理员", reviewer:"制单员", inputter:"录入员"})[role] || (role ? String(role) : ""); },
 
   /* 轮询的下一间隔：第一次就退避会把正常速度的结果也拖慢，所以第 1 次就是基础值；
      之后越等越稀疏（解析慢的时候按秒敲服务器没有意义），但要有上限。 */

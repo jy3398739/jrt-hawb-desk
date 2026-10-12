@@ -290,6 +290,10 @@ def test_role_name_says_who_logged_in():
     for role, cn in (("admin", "管理员"), ("reviewer", "制单员"), ("inputter", "录入员")):
         assert web_src.logic("L.roleCn(r)", r=role) == cn, f"{role} 的角色名不对"
     assert web_src.logic("L.roleCn(r)", r="auditor") == "auditor", "后端新加的角色不该被显示成别人的身份"
+    # 没有角色（老暂存记录里 stager_role 是空的）要什么都不显示：String(undefined) 会把
+    # "undefined" 印在制单员天天看的那一行上（2026-10-12 用户截图：· undefined 宛平 已暂存）
+    assert web_src.logic("L.roleCn(r)", r=None) == "", "角色缺失时别把 undefined 印到界面上"
+    assert web_src.logic("L.roleCn(r)", r="") == "", "空串同理：宁可什么都不显示"
     html = web_src.desk()
     assert "L.roleCn(ME.role)" in html, "顶栏角色名要过映射，别再 admin?管理员:制单员 这样二分"
     assert 'admin ? "管理员" : "制单员"' not in html, "二分会把录入员说成制单员"

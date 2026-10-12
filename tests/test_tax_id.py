@@ -234,17 +234,15 @@ def test_legacy_air_records_lose_nothing_on_submit():
 
 
 def test_desk_js_moves_its_tax_logic_onto_the_eori_cell():
-    """审核台里三处认字段的代码都得跟着搬：即时提示（checks）、"混进标签"这类纯提示红旗的
-    自动消除（isTaxLabelFlag/taxFlagCleared）。留一处还在认 `_TAX_ID`，制单员就会看到
-    一条永远消不掉的红旗，或者改了格子却不消提示。"""
+    """审核台里认字段的代码都得跟着搬：即时提示（checks）要指到识别号那一格。
+    留一处还在认 `_TAX_ID`，制单员就会看到一条改了格子也不消的提示。
+    （从前还有第三处——"混进标签"这类提示红旗的自动消除 isTaxLabelFlag/taxFlagCleared，
+    v1.17.2 删了：它把旗从界面上拿掉却不写进 acked_flags，服务端那道门只认 acked_flags，
+    结果是条点不到的死旗。红旗一律由人确认，见 test_review_flow 第五节。）"""
     js = web_src.part("js/desk.js")
     assert "_TAX_ID" not in js, "前端还在引用一列已经不存在的字段"
     assert 'k.endsWith("_EORI")' in js, "即时提示要搬到识别号那一格"
-    for fn in ("isTaxLabelFlag", "taxFlagCleared"):
-        i = js.index("function " + fn)
-        body = js[i:i + 400]
-        assert "SHIPPER_INFO_EORI" in body and "CONSIGNEE_INFO_EORI" in body, \
-            fn + " 还指着已经不存在的税号列"
+    assert "taxFlagCleared" not in js, "前端不许再自己判某条红旗不算数（服务端只认人确认过的）"
 
 
 def test_schema_no_longer_creates_the_tax_columns():

@@ -435,3 +435,63 @@ def test_anchors_never_fabricate_a_spot_for_an_empty_field():
         assert banned not in body, "锚点里出现了空值那一档：" + banned + "（空栏不该有框）"
 
 
+# ── 五、红旗只认一种"已清"：人点过确认（2026-10-12 现场：界面 红旗 0，提交仍被拒）────
+
+
+def test_no_flag_may_be_hidden_by_a_guess_the_submit_gate_does_not_share():
+    """前端从前有一条"税号那格已自动摘掉标签 → 当它已清"的猜测：它把旗从界面上拿掉，
+    却**不写进 acked_flags**，而服务端那道门只认 acked_flags 里的字符串（server.py 的
+    `f not in acked`）。于是那条旗成了看不见也点不到的死旗——整段核对那颗也只收
+    effectiveFlags，同样漏它。现场：NO.A-NGB2609026B 待办显示 红旗 0，提交回 400。
+    已清只许两种：人点过确认；或号补齐后服务端重算本来就不再报它（那条两边同源）。"""
+    eff = web_src.fn(_js(), "function effectiveFlags(")
+    for banned in ("isTaxLabelFlag", "taxFlagCleared"):
+        assert banned not in eff, banned + "：前端自己判「这条旗不算数」，服务端不认这个账"
+    assert "isMissingAwbFlag" in eff, "缺号那一档要留着：号补上后服务端重算也不报它，两边同源"
+    # 「只许两种已清」要钉死，不是点名两个函数就完事：换一种写法（直接匹配旗面文案）照样是死旗
+    outs = [l.strip() for l in eff.splitlines() if "return;" in l]
+    assert len(outs) == 2, "effectiveFlags 里只许有两个提前退出（人确认过 / 缺的号补上了），现在 " \
+        + str(len(outs)) + " 个：多出来的那一个就是服务端不认的自动已清"
+    assert any("ack.includes(f)" in l for l in outs), "人点过确认那一档没了：确认了还算未清，红旗永远清不掉"
+    assert any("okM && okH" in l for l in outs), "缺号补齐那一档要留着（服务端重算也不报它，两边同源）"
+
+
+def test_flags_the_server_names_in_a_rejection_become_ackable():
+    """服务端 400 的 detail 是 {message, flags}：那串 flags 就是"到底是哪几条"。
+    不接住它，制单员只看到光秃秃一句"还有未清的红旗"，而那条旗可能压根没画在界面上
+    （改了值之后文案会变，变出来的新旗本地那份没有）。接住 → 并进待确认列表，能点、能提交。
+    注：静态用例只能钉"这条链在代码里"，钉不出"这个分支真会进"（把条件改成 if(false) 它照样
+    绿）——那一条只有浏览器端到端兜得住，本轮已实测（见留档 §12 v1.17.2）。"""
+    js = _js()
+    sub = web_src.fn(js, "async function submitTicket(")
+    assert "Array.isArray(d.flags)" in sub, "没按 400 的 {message, flags} 那个形状接：detail 换个形状就又看不见"
+    assert "t.srvFlags =" in sub, "点名的 flags 没存进这张票：toast 说完就丢，人还是没地方点确认"
+    eff = web_src.fn(js, "function effectiveFlags(")
+    assert "srvFlags" in eff, "服务端报的旗没并进待确认列表：画不出来也就点不到"
+    sd = web_src.fn(js, "function saveDraft(")
+    assert "srvFlags" in sd, "这份列表没进本机草稿：刷新一次就又变成看不见的死旗"
+
+
+# ── 六、「未保存」只放没交出去的（方案 A，用户定）────────────────────────────────
+
+
+def test_a_successful_submit_leaves_no_local_draft_behind():
+    """从前提交成功走的是 saveDraft(t)：把本机那份又写一遍，而「未保存」那一栏把说明写死成
+    "未提交"——票明明交出去了，页签上仍挂着它，人只能反复怀疑没交成。
+    方案 A：值与确认都在服务器上了，本机这份当场删掉；只有"提交接口没通、结果只存在这台
+    浏览器"的 pending 那份要留（那是唯一副本）。"""
+    js = _js()
+    sub = web_src.fn(js, "async function submitTicket(")
+    cut = sub.index('t.submitted = {mode:"server"')
+    ok, pend = sub[cut:], sub[:cut]
+    assert "dropDraft(" in ok, "提交成功后没删本机草稿：交出去的票还挂在未保存里"
+    assert "saveDraft(t)" not in ok, "成功路径不许再存一份本机副本"
+    assert "saveDraft(t)" in pend, "pending 那一份是唯一副本，删了就再也发不出去"
+    assert "function dropDraft(" in js and "function pruneSubmittedDrafts(" in js, \
+        "没有删这一格的函数：老用户浏览器里那些已提交的副本永远清不掉"
+    assert js.count("pruneSubmittedDrafts()") >= 2, \
+        "只定义了没在开机时调用一次：历史副本（这次之前已提交却还挂着的）清不掉"
+    rd = web_src.fn(js, "function renderDrafts(")
+    assert "提交成功后仍可在此回看" not in rd, "空态那句还在承诺「提交后能在这儿回看」，与方案 A 相反"
+
+

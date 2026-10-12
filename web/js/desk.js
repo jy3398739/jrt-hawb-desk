@@ -208,40 +208,26 @@ function awbFilled(t){
 function isMissingAwbFlag(f){
   return /缺失|均为空|都(?:为空|缺失)/.test(f) && (f.includes("MAWB_NO") || f.includes("HAWB_NO"));
 }
-/* 与后端 codes.clean_tax 同口径：去空白转大写，摘开头标签词（VAT#/TAX ID/USCI…） */
-function cleanTaxJs(v){
-  let out = String(v || "").replace(/\s+/g, "").toUpperCase();
-  for (let i = 0; i < 2; i++){
-    const s = out.replace(/^(?:USCI|CNPJ|CPF|RFC|GSTIN|GST|TAXID|TAXNO|TAX|VAT(?:NO|NR|NUMBER|ID)?|统一社会信用代码)[#.:：]*/, "");
-    if (s === out) break;
-    out = s;
-  }
-  return out;
-}
-function isTaxLabelFlag(f){
-  return f.includes("混进了标签") && f.includes("已自动摘掉") &&
-         (f.includes("SHIPPER_INFO_EORI") || f.includes("CONSIGNEE_INFO_EORI"));
-}
-function taxFlagCleared(t, f){
-  const k = f.includes("SHIPPER_INFO_EORI") ? "SHIPPER_INFO_EORI" : "CONSIGNEE_INFO_EORI";
-  const m = f.match(/: '(.*)'$/);
-  if (!m) return false;
-  const rev = reviewed(t);
-  const cur = cleanTaxJs(rev[k]);
-  return cur !== "" && cur === cleanTaxJs(m[1]);
-}
 function effectiveFlags(t){
+  /* 「已清」只认两种：人点过确认（ackF 就是提交时的 acked_flags），或号补齐后服务端重算
+     本来就不再报它。从前这里还有第三条"税号那格已自动摘掉标签 → 当它已清"的猜测：它把旗从
+     界面上拿掉却不写进 acked_flags，而服务端那道门只认 acked_flags 里的字符串
+     （server.py 的 `f not in acked`）——那条旗就成了看不见也点不到的死旗，整段核对同样收不到
+     它（2026-10-12 现场：待办 红旗 0，提交回 400）。
+     srvFlags 是服务端 400 里点名的几条：改了值旧旗文案会变，重算出的可能本地根本没有，
+     不接住就永远只看见"还有未清的红旗"这句没有指名的话。 */
   const filled = awbFilled(t), ack = t.ackF || [];
-  return ((t.qc && t.qc.flags) || []).filter(f => {
-    if (ack.includes(f)) return false;              // 复核员已确认无误的旗（留痕在 acked_flags）
+  const seen = {}, out = [];
+  (((t.qc && t.qc.flags) || []).concat(t.srvFlags || [])).forEach(f => {
+    if (seen[f] || ack.includes(f)) return;
     if (isMissingAwbFlag(f)){
       const okM = !f.includes("MAWB_NO") || filled.MAWB_NO;
       const okH = !f.includes("HAWB_NO") || filled.HAWB_NO;
-      if (okM && okH) return false;         // 缺的号都补上了 → 这条红旗视为已清
+      if (okM && okH) return;              // 缺的号都补上了 → 服务端重算也不报它
     }
-    if (isTaxLabelFlag(f) && taxFlagCleared(t, f)) return false;   // 摘好的号没被动过 → 提示已确认
-    return true;
+    seen[f] = 1; out.push(f);
   });
+  return out;
 }
 
 /* ── 本机未保存的编辑（防刷新丢编辑；接口未就绪时也是提交兜底） ──────────────
@@ -255,14 +241,31 @@ function saveDraft(t){
      只存 airE 的话，刷新一次确认全丢、进度从"核到一半"退回 0/0——那正是最该留住的两样。 */
   d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
                qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], ackE:t.ackE || [],
-               todoBase:t.todoBase, submitted:t.submitted};
+               srvFlags:t.srvFlags || [], todoBase:t.todoBase, submitted:t.submitted};
   localStorage.setItem(LS.draft, JSON.stringify(d));
+}
+function dropDraft(stem){
+  const d = drafts();
+  if (!Object.prototype.hasOwnProperty.call(d, stem)) return;
+  delete d[stem];
+  localStorage.setItem(LS.draft, JSON.stringify(d));
+  renderDrafts();
+}
+/* 老版本提交成功后把那份副本留着（还写着"未提交"）：开机清一次，值与确认都在服务器上了。 */
+function pruneSubmittedDrafts(){
+  const d = drafts();
+  let n = 0;
+  Object.keys(d).forEach(k => {
+    if (d[k] && d[k].submitted && d[k].submitted.mode === "server"){ delete d[k]; n++; }
+  });
+  if (n) localStorage.setItem(LS.draft, JSON.stringify(d));
+  return n;
 }
 function loadDraft(stem){
   const d = drafts()[stem]; if (!d) return null;
   return {file:null, filename:d.filename || d.stem, stem:d.stem, state:"done", restored:true,
           channel:d.channel, elapsed:d.elapsed, qc:d.qc, raw:d.raw || {}, air:d.air || {},
-          airE:d.airE || {}, ackF:d.ackF || [], ackE:d.ackE || [],
+          airE:d.airE || {}, ackF:d.ackF || [], ackE:d.ackE || [], srvFlags:d.srvFlags || [],
           todoBase:typeof d.todoBase === "number" ? d.todoBase : null,
           submitted:d.submitted || null};
 }
@@ -1060,6 +1063,16 @@ async function submitTicket(t, ackNoReview){
                       "\n\n确认「未经录入员复核，仍要回传公司」？")) submitTicket(t, true);
           return;
         }
+        if (d && Array.isArray(d.flags) && d.flags.length){
+          /* 服务端点名了是哪几条旗：本地 qc.flags 那份可能根本没有它（改了值旧旗文案会变，
+             重算出来的是新文案）。接住并并进待确认列表，人才有点得到的机会。 */
+          const known = ((t.qc || {}).flags || []).concat(t.srvFlags || []);
+          t.srvFlags = (t.srvFlags || []).concat(d.flags.filter(f => !known.includes(f)));
+          t.state = "done"; saveDraft(t); render();
+          toast((d.message || "还有未清的红旗") + "：" + d.flags[0] +
+                (d.flags.length > 1 ? " 等 " + d.flags.length + " 条" : ""), "bad");
+          return;
+        }
         throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
       }
     }
@@ -1071,7 +1084,7 @@ async function submitTicket(t, ackNoReview){
     return;
   }
   t.state = "done"; t.submitted = {mode:"server", at:nowTxt()};
-  saveDraft(t); render(); toast("已提交：" + t.stem, "ok");
+  dropDraft(t.stem); render(); toast("已提交：" + t.stem, "ok");
 }
 function exportTickets(list, name){
   if (!list.length){ toast("没有可导出的票据", "bad"); return; }
@@ -1165,7 +1178,7 @@ function renderDrafts(){
       <span class="dot warn" aria-hidden="true"></span>
       <span class="nm">${esc(k)}<br><span class="m">${esc(t.savedAt || "")} · 改 ${n} 项 · 未提交</span></span>
       <span class="st">载入</span></button>`;
-  }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功后仍可在此回看。</div>`;
+  }).join("") : `<div class="empty">编辑会自动存在本机浏览器，防刷新丢失；提交成功这一条就删掉了，要看交出去的去今日归档。</div>`;
   const nb = $("#tabDraftN"); if (nb) nb.textContent = keys.length ? " " + keys.length : "";
 }
 /* 左栏三页签（队列 / 主单检索 / 未保存的编辑）：从前这三张卡竖着堆，要看下面那张得先把上面滚走，
@@ -1877,6 +1890,7 @@ function applyRole(){
 function startDesk(){
   if (startDesk._on) return;
   startDesk._on = true;
+  pruneSubmittedDrafts();   // 老版本留下的已提交副本先清掉，再画那一栏（不然数字还是骗人）
   probe(); loadModels(); render();
 }
 async function checkAuth(){

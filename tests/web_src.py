@@ -26,6 +26,16 @@ def part(rel: str) -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
+def fn(js: str, head: str) -> str:
+    """切出一个函数的源码：单行写法就取那一行，多行取到第一个顶格 }。
+
+    别拿「下一个 function」当边界——desk.js 里函数之间夹着 const / addEventListener，
+    那样会一路切过头把隔壁几个函数圈进来，断言就从别的函数里蒙对（v1.17.0 变异验证抓到的）。"""
+    i = js.index(head)
+    eol = js.index("\n", i)
+    return js[i:eol] if js[eol - 1] == "}" else js[i:js.index("\n}", i) + 2]
+
+
 def logic(expr: str, **consts):
     """把 web/js/logic.js 交给 node 求值一个表达式（§3.5：纯逻辑靠输入输出断言，不靠肉眼扫字符串）。
     常量用 json 注入，中文与引号都不用在校验代码里手工转义。"""
