@@ -98,6 +98,19 @@ const L = {
   },
   dayOrder(rows, mode){ return mode === "flag" ? L.dayFlagFirst(rows) : L.dayCluster(rows); },
 
+  /* 空着的那一页该说哪一句——四种成因各一句，判据放在这里而不是渲染里：
+     从前它写在 desk.js 那段模板中，把分支条件改成 `if(false)` 静态用例照样绿（文案还挂在
+     代码里，只是永远走不到）。2026-10-12 台账按人分之后多出前两种成因：
+     others 今天有票，但没有一张是你动过的 / last 你这一天没动过，别的日子动过 /
+     never 你在这台机器上从没动过票，可这台机器有别人的 / none 这台机器从没记录过任何票。 */
+  dayEmpty(v){
+    const x = v || {}, mine = x.scope !== "all";
+    if (mine && Number(x.others) > 0) return "others";
+    if (x.lastDate && x.lastDate !== x.date) return "last";
+    if (mine && x.machineLast) return "never";
+    return "none";
+  },
+
   /* 控制条那四个数。红旗是"有红旗的**票数**"，不是红旗标记总数（交接文档第 3 节点名了这一条）；
      总数/未提交/失败/作废复用 daySummary，不另算一套——同一套算术写两遍迟早给出两个数。 */
   dayBar(rows){

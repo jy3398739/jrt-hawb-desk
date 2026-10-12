@@ -265,12 +265,19 @@
 </section>
 
 <section class="stack" id="dayCard" hidden>
-  <div class="t">今日归档<span class="n">高密度一屏扫完：主单浅底、名下分单缩进，点箭头原地折叠</span><span class="sp"></span>
+  <div class="t">今日归档<span class="n">高密度一屏扫完：主单浅底、名下分单缩进，点箭头原地折叠；默认只列你动过的那些票</span><span class="sp"></span>
     <label class="f" title="这一天里读出来（解析）或发回公司（提交）过的票都算：一张票会出现在它动过的每一天">日期<input id="dayDate" type="date" aria-label="台账日期（按解析或提交日）"></label>
     <button class="btn sm" id="dayGo" type="button">刷新</button>
     <label class="f" title="作废只是把这一行从台账与统计里收起来：票面原件、暂存记录、提交台账与主单检索全都不动，随时能恢复。要清的是测试数据对正确率的污染，不是历史。"><input type="checkbox" id="dayOnlyVoid" aria-label="只看作废的票"> 只看作废</label>
   </div>
   <div class="dvbar" id="dayBar">
+    <!-- 这一档决定"这些数字是谁的"，所以排在统计最前面。默认 hidden：非管理员永远看不到
+         「全部」这颗，服务端也不给他别人的行。 -->
+    <div class="dvseg" id="dayScope" role="group" aria-label="看谁的记录" hidden>
+      <button type="button" data-ds="mine" class="on" aria-pressed="true">我的</button>
+      <button type="button" data-ds="all" aria-pressed="false">全部</button>
+    </div>
+    <div class="dvdiv" aria-hidden="true"></div>
     <div class="dvstats" id="dayStats" role="status" aria-live="polite"></div>
     <div class="dvdiv" aria-hidden="true"></div>
     <div class="dvseg" id="dayFilter" role="group" aria-label="按状态筛选">

@@ -356,12 +356,42 @@ def _void_of(v: dict, kind: str, key: str):
     return v.get(k) or None
 
 
-def master_rows(date: str = None) -> list:
+def _touched_days(pairs) -> dict:
+    """谁在哪天动过手：{名字: [日期, ...]}（同日去重）。台账按人分读的就是它，
+    两件事一次说清——"这张票算不算他的"和"他的那一页里有没有这一天"。
+    日期必须跟着人：只记名字的话，A 9-29 上传、B 今天提交的那张会同时冒进 A 的"今天"里，
+    而 A 今天根本没碰过它——他要的"今天"是他自己的工作日，不是这张票的流水。
+    名字有、日期读不出来的：留名但不留日子，于是他只在全机视图里看得见它（宁可少列，
+    不替他猜哪天）。"""
+    out = {}
+    for name, when in pairs:
+        n = str(name or "").strip()
+        if not n:
+            continue
+        d = str(when or "")[:10]
+        days = out.setdefault(n, [])
+        if len(d) == 10 and d not in days:
+            days.append(d)
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def _owned(touched: dict, who: str, date: str) -> bool:
+    """这一行要不要给"他"看：不给 who 就全给（统计与那颗「全部」）；给了就既要他动过、
+    又要他动过的那一天正好是这一页的那一天。"""
+    if not who:
+        return True
+    if not date:
+        return who in touched
+    return date in touched.get(who, [])
+
+
+def master_rows(date: str = None, who: str = None) -> list:
     """本机解析过的主单，一行一张，给今日台账用。
 
     主单缓存是**按主单号覆盖存的一份**（不像分单那样一天一批的质检记录），所以"哪天经手的"
     取它最后一次动过的时间（重解析/暂存/提交都会刷新）——重算会把这张主单挪到当天，
-    这是这份数据的固有形状。列面只有 36 列的填充数与红旗数，别的都在主单核对页里看。"""
+    这是这份数据的固有形状。列面只有 36 列的填充数与红旗数，别的都在主单核对页里看。
+    who 给定时只留他动过的那些（今日台账那一页按人分，见 `_touched_by`）。"""
     if not config.MASTER_DIR.exists():
         return []
     import master_fields as mfields
@@ -376,11 +406,21 @@ def master_rows(date: str = None) -> list:
             continue                       # 一条坏缓存不该拖挂整页（与 ticket_rows 同口径）
         mawb = str(rec.get("mawb") or "").strip()
         when = str(rec.get("updated_at") or rec.get("started_at") or "")
-        if date and not when.startswith(date):
+        # 那一天动过手就算那一天的票：覆盖存的一份只有一个"最后更新时间"，光比它会把
+        # 早几天暂存过的人从他的那一天里抹掉（分单侧 v1.17.1 就为这事被用户报过一次，
+        # 同一条口径两边都得有）。事件与提交各自的日子都算。
+        days = {str(when)[:10], str(rec.get("started_at") or "")[:10]}
+        days |= {str(ev.get("at") or "")[:10] for ev in (rec.get("events") or [])}
+        days |= {str((led.get(norm_no(mawb)) or {}).get("submitted_at") or "")[:10]}
+        if date and date not in days:
             continue
         e = led.get(norm_no(mawb)) or {}
         events = rec.get("events") or []
         last = events[-1] if events else {}
+        touched = _touched_days([(ev.get("by"), ev.get("at")) for ev in events]
+                                + [(e.get("reviewer"), e.get("submitted_at"))])
+        if not _owned(touched, who, date):
+            continue
         ams = rec.get("ams_final") if isinstance(rec.get("ams_final"), dict) and rec.get("ams_final") \
             else (rec.get("ams") if isinstance(rec.get("ams"), dict) else {})
         failed = rec.get("state") == "failed"
@@ -404,6 +444,7 @@ def master_rows(date: str = None) -> list:
                      "needs_review": bool((rec.get("qc") or {}).get("needs_review")),
                      "failed": failed, "error": rec.get("error") or "",
                      "stager": str(last.get("by") or ""), "stager_role": str(last.get("role") or ""),
+                     "touched": touched,
                      "staged_at": str(last.get("at") or ""),
                      "edited": len(last.get("edits") or {}) if last else 0,
                      "reviewed_by_inputter": reviewed_by_inputter(rec),
@@ -454,7 +495,7 @@ def submitted_by_mawb(mawb: str) -> list:
     return [e for e in _load_ledger().values() if norm_no(e.get("mawb", "")) == want]
 
 
-def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
+def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str = None) -> list:
     """这台服务器经手过的票，一行一张，**状态从盘上现算**。
 
     状态只有四个来源，不看任何前端状态：有质检记录=parsed；另有暂存文件=staged；
@@ -495,6 +536,14 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
             air = {}
         e = led.get(stem) or {}
         st = load_staged(stem) or {}
+        # 三步都算"动过"：解析那一刻、每一次暂存（不止最后一次）、以及发走公司那一次
+        touched = _touched_days([(rec.get("uploader"), rec.get("processed_at")),
+                                 (st.get("stager"), st.get("staged_at")),
+                                 (e.get("reviewer"), e.get("submitted_at"))]
+                                + [(ev.get("by"), ev.get("at"))
+                                   for ev in (st.get("events") or [])])
+        if not _owned(touched, who, date):
+            continue
         if rec.get("error"):
             state_of = "failed"
         elif e:
@@ -522,6 +571,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
                      "failed": bool(rec.get("error")),
                      "error": rec.get("error") or "",
                      "stager": st.get("stager") or "", "stager_role": st.get("stager_role") or "",
+                     "touched": touched,
                      "staged_at": st.get("staged_at") or "",
                      "edited": len(st.get("edits") or {}) if st else 0,
                      "reviewed_by_inputter": reviewed_by_inputter(st) if st else False,
@@ -532,42 +582,32 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None) -> list:
     return rows
 
 
-def day_last_date() -> str:
-    """这台机器**最近有票的那一天**（YYYY-MM-DD），没有记录返回空串。
+def day_last_date(who: str = None) -> str:
+    """最近有票的那一天（YYYY-MM-DD），没有记录返回空串。who 给定时答的是**他**最近动过票的那天。
 
-    只为一句话：今日台账空着的时候，要能答"是没票还是坏了"。日期由服务端算——
-    台账是本机的、不共享，而服务器与浏览器还可能各用各的时钟，前端猜出来的"今天"未必是这里的那天。
-    与 day_rows 同一口径：分单质检记录 + 主单缓存 + 提交台账里那一次发送，坏文件跳过不拖挂整页。"""
+    只为一句话：今日台账空着的时候，要能答"是没票还是坏了"。日期由服务端算——台账是本机的、
+    不共享，而服务器与浏览器还可能各用各的时钟，前端猜出来的"今天"未必是这里的那天。
+    这条路直接走 day_rows：这一页能看见的票，和这句话认的日子，必须是同一套算术
+    （从前它自己扫 qc + 主单缓存 + 分单台账，主单那一天只提交没解析就会漏）。"""
     best = ""
-    keys = ("processed_at", "updated_at", "started_at")   # 分单质检记的是 processed_at，
-    for d in (config.OUTPUT_QC_DIR, config.MASTER_DIR):   # 主单缓存是 updated_at/started_at（与 master_rows 同一口径）
-        if not d.exists():
-            continue
-        for f in d.glob("*.json"):
-            try:
-                rec = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            when = ""
-            for k in keys:
-                when = str(rec.get(k) or "")[:10]
-                if len(when) == 10:
-                    break
+    for r in day_rows(who=who):
+        days = (r["touched"].get(who, []) if who else
+                [str(r.get("processed_at") or "")[:10],
+                 str((r.get("submitted") or {}).get("at") or "")[:10]])
+        for when in days:
             if len(when) == 10 and when > best:
                 best = when
-    for e in _load_ledger().values():                     # 只有提交、没有解析的那一天同样算"有票"
-        when = str(e.get("submitted_at") or "")[:10]
-        if len(when) == 10 and when > best:
-            best = when
     return best
 
 
-def day_rows(date: str) -> list:
+def day_rows(date: str = None, who: str = None) -> list:
     """某一天经手过的票，**分单与主单合一张表按时间排**（今日台账那一页读的就是它）。
 
     两种行的形状不同：主单没有分单号、也没有"改了几列"以外的那些列，缺的老实给空串，
-    前端按 kind 决定这一格显示什么——而不是后端替它编一个值。"""
-    out = ticket_rows(date=date) + master_rows(date)
+    前端按 kind 决定这一格显示什么——而不是后端替它编一个值。
+    who 给定时只留他动过的那些（"动过就算我的"，见 `_touched_by`）；不给是全机口径，
+    统计与管理员那颗「全部」读的都是这一份。date 不给则不限日子。"""
+    out = ticket_rows(date=date, who=who) + master_rows(date, who)
     out.sort(key=lambda r: str(r.get("processed_at") or ""))
     return out
 

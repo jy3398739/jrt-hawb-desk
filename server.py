@@ -781,19 +781,32 @@ def results(_: None = Depends(require_web)):
 
 
 @app.get("/day")
-def day(date: str = "", _: None = Depends(require_web)):
-    """今日台账：这台机器某天经手过的**分单与主单**一张表看完（解析/红旗/提交/原件），行上带 kind。
+def day(date: str = "", all: int = Query(0, ge=0, le=1), user: dict = Depends(current_user)):
+    """某一天经手过的**分单与主单**一张表看完（解析/红旗/提交/原件），行上带 kind。
     台账是本机的、两台机器各记各账，这一页就是把"今天谁做了什么"摊开在同一张桌子上；
     公司侧的发送状态要按主单查（限流），所以不混进这一页，去「主单检索」看。
-    作废的行照样返回（带 voided），显示与否由前端那一个筛决定——数据层不藏东西。"""
+    作废的行照样返回（带 voided），显示与否由前端那一个筛决定——数据层不藏东西。
+
+    **默认只给登录者自己动过的那些**（上传解析 / 暂存核对 / 提交发送任一，2026-10-12 需求：
+    "每个人记录每个人的，不能混在一起"）。`all=1` 只对管理员放开，非管理员带了它仍然只拿到
+    自己那一份。过滤发生在服务端而不是前端藏行：后者等于把别人的经手记录发到他的浏览器里，
+    F12 就能翻出来，而 `scope` 这一格报的仍是"只看你的"。"""
     d = (date or time.strftime("%Y-%m-%d")).strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
-    rows = store.day_rows(d)
-    who = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
-    # last_date：空着的那一天要能答"最近有票的是哪天"（前端自己算不出：台账在本机、时区也可能不同）
-    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who),
-            "last_date": store.day_last_date()}
+    who = str(user.get("name") or "")
+    scope = "all" if (all and user.get("role") == "admin") else "mine"
+    every = store.day_rows(d) if scope == "mine" else []
+    rows = store.day_rows(d, who=None if scope == "all" else who)
+    others = (len(every) - len(rows)) if scope == "mine" else 0
+    who_r = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
+    # last_date：空着的那一天要能答"最近有票的是哪天"（前端自己算不出：台账在本机、时区也可能不同）。
+    # 按人看时它答的是"你"最近动过票的那天，与这一页同一口径，否则那句提示会把人支到空页上。
+    # machine_last_date 另给一份全机的：一个人从没动过、而这台机器明明有票时，那两件事要分开说。
+    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who_r),
+            "scope": scope, "me": who, "others_today": others,
+            "last_date": store.day_last_date(None if scope == "all" else who),
+            "machine_last_date": store.day_last_date()}
 
 
 class VoidBody(BaseModel):

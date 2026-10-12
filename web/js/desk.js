@@ -2322,7 +2322,11 @@ $("#mstResult").addEventListener("click", async e => {
    今日台账读 /day：那一天这台机器经手过哪些票、谁提交的、还有几张没回公司。
    统计读 /stats：模型那一版与人最后定下的那一版逐列比（数只在 stats.py 算一处）。
    公司的发送状态不在这两张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
-const VIEW = {cur: "desk", rows: [], date: "", lastDate: ""};
+const VIEW = {cur: "desk", rows: [], date: "", lastDate: "", machineLast: "",
+              scope: "mine", others: 0, me: ""};
+/* 台账看谁的记录：只活在这一轮会话里，**不写本机偏好**——记住「全部」的下一次，
+   人会把全局的数当成自己的数去报。每次打开回到「我的」。 */
+const DAY = {scope: "mine"};
 const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;
 function syncCards(){
@@ -2353,15 +2357,52 @@ async function loadDay(fade){
   box.innerHTML = '<div class="empty">正在读今天的台账…</div>';
   try{
     const picked = $("#dayDate").value;
-    const r = await fetch(BASE + "/day" + (picked && picked !== VIEW.date ? "?date=" + encodeURIComponent(picked) : ""));
+    const q = [];
+    if (picked && picked !== VIEW.date) q.push("date=" + encodeURIComponent(picked));
+    if (DAY.scope === "all") q.push("all=1");
+    const r = await fetch(BASE + "/day" + (q.length ? "?" + q.join("&") : ""));
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     VIEW.date = j.date; VIEW.rows = j.rows || []; VIEW.lastDate = j.last_date || "";
+    VIEW.machineLast = j.machine_last_date || ""; VIEW.others = Number(j.others_today) || 0;
+    VIEW.me = j.me || "";
+    /* scope 认服务端说的那一份，不认刚才点了什么：非管理员手敲 all=1 时服务端仍然只给自己的行，
+       那颗档就该退回「我的」——界面报的数必须和服务端发的是同一件事。 */
+    VIEW.scope = j.scope === "all" ? "all" : "mine";
+    dayScopeSync();
     $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
     renderDay(fade !== false);
   }catch(e){
     box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
   }
+}
+function dayScopeSync(){
+  const box = $("#dayScope");
+  box.hidden = !(ME && ME.role === "admin");     // 「全部」只给管理员画；服务端那道是同一判据
+  box.querySelectorAll("button").forEach(b => {
+    const on = b.dataset.ds === VIEW.scope;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
+/* 空着的一页必须自己回答"是没票还是坏了"（用户："今天台账里面为什么没有内容了"）。
+   选哪一句由 L.dayEmpty 判（四类各有用例），这里只把话画出来：四种各占一支，
+   少一支就是有人问了"是不是丢了"而这一页不答。 */
+function dayEmptyHtml(){
+  const toAll = $("#dayScope").hidden
+    ? "要查别人经手的票请找管理员。"
+    : '也可以看全部：<button type="button" class="lk" data-ds="all" title="切到这台机器所有人的台账">切到「全部」</button>。';
+  const link = d => `<button type="button" class="lk" data-day="${esc(d)}" title="翻到那一天">${esc(d)}</button>`;
+  const SAY = {
+    others: () => `<div class="empty">这一天你没有动过票。这台机器这一天有 ${esc(VIEW.others)} 张是别人经手的。` + toAll + "</div>",
+    last: () => `<div class="empty">${VIEW.scope === "mine" ? "这一天你没动过票。你最近动过票的是 "
+        : "这一天这台机器没经手过票。最近有票的是 "}` + link(VIEW.lastDate)
+        + "（点一下就过去；换日期也可以用上面那个日期框）。</div>",
+    never: () => '<div class="empty">你在这台机器上还没有过台账记录。这台机器最近有票的是 '
+        + link(VIEW.machineLast) + "。" + toAll + "</div>",
+    none: () => '<div class="empty">这台机器还没有过任何台账记录。</div>'
+  };
+  return (SAY[L.dayEmpty(VIEW)] || SAY.none)();
 }
 /* 今日归档：分单与主单合一张高密度表（行上带 kind），按主单聚簇、点箭头原地平滑折叠。
    交接原型 archive-dense-view.html 第 5 节那九条坑点各有用例钉着（tests/test_day_dense_view.py）：
@@ -2549,16 +2590,10 @@ function renderDay(fade){
   const subs = L.daySubCounts(live);
   const rows = L.dayOrder(L.dayFilter(live, DV.filter), DV.sort);
   if (!rows.length){
-    /* 空着的一页必须自己回答"是没票还是坏了"（用户："今天台账里面为什么没有内容了"）。
-       最近有票的那天由 /day 带回来（本机台账 + 时区差，前端猜不出），点一下就翻过去。 */
     $("#dayBox").innerHTML = VIEW.rows.length
       ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。"
           : "当前筛选下没有票。换个档位，或把「只看作废」勾上翻回作废的那些。") + '</div>'
-      : (VIEW.lastDate && VIEW.lastDate !== VIEW.date
-          ? `<div class="empty">这一天这台机器没经手过票。最近有票的是 `
-            + `<button type="button" class="lk" data-day="${esc(VIEW.lastDate)}" title="翻到那一天">`
-            + `${esc(VIEW.lastDate)}</button>（点一下就过去；换日期也可以用上面那个日期框）。</div>`
-          : '<div class="empty">这台机器还没有过任何台账记录。</div>');
+      : dayEmptyHtml();
     dvSyncCollapse();
     return;
   }
@@ -3025,6 +3060,13 @@ $("#dayFilter").addEventListener("click", e => {
   b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
   renderDay(false);
 });
+/* 「我的 / 全部」换的是**读哪一份数据**，不是怎么排版：所以要重新拉一次 /day，
+   不能只在这批行里筛（那批行本来就是服务端按人给出来的，筛不出别人的）。 */
+$("#dayScope").addEventListener("click", e => {
+  const b = e.target.closest("[data-ds]"); if (!b) return;
+  DAY.scope = b.dataset.ds;
+  loadDay();
+});
 $("#daySort").addEventListener("click", e => {
   const b = e.target.closest("[data-s]"); if (!b) return;
   DV.sort = b.dataset.s;
@@ -3074,6 +3116,10 @@ $("#dayBox").addEventListener("click", e => {
   const dy = e.target.closest("[data-day]");
   if (dy){                                 // 空那天上那个「最近有票的是 X」：翻过去，不是让人自己去改日期框
     $("#dayDate").value = dy.dataset.day; VIEW.date = ""; loadDay(true); return;
+  }
+  const ds = e.target.closest("[data-ds]");
+  if (ds){                                 // 空态里那颗「切到「全部」」：与上面那颗档是同一个动作
+    DAY.scope = ds.dataset.ds; loadDay(true); return;
   }
   const m = e.target.closest("[data-mopen]");
   if (m){                                  // 主单行：回工作台按这个号检索，核对区自己会出来
