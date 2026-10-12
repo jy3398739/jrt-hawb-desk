@@ -157,7 +157,15 @@ def _void_mark(voided: dict, kind: str, key: str) -> dict:
     return {"voided": bool(v), "void_by": str(v.get("by") or ""), "void_at": str(v.get("at") or "")}
 
 
-def _hawb_plan(stem, days, now, ledger, voided):
+def _due(quiet, days, now, aged):
+    """还有几天到期。读不出盘上时间的给 None——面板要写"算不出"，不许拿一个假天数糊人。"""
+    if aged:
+        return 0
+    idle = _idle_days(quiet, now)
+    return None if idle is None else max(0, int(days) - idle)
+
+
+def _hawb_plan(stem, days, now, ledger, voided, only_aged=True):
     """一张分单：把它的落点列出来。没满安静期、或任何一步不合法，都返回 None
     （不产生任何删除动作）。
 
@@ -173,7 +181,8 @@ def _hawb_plan(stem, days, now, ledger, voided):
     qc = _json(config.OUTPUT_QC_DIR / (stem + ".json"))
     air = _json(config.OUTPUT_AIR_DIR / (stem + ".json"))
     quiet = quiet_at_hawb(stem, qc)
-    if not _aged(quiet, days, now):
+    aged = _aged(quiet, days, now)
+    if only_aged and not aged:
         return None
     files, dirs = [], []
     # input 那一格：source_name 是当年用户传上来的文件名，进过台账也进过 qc，
@@ -208,6 +217,7 @@ def _hawb_plan(stem, days, now, ledger, voided):
     p = {"kind": "hawb", "stem": stem, "key": "hawb|" + stem,
          "mawb": mawb, "hawb": hawb, "in_ledger": stem in ledger, "days": days,
          "quiet_at": quiet, "idle_days": _idle_days(quiet, now),
+         "aged": aged, "due_in_days": _due(quiet, days, now, aged),
          "submitted_at": str(entry.get("submitted_at") or ""),
          "receipt_action": str((entry.get("receipt") or {}).get("action") or ""),
          "files": files, "dirs": dirs, "sources": sources,
@@ -217,11 +227,12 @@ def _hawb_plan(stem, days, now, ledger, voided):
     return p
 
 
-def _mawb_plan(mkey, days, now, voided):
+def _mawb_plan(mkey, days, now, voided, only_aged=True):
     if store.submitted_by_mawb(mkey):
         return None          # 名下还有已提交的分单：先把它们清掉，再谈删主单
     quiet = quiet_at_master(mkey)
-    if not _aged(quiet, days, now):
+    aged = _aged(quiet, days, now)
+    if only_aged and not aged:
         return None
     files, dirs, sources = [], [], []
     src = config.MAWB_SOURCE_DIR / mkey
@@ -234,6 +245,7 @@ def _mawb_plan(mkey, days, now, voided):
     p = {"kind": "mawb", "stem": "", "key": "mawb|" + mkey,
          "mawb": mkey, "hawb": "", "in_ledger": bool(led), "days": days,
          "quiet_at": quiet, "idle_days": _idle_days(quiet, now),
+         "aged": aged, "due_in_days": _due(quiet, days, now, aged),
          "submitted_at": str(led.get("submitted_at") or ""), "receipt_action": "",
          "files": files, "dirs": dirs, "sources": sources,
          "drop": {"master": mkey, "void": "mawb|" + mkey}, "rebuild": False}
@@ -294,23 +306,32 @@ def _master_keys() -> list:
     return out
 
 
-def candidates(days=None, now=None, with_bytes=True):
+def candidates(days=None, now=None, with_bytes=True, only_aged=True):
     """面板、顶栏徽标与 run_purge.py --auto 读的同一份名册。
-    徽标那条路径传 with_bytes=False：stat 归档目录比读两份本地 JSON 贵得多，而它只要一个条数。"""
+    徽标那条路径传 with_bytes=False：stat 归档目录比读两份本地 JSON 贵得多，而它只要一个条数。
+    `only_aged=False` 是给面板的"全部票 + 倒计时"视图用的——**徽标与自动那一路永远不传它**，
+    否则"有票到期该清了"那个数字会变成"这台机器一共有几张票"。"""
     d = retention() if days is None else max(0, int(days))
     now = _now(now)
     voided, ledger = store.voided_map(), store.ledger()
     out = []
     for stem in _hawb_stems():
-        p = _hawb_plan(stem, d, now, ledger, voided)
+        p = _hawb_plan(stem, d, now, ledger, voided, only_aged)
         if p:
             out.append(p)
     for mkey in _master_keys():
-        p = _mawb_plan(mkey, d, now, voided)
+        p = _mawb_plan(mkey, d, now, voided, only_aged)
         if p:
             out.append(p)
     for p in out:
-        p["bytes"] = sum(_size(x) for x in _paths(p)) if with_bytes else 0
+        # 没到期的那些不算字节：一行一次目录遍历，票数一多这页就慢得没法看，
+        # 而那一格对"还要等几天"的人也没有意义。None 让界面写"—"，0 才是"真的不占"。
+        if not with_bytes:
+            p["bytes"] = 0
+        elif not p["aged"]:
+            p["bytes"] = None
+        else:
+            p["bytes"] = sum(_size(x) for x in _paths(p))
     return sorted(out, key=lambda x: (x["quiet_at"], x["key"]))
 
 
@@ -322,11 +343,12 @@ def _tell_caches(stem: str):
             pass          # 缓存清不掉不该让整次删除失败：文件是真删了，缓存只是内存里的一份副本
 
 
-def _row(p, auto=False, who=""):
+def _row(p, auto=False, who="", early=False):
     """凭据那一行的内容。刻意只放号与文件名——想知道删了哪几个文件，不想知道票上写了什么。
 
     auto 与 by/who 分两格记：自动档 by 是 "auto"、who 留空（没有"那个人"）；人工档 by 就是
-    那个登录名。事后翻这本要能分清"日子到了自己走的"和"某个管理员挑出来按下去的"。"""
+    那个登录名。事后翻这本要能分清"日子到了自己走的"和"某个管理员挑出来按下去的"。
+    early（v1.18.0）再分一档：那张还没到安静期就被人删了，这是绕过了安全期，得单独查得到。"""
     who = str(who or "")
     return {"at": datetime.now().isoformat(timespec="seconds"), "kind": p["kind"], "key": p["key"],
             "stem": p["stem"], "mawb": p["mawb"], "hawb": p["hawb"], "days": p["days"],
@@ -334,6 +356,7 @@ def _row(p, auto=False, who=""):
             "void_by": p["void_by"], "void_at": p["void_at"], "submitted_at": p["submitted_at"],
             "receipt_action": p["receipt_action"], "in_ledger": p["in_ledger"],
             "auto": bool(auto), "by": "auto" if auto else who, "who": "" if auto else who,
+            "early": bool(early),
             "files": [x.name for x in _paths(p)]}
 
 
@@ -348,7 +371,7 @@ def _append_tombstone(rec):
     return rec
 
 
-def remove(p, by, now=None, auto=False):
+def remove(p, by, now=None, auto=False, early=False):
     """执行一张。顺序见模块 docstring 第 1 条——凭据先落，台账最后动。
 
     删文件分两段，**上一段有失败就不走下一段**：
@@ -357,7 +380,7 @@ def remove(p, by, now=None, auto=False):
     第二段留着的是"还能算出这张安静了多久"的那几份，所以中途崩一次这张票仍会在
     下一轮的名册里出现，能把剩下的半截接着删完。"""
     removed, errors = [], []
-    _append_tombstone(_row(p, auto=auto, who=by))      # 1) 先留痕
+    _append_tombstone(_row(p, auto=auto, who=by, early=early))      # 1) 先留痕
     for stage in (list(p["files"]), list(p["dirs"]) + list(p.get("sources") or [])):
         for f in stage:                                # 2) 再删文件，一段一段来
             try:
@@ -427,18 +450,26 @@ def refuse(kind, key, days, now=None) -> str:
 def purge(items, by, days=None, now=None, auto=False):
     """逐张执行。days 不传就用服务端那一份；**调用方是路由时不要从请求里取这个参数**。
     不在名册里的项（没满安静期 / 票已经不在盘上 / 主单名下还挂着分单）逐张报原因，
-    不影响同批其余的。auto=True 是定时器那一路，凭据里 by 写 "auto"、who 留空。"""
+    不影响同批其余的。auto=True 是定时器那一路，凭据里 by 写 "auto"、who 留空。
+
+    项上带 `early`（v1.18.0 的手动提前删）才允许越过安静期：内部按 days=0 重算落点，
+    其余各条拒绝照旧生效（票不在盘上、名字带穿越、主单名下还有分单、时间读不出）。
+    凭据里那一格 `early` **由服务端按"这张安静了多久 vs 当下窗口"算出来**，不信请求说的——
+    满了的票谎报 early 也会被记成正常清理。"""
     d = retention() if days is None else max(0, int(days))
     out = []
     for it in items or []:
         kind = str((it or {}).get("kind") or "").strip().lower()
         key = str((it or {}).get("key") or "").split("|", 1)[-1].strip()
-        p = plan(kind, key, d, now)
+        want_early = bool((it or {}).get("early"))
+        p = plan(kind, key, 0 if want_early else d, now)
         if not p:
             out.append({"ok": False, "key": (it or {}).get("key", ""), "removed": [],
                         "error": refuse(kind, key, d, now)})
             continue
-        out.append(remove(p, by, now, auto=auto))
+        early = p["idle_days"] is None or p["idle_days"] < d
+        p["days"] = d              # 凭据与面板看的都是当下窗口，不是内部那个 0
+        out.append(remove(p, by, now, auto=auto, early=early))
     return out
 
 

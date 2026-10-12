@@ -180,8 +180,15 @@ const L = {
     while (x >= 1024 && i < u.length - 1){ x = x / 1024; i += 1; }
     return x.toFixed(1) + " " + u[i];
   },
-  purgeFilter(items, q){
-    const all = items || [], s = String(q === null || q === undefined ? "" : q).trim().toUpperCase();
+  purgeFilter(items, q, mode){
+    const m = mode || "all";
+    let all = items || [];
+    /* 三档只是"看哪一批"，不放宽任何权限：能不能删永远由服务端那份名册说了算，
+       这一层连"输个号就能删"的能力都不该有（搜索框同理）。
+       缺 aged 的一律只出现在「全部」里——宁可多列一行，也不替人判断"这张到期了"。 */
+    if (m === "aged") all = all.filter(x => x && x.aged === true);
+    else if (m === "early") all = all.filter(x => x && x.aged === false);
+    const s = String(q === null || q === undefined ? "" : q).trim().toUpperCase();
     if (!s) return all.slice();
     // 去掉非字母数字再比一次：235-96146363 与 23596146363 是同一种号的两种写法，要一起命中
     const flat = s.replace(/[^0-9A-Z]/g, "");
@@ -192,6 +199,16 @@ const L = {
         return t.indexOf(s) >= 0 || (!!flat && t.replace(/[^0-9A-Z]/g, "").indexOf(flat) >= 0);
       });
     });
+  },
+  /* 一行上那句"还要等多久"。倒计时在这里算一处、面板只负责画：读不出盘上时间的必须写
+     「算不出」——摆一个假天数比不摆更坏（判据只能往少删那一侧错），而"已到期"要说得出口，
+     管理员才知道定时器今晚会动它。 */
+  purgeDue(it){
+    const x = it || {};
+    if (x.aged === true) return "已到期";
+    if (x.idle_days === null || x.idle_days === undefined ||
+        x.due_in_days === null || x.due_in_days === undefined) return "算不出安静时间";
+    return "还有 " + x.due_in_days + " 天到期";
   },
   purgeSum(items){
     const all = items || [];

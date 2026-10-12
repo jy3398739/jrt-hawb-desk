@@ -1059,16 +1059,20 @@ def purge_config_set(body: PurgeDays, _: None = Depends(require_admin)):
 @app.get("/purge/candidates")
 def purge_candidates(days: int = Query(0, ge=0, description="0=用服务端那份安静期；填数字只做假设预览"),
                      brief: int = Query(0, ge=0, le=1, description="1=只数条数，不去 stat 归档目录"),
+                     all: int = Query(0, ge=0, le=1, description="1=连没到期的也给出（面板那份全量视图）"),
                      _: None = Depends(require_admin)):
     """面板与顶栏徽标同一份数据。这里的 days 只能用来"如果改成 N 天会捞出哪些"，
     它不授权任何删除——POST 那边会按服务端安静期重算一遍。
+    `all=1` 只给面板看：徽标与 run_purge.py --auto 走的都是默认那一份（只含到期的），
+    所以那份另给一格 aged_count，免得有人拿全量条数去当"有票到期了"。
     last_run 顺带一起给：定时器是另一个进程，不告诉界面"上次跑成什么样"就是静默失败。"""
     d = purge.retention() if not days else days
-    items = purge.candidates(days=d, with_bytes=not brief)
-    return {"days": purge.retention(), "preview_days": d,
+    items = purge.candidates(days=d, with_bytes=not brief, only_aged=not all)
+    return {"ok": True, "days": purge.retention(), "preview_days": d,
             "items": [{k: v for k, v in i.items()
                        if k not in ("files", "dirs", "sources", "drop")} for i in items],
-            "total_bytes": sum(i["bytes"] for i in items),
+            "aged_count": len([i for i in items if i.get("aged")]),
+            "total_bytes": sum(i["bytes"] or 0 for i in items),
             "last_run": purge.read_run_state()}
 
 

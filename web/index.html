@@ -106,6 +106,13 @@
       <div class="purge-bar">
         <input class="purge-q" id="purgeQuery" type="search" placeholder="按主单号 / 分单号 / 票名过滤候选"
                aria-label="过滤候选">
+        <!-- 三档只是"看哪一批"：列表现在连没到期的也列出来（带倒计时），
+             默认给全部，管理员一眼看得见每台机器上还有什么、各还要等多久。 -->
+        <span class="dvseg" id="purgeFilter" role="group" aria-label="按到期状态筛选">
+          <button type="button" class="dvchip on" data-pf="all" aria-pressed="true">全部</button>
+          <button type="button" class="dvchip" data-pf="aged" aria-pressed="false">已到期</button>
+          <button type="button" class="dvchip" data-pf="early" aria-pressed="false">未到期</button>
+        </span>
         <span class="purge-sum" id="purgeSum" role="status" aria-live="polite"></span>
       </div>
       <div class="purge-list" id="purgeList"></div>

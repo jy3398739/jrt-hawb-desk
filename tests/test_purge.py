@@ -927,16 +927,21 @@ def test_a_batch_reports_each_ticket_to_the_operator():
 
 
 def test_nothing_on_the_roster_says_why_and_what_would_change_it():
-    """空名单不能是一句"没有票"：这一页现在说的是"没有躺够日子的票"，
-    管理员要能看出下一步是什么（等，还是把安静期改短），而不是以为系统坏了。"""
+    """两种"空"是两句话：这台机器上一张票都没有 ≠ 有票但一张都没躺够日子。
+    后者必须报出当下那个窗口和下一步（等倒计时走完，或勾那一行提前删），
+    不然管理员只会以为清理坏了。（v1.18.0 起列表连未到期的也画，所以这句从空态搬到了列表上方那条提示。）"""
     js = _jsCode()
     body = _fn(js, "renderPurge")
-    # 只切空态那一段：整函数里"安静/天"到处都有，扫全文的那句断言等于没断（变异验证抓出来的）
     head = body.split("if (!PURGE.items.length){", 1)
     assert len(head) == 2, "renderPurge 里那段空态没了"
     seg = head[1].split("purgeDrawGo();", 1)[0]
-    assert "安静" in seg and "天" in seg, "空态要说清是「没躺够日子」，不是「没有票」"
-    assert "PURGE.days" in seg, "空态要把当下那个窗口报出来：天数是从服务端来的那一个，不是抄死的"
+    assert "还没有任何票" in seg, "一张票都没有的那种空要照实说"
+    none = body.split("const none =", 1)
+    assert len(none) == 2, "一张都没到期时的那句提示没了"
+    none = none[1].split('$("#purgeList").innerHTML', 1)[0]
+    assert "安静期" in none and "PURGE.days" in none, \
+        "那句要报当下窗口：天数是从服务端来的那一个，不是抄死的"
+    assert "勾" in none, "下一步要说清：等倒计时走完，或勾那一行提前删"
     for banned in ("要先作废", "先点作废", "已作废且满"):
         assert banned not in js, "判据改了，面板里还挂着旧口径的那句话：" + banned
 
@@ -1127,3 +1132,158 @@ def _after(js, needle, span=700):
 
 def _jsons(p):
     return [json.loads(p.read_text(encoding="utf-8"))] if p.exists() else []
+
+
+# ── 七、v1.18.0：面板列全部票 + 倒计时 + 手动提前删 ──────────────────────────────
+
+D12 = (datetime.fromisoformat(NOW) - timedelta(days=12)).isoformat(timespec="seconds")
+
+
+def test_the_full_view_adds_the_not_yet_matured_ones():
+    """面板从「只列到期的」改成「列全部 + 每张还有几天到期」。但默认那一份**不许跟着变**：
+    顶栏徽标与 run_purge.py --auto 读的都是它，混进未到期的就等于把"有票到期该清了"
+    换成"这台机器一共有几张票"。"""
+    with _world() as t:
+        _ticket(t, "满期的", touched=OLD)
+        _ticket(t, "还没满", hawb="JRT9", touched=D12)
+        assert [c["stem"] for c in purge.candidates(days=30, now=NOW)] == ["满期的"], \
+            "默认名册混进了未到期的：徽标与自动清理都读这一份"
+        by = {c["stem"]: c for c in purge.candidates(days=30, now=NOW, only_aged=False)}
+        assert sorted(by) == ["满期的", "还没满"]
+        assert by["满期的"]["aged"] is True and by["满期的"]["due_in_days"] == 0
+        assert by["还没满"]["aged"] is False and by["还没满"]["due_in_days"] == 18, \
+            "倒计时算错就是骗人：安静 12 天、窗口 30 天，还差 18 天"
+        assert [c["stem"] for c in purge.candidates(days=30, now=NOW, only_aged=False)] == \
+            ["满期的", "还没满"], "按到期时间排：已经到期的排最前（quiet_at 越早越先到期）"
+
+
+def test_an_unreadable_clock_is_never_due_yet_still_shows_in_the_full_view():
+    """三处来源都读不出时刻（手工改过 json、目录被换过）→ 判"没满"，永远不进自动名册；
+    但全量视图要看得见它，并老实写"算不出"——不许显示一个假倒计时，更不许因为
+    "看起来是空的"就让人以为清理坏了。"""
+    import shutil
+    with _world() as t:
+        stem = _ticket(t, "算不出的", touched=OLD, master=False, sent=False)
+        shutil.rmtree(config.ARCHIVE_DIR / stem)
+        (config.STAGED_DIR / (stem + ".json")).unlink()      # 三处来源：qc / 暂存 / 归档目录
+        p = config.OUTPUT_QC_DIR / (stem + ".json")
+        rec = json.loads(p.read_text(encoding="utf-8"))
+        rec["processed_at"] = ""
+        p.write_text(json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        assert purge.candidates(days=30, now=NOW) == [], "读不出安静时间的票进了自动名册"
+        got = purge.candidates(days=30, now=NOW, only_aged=False)[0]
+        assert got["aged"] is False and got["due_in_days"] is None and got["idle_days"] is None
+
+
+def test_an_early_delete_needs_the_early_flag_and_leaves_a_trail_saying_so():
+    """手动提前删是这轮新开的口子：不点头（early）就还是一律拒，安静期不许变成摆设；
+    点了头就删得掉，但凭据里要单独记一格——事后翻这本要能分清"日子到了自己走的"
+    和"有人没等够日子就按下去的"。"""
+    with _world() as t:
+        stem = _ticket(t, "才安静12天", touched=D12)
+        r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem}], by="admin", days=30, now=NOW)
+        assert r[0]["ok"] is False and (config.ARCHIVE_DIR / stem).exists(), \
+            "不带 early 就删掉了未到期的票"
+        assert not config.PURGED_LEDGER.exists() or "才安静12天" not in config.PURGED_LEDGER.read_text(encoding="utf-8"), \
+            "被拒的那一张不该留下删除凭据"
+        r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem, "early": True}],
+                        by="宛平", days=30, now=NOW)
+        assert r[0]["ok"] is True and not (config.ARCHIVE_DIR / stem).exists()
+        row = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
+        assert row["early"] is True and row["who"] == "宛平" and row["auto"] is False
+        assert row["days"] == 30 and row["idle_days"] == 12, \
+            "凭据里那格 days 要写当下窗口，不是提前删时内部用的 0"
+
+
+def test_the_early_flag_is_computed_from_the_data_not_from_the_claim():
+    """请求里说 early=true 不代表真的没满：满了的票按正常清理走，凭据不许写 early:true，
+    否则这本账会把一次普通清理说成有人绕过安全期。"""
+    with _world() as t:
+        stem = _ticket(t, "早就满期", touched=OLD)
+        r = purge.purge([{"kind": "hawb", "key": "hawb|" + stem, "early": True}],
+                        by="admin", days=30, now=NOW)
+        assert r[0]["ok"] is True
+        row = json.loads(config.PURGED_LEDGER.read_text(encoding="utf-8").splitlines()[-1])
+        assert row["early"] is False, "满 40 天的票被记成「提前删」"
+
+
+def test_early_does_not_unlock_what_the_roster_refuses_for_other_reasons():
+    """early 只放开"日子还没够"这一条。票不在盘上、名字带穿越、主单名下还挂着分单，
+    照样一张都不许动。"""
+    with _world() as t:
+        for key in ("hawb|不存在", "hawb|../../etc"):
+            r = purge.purge([{"kind": "hawb", "key": key, "early": True}],
+                            by="admin", days=30, now=NOW)
+            assert r[0]["ok"] is False, key
+        m = "999-90271484"
+        _ticket(t, "挂在主单下", mawb=m, hawb="HV1", master=True)
+        r = purge.purge([{"kind": "mawb", "key": "mawb|" + m, "early": True}],
+                        by="admin", days=30, now=NOW)
+        assert r[0]["ok"] is False, "名下还有已提交分单的主单，early 也不该端掉"
+
+
+def test_the_all_flag_on_the_route_does_not_move_the_badge_count():
+    with _world() as t:
+        c = _client(t)
+        _ticket(t, "满期的", touched=OLD)
+        _ticket(t, "还没满", hawb="JRT9", touched=D12)
+        one = c.get("/purge/candidates").json()
+        assert [i["stem"] for i in one["items"]] == ["满期的"] and one["days"] == 30
+        j = c.get("/purge/candidates", params={"all": 1}).json()
+        assert len(j["items"]) == 2 and j["aged_count"] == 1, \
+            "徽标要的还是到期的张数；全量视图里它得另给一格"
+        assert {i["stem"]: i["aged"] for i in j["items"]} == {"满期的": True, "还没满": False}
+        assert [i for i in j["items"] if not i["aged"]][0]["bytes"] is None, \
+            "未到期的不算字节：每行 stat 一遍归档目录，票数一多这页就慢给人看不了"
+        assert c.post("/purge", json={"items": [{"kind": "hawb", "key": "hawb|还没满"}]}
+                      ).json()["results"][0]["ok"] is False
+        ok = c.post("/purge", json={"items": [{"kind": "hawb", "key": "hawb|还没满",
+                                               "early": True}]}).json()["results"][0]
+        assert ok["ok"] is True, "路由那层没把 early 传下去"
+
+
+def test_the_panel_offers_three_filters_and_a_countdown_on_every_row():
+    js, page = _jsCode(), web_src.part("index.html")
+    for f in ('data-pf="all"', 'data-pf="aged"', 'data-pf="early"'):
+        assert f in page, "面板少了那个筛选档：" + f
+    assert "PURGE.f" in js and "L.purgeFilter(PURGE.items, PURGE.q, PURGE.f)" in js, \
+        "三档筛选没接到那份纯函数上：过滤逻辑不该在面板里再算一遍"
+    assert "L.purgeDue(" in _fn(js, "renderPurge"), "行上没有倒计时"
+    # 那句话是纯函数算的，三种情况都得有准话——尤其"读不出时间"不许显示成天数
+    items = [{"key": "hawb|A", "stem": "A", "aged": True, "idle_days": 40, "due_in_days": 0},
+             {"key": "hawb|B", "stem": "B", "aged": False, "idle_days": 12, "due_in_days": 18},
+             {"key": "hawb|C", "stem": "C", "aged": False, "idle_days": None, "due_in_days": None}]
+    assert "已到期" in web_src.logic("L.purgeDue(x)", x=items[0])
+    assert web_src.logic("L.purgeDue(x)", x=items[1]) == "还有 18 天到期"
+    bad = web_src.logic("L.purgeDue(x)", x=items[2])
+    assert bad == "算不出安静时间", "读不出盘上时间的要写算不出，不许摆一个假天数"
+    got = lambda m: [x["key"] for x in web_src.logic("L.purgeFilter(it, q, m)", it=items, q="", m=m)]
+    assert got("all") == ["hawb|A", "hawb|B", "hawb|C"]
+    assert got("aged") == ["hawb|A"] and got("early") == ["hawb|B", "hawb|C"]
+    assert got("all") == [x["key"] for x in items], "默认档漏了行：老调用（不传 mode）不能变行为"
+
+
+def test_select_all_never_touches_a_ticket_that_is_not_due():
+    """全选要是能勾到未到期的行，「全选 + 点两下」就等于一键把所有票端掉——
+    这一档是这轮唯一必须留在面板里的硬约束。"""
+    js = _jsCode()
+    allbtn = _after(js, '$("#purgeAll").addEventListener')
+    assert "aged" in allbtn, "全选没跳过未到期的行"
+    shown = _fn(js, "purgeShown")
+    assert "PURGE.f" in shown
+
+
+def test_the_confirm_names_the_ones_that_have_not_matured():
+    """第二下确认必须说清"其中几张还没到安静期"：让人知道按下的是绕过安全期，
+    而不是又一次普通清理。"""
+    js = _jsCode()
+    arm = _fn(js, "purgeArm")
+    assert "还没到" in arm and "不可恢复" in arm, "提前删的第二下没说要绕过安静期"
+    go = _fn(js, "purgeDrawGo")
+    assert "purgeEarly()" in go and "还没到安静期" in go, "按钮上没写出有几张是未到安静期就删的"
+    fire = _fn(js, "purgeFire")
+    assert "early:" in fire, "没把 early 发给服务端：前端允许勾、服务端一律拒，等于删不掉还骗人"
+    badge = _after(js, "function purgeBadge(n)")
+    assert badge.startswith("function purgeBadge(n)"), "徽标那格还是原样"
+    badge = _after(js, "PURGE.items = j.items", 400).split("}catch(e){")[0]
+    assert "purgeAged()" in badge, "徽标改成数全部票了：它该只看到期的那一批"

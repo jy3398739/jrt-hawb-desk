@@ -627,6 +627,14 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 /* 这一列答的是"这张为什么在这儿"：安静天数是判据，占第一行；作废只是信息，压在第二行，
    没人点过作废也要如实占一行——那正是"纯粹躺够了"和"谁收起来过"的区别。 */
 .pkq,.purge-t .pkv{display:block;line-height:1.45}
+/* 倒计时那一格：已到期的用普通文字色就够（它不需要人决定什么），
+   没到期的用告警墨色——这一格是在提醒"勾了就是提前删"，不是状态徽章。
+   用 --c-warn-text 而不是 --c-warn：后者是填充色，当字色过不了对比度守卫。 */
+.pkd{display:block;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  font-size:var(--f-xs);color:var(--c-text-3)}
+.pkd-w{color:var(--c-warn-text)}
+.pknone{font-size:var(--f-sm);color:var(--c-text-2);background:var(--c-warn-strip);
+  border:1px solid var(--c-warn-line);border-radius:var(--r-md);padding:7px 10px;margin-bottom:8px}
 .pkq{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:var(--f-xs);color:var(--c-text-2)}
 .pkv0{color:var(--c-text-3)}
 /* 票名那一格：没提交过的票两号皆空，它是这一行唯一的身份，所以要读得出但不能比号还抢眼。 */

@@ -2764,8 +2764,9 @@ function renderStatsRows(){
    v1.15.0 起这份名单同时是自动清理的名册：判据是「最后一次被碰之后安静满 N 天」，
    定时器（另一个进程，见 deploy/hawb-purge.timer）每天删一轮，人这一页只剩"要提前删"这一个动作。
    所以默认一张都不勾：不可逆操作不该开门就全选、点两下抹光。 */
-const PURGE = {items: [], q: "", sel: {}, armed: false, days: 30, run: null};
-function purgeShown(){ return L.purgeFilter(PURGE.items, PURGE.q); }
+const PURGE = {items: [], q: "", f: "all", sel: {}, armed: false, days: 30, run: null};
+function purgeAged(){ return PURGE.items.filter(it => it && it.aged === true); }
+function purgeShown(){ return L.purgeFilter(PURGE.items, PURGE.q, PURGE.f); }
 function purgePicked(){ return purgeShown().filter(it => PURGE.sel[it.key] === true); }
 /* 到期张数写在顶栏「设置」那颗按钮上（入口收进设置之后，徽标得跟着走——
    否则"今天有没有票到期"只能靠记得点开设置才知道）。0 张就清空，不留一个假的 0。 */
@@ -2791,7 +2792,9 @@ async function loadPurge(){
   list.innerHTML = '<div class="empty">在算哪些票到期了…</div>';
   $("#purgeSum").textContent = "";
   try{
-    const r = await fetch(BASE + "/purge/candidates");
+    /* all=1：面板要的是"全部票 + 各自还有几天到期"。徽标不跟着变——它数的还是到期的张数，
+       否则"有票到期该清了"就悄悄变成"这台机器一共有几张票"。 */
+    const r = await fetch(BASE + "/purge/candidates?all=1");
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     PURGE.items = j.items || []; PURGE.days = j.days || 30;
@@ -2799,7 +2802,7 @@ async function loadPurge(){
     PURGE.sel = {}; PURGE.armed = false;      // 换一批数据就把勾选清掉：留着会指向已经不存在的票
     $("#purgeDays").value = PURGE.days;
     renderPurge();
-    purgeBadge(PURGE.items.length);
+    purgeBadge(purgeAged().length);
   }catch(e){
     /* 读不到就当没有：留着上一批的话，人会把一次没成功的读过去当成"这些票还排着等删"。
        徽标同理清掉——算不出来的数字不该继续挂在那儿。上次自动清理那一句也一样：
@@ -2820,28 +2823,34 @@ async function purgeBadgeLoad(){
 }
 function renderPurge(){
   const shown = purgeShown(), picked = purgePicked(), sum = L.purgeSum(picked);
+  const agedN = purgeAged().length;
   drawPurgeRun();
   $("#purgeNote").hidden = !PURGE.items.length;      // 没得可删时这句是噪音，但只要有候选就常驻
   if (!PURGE.items.length){
     $("#purgeSum").textContent = "";
-    $("#purgeList").innerHTML = '<div class="empty">没有安静满 ' + esc(PURGE.days) + ' 天的票。'
+    $("#purgeList").innerHTML = '<div class="empty">这台机器上还没有任何票。'
       + "<b>进这份名册只看一件事：这张票最后一次被碰（上传、复核、暂存、回传）之后，又安静躺满了几天</b>"
-      + "——躺够了由定时器删，没人点过作废也一样会进来。要现在就删，只有把上面那个天数改短，"
-      + '它在盘上多待的每一天都是公司回头对账时还能查到的那一天。<span class="sub">一张都没有不等于清理坏了：'
-      + "看上面那句「上次自动清理」到底跑过没有。</span></div>";
+      + "——躺够了由定时器删，没人点过作废也一样会进来。"
+      + '<span class="sub">一张都没有不等于清理坏了：看上面那句「上次自动清理」到底跑过没有。</span></div>';
     purgeDrawGo();
     return;
   }
-  $("#purgeSum").textContent = `选中 ${picked.length} / ${shown.length} 张 · 本机 ${L.purgeBytes(sum.bytes)}`;
+  $("#purgeSum").textContent = `全部 ${PURGE.items.length} 张 · 已到期 ${agedN} 张 · `
+    + `选中 ${picked.length} / ${shown.length} 张 · 本机 ${L.purgeBytes(sum.bytes)}`;
   if (!shown.length){
-    $("#purgeList").innerHTML = '<div class="empty">按这个过滤词没有候选票。过滤只往下筛：'
-      + "还没满安静期的号，在这里搜也不会把它变成能删的。</div>";
+    $("#purgeList").innerHTML = '<div class="empty">按这个过滤词与筛选档没有票。过滤只往下筛：'
+      + "还没满安静期的号，在这里搜也不会把它变成自动清理要删的那一张（要现在删得勾它那一行）。</div>";
     purgeDrawGo();
     return;
   }
-  $("#purgeList").innerHTML = '<table class="purge-t"><colgroup>'
+  /* 一张都没到期时那句老实话还是要说，但列表照旧画出来：这一版的目的就是让人看见
+     "每张还要等多久"，而不是给一个空盒子。 */
+  const none = agedN ? "" : '<div class="pknone">没有一张到安静期（当下窗口 '
+    + esc(PURGE.days) + ' 天）：下面这些都要等倒计时走完，定时器才会动它们。'
+    + "要现在就删，勾它那一行——确认时会多问一句，并在删除凭据里单独记一笔。</div>";
+  $("#purgeList").innerHTML = none + '<table class="purge-t"><colgroup>'
     + '<col style="width:42px"><col><col style="width:124px"><col style="width:96px">'
-    + '<col style="width:132px"><col style="width:72px"><col style="width:84px">'
+    + '<col style="width:152px"><col style="width:72px"><col style="width:84px">'
     + '</colgroup><thead><tr><th></th><th>票</th><th>主单号</th><th>分单号</th>'
     + '<th>为什么在这儿 · 作废</th><th>回传</th><th>本机占用</th></tr></thead><tbody>'
     + shown.map(it => {
@@ -2855,6 +2864,11 @@ function renderPurge(){
          而不是藏在 tooltip 里——作废那一格降成纯信息，没人点过也要如实写出来。 */
       const quiet = `<span class="pkq" title="最后一次被碰：${esc(it.quiet_at || "—")}">`
         + "安静 " + (it.idle_days == null ? "?" : esc(it.idle_days)) + " 天</span>";
+      /* 倒计时：这一版把未到期的也列出来了，所以每一行都要答"还要等多久"。
+         没到期的那一格换个颜色并在 title 里说清"勾了就是提前删"——别让人以为勾上和到期是一回事。 */
+      const due = `<span class="pkd${it.aged === false ? " pkd-w" : ""}"`
+        + ` title="${it.aged === false ? "还没到安静期：勾这一行删它属于提前删，会多问一句并在凭据里单独记一笔" : "定时器今晚就会动它"}">`
+        + `${esc(L.purgeDue(it))}</span>`;
       const vd = it.voided
         ? `<span class="pkv" title="作废时刻：${esc(it.void_at || "—")}">作废 `
           + `${esc(it.void_by || "?")} ${esc(String(it.void_at || "").slice(5, 10))}</span>`
@@ -2870,20 +2884,27 @@ function renderPurge(){
         + `<span class="pks" title="票名（服务器上的归档名）：${esc(name)}">${esc(name)}</span></td>`
         + `<td class="tno"><span class="pkn">${esc(it.mawb || "—")}</span></td>`
         + `<td class="tno"><span class="pkn">${esc(it.hawb || "—")}</span></td>`
-        + `<td>${quiet}${vd}</td>`
+        + `<td>${quiet}${due}${vd}</td>`
         + `<td>${ev}</td><td class="pkb">${esc(L.purgeBytes(it.bytes))}</td></tr>`;
     }).join("") + "</tbody></table>";
   purgeDrawGo();
 }
+function purgeEarly(){ return purgePicked().filter(it => it.aged === false).length; }
 function purgeDrawGo(){
-  const n = purgePicked().length, b = $("#purgeGo");
+  const n = purgePicked().length, e = purgeEarly(), b = $("#purgeGo");
   b.disabled = !n;
-  b.textContent = PURGE.armed ? "确认删除这 " + n + " 张（不可恢复）" : "删除选中的 " + n + " 张";
+  /* 未到期的张数写在按钮上：这一页现在能勾到没满安静期的票，
+     不写清楚就是让人在"普通清理"和"绕过安全期"之间盲按。 */
+  b.textContent = (PURGE.armed ? "确认删除这 " : "删除选中的 ") + n + " 张"
+    + (e ? "（其中 " + e + " 张还没到安静期）" : "") + (PURGE.armed ? "（不可恢复）" : "");
 }
 function purgeArm(){                                  // 第一步：不发请求，只把按钮换成确认
   PURGE.armed = true;
+  const e = purgeEarly();
   purgeDrawGo();
-  toast("再点一次那颗按钮才真的删——这一下没有反悔的键。");
+  toast(e ? "再点一次才真的删。这一批里有 " + e + " 张还没到安静满 " + PURGE.days
+          + " 天——是你主动要提前删的，删了不可恢复，凭据里会单独记一笔。"
+        : "再点一次那颗按钮才真的删——这一下没有反悔的键。");
 }
 async function purgeFire(){
   const picked = purgePicked();
@@ -2893,7 +2914,10 @@ async function purgeFire(){
   try{
     const r = await fetch(BASE + "/purge", {method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({items: picked.map(x => ({kind: x.kind, key: x.key}))})});
+      /* early 只是"这一张没到期我也要点删"的意图；能不能真删、算不算提前删，
+         全在服务端（它按当下的安静期重算，不认这里说的任何数）。 */
+      body: JSON.stringify({items: picked.map(x => ({kind: x.kind, key: x.key,
+                                                     early: x.aged === false}))})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     purgeDone(j.results || []);
@@ -2936,10 +2960,21 @@ $("#purgeQuery").addEventListener("input", e => {
   PURGE.q = e.target.value; PURGE.armed = false; renderPurge();
 });
 $("#purgeAll").addEventListener("click", () => {
-  const shown = purgeShown();                          // 只翻当前过滤出来的那几张
+  /* 全选只翻**已到期**的那些：这一档要是一并勾到未到期的，「全选 + 点两下」就等于
+     一键把这台机器上所有票端掉——提前删只能逐张勾，这是面板里唯一必须留着的硬约束。 */
+  const shown = purgeShown().filter(it => it.aged === true);
   const allOn = shown.length > 0 && shown.every(it => PURGE.sel[it.key] === true);
   shown.forEach(it => { PURGE.sel[it.key] = !allOn; });
   PURGE.armed = false; renderPurge();
+});
+$("#purgeFilter").addEventListener("click", e => {
+  const b = e.target.closest("[data-pf]"); if (!b) return;
+  PURGE.f = b.dataset.pf; PURGE.armed = false;   // 换档就是换一批人，第一步的确认作废
+  [...$("#purgeFilter").querySelectorAll("[data-pf]")].forEach(x => {
+    const on = x.dataset.pf === PURGE.f;
+    x.classList.toggle("on", on); x.setAttribute("aria-pressed", String(on));
+  });
+  renderPurge();
 });
 /* 两步确认的分支放在监听器里而不是 purgeFire 里：purgeFire 自己只管真删，
    读起来才看得出"第二下"这个函数里没有任何回头路。 */
