@@ -417,7 +417,7 @@ def test_submit_click_cannot_slip_past_the_flags():
     顺序反了就是点一下红按钮把票发出去了——服务端那道门还在，但界面上的话已经说了假话。"""
     js = _js()
     body = _fn(js, "submitClick")
-    assert "effectiveFlags(t)" in body, "点击时不再数未确认红旗"
+    assert "ticketTodo(t)" in body, "点击时不再数未确认红旗（或绕开了那个唯一算法入口，自己另算一份）"
     m = re.search(r"if \(ef\.length\)\{(.*?)\n  \}", body, re.S)
     assert m and "return;" in m.group(1), \
         "红旗那一档自己没 return：后面那句 if (todo.n…) 里的 return 挡不住它一路走到提交"
@@ -495,3 +495,79 @@ def test_a_successful_submit_leaves_no_local_draft_behind():
     assert "提交成功后仍可在此回看" not in rd, "空态那句还在承诺「提交后能在这儿回看」，与方案 A 相反"
 
 
+
+
+# ── 七、红旗挂到哪一列：一处判据（2026-10-12 逐条数出四类挂不上列的旗）────────────────
+
+
+def _keys38():
+    import fieldspec
+    return [k for k, _lab, _g in fieldspec.DESK_FIELDS]
+
+
+def test_a_flag_attaches_to_the_column_it_names_and_never_to_a_guess():
+    """挂到哪一列只有 L.flagKey 一处说了算。四类从前挂不上的旗各有来处：
+    `L3 ` 前缀把 startsWith 顶掉、句中出现的列名不认、`SHIPPER 电话区号…` 那句里根本没有列名、
+    `保真 TAX_ID:` 那个列名早在 v1.12.0 就删了。后两类**故意**留在空串上：
+    区号那条同时牵涉电话与国家两格、税号那条说"填两个 EORI 之一"——挑一格挂上去就是猜，
+    猜错的旗会让人去核一个本来没问题的列。"""
+    ks = _keys38()
+    got = lambda f: web_src.logic("L.flagKey(f, ks)", f=f, ks=ks)
+    assert got("L3 SHIPPER_INFO_EORI 混进了标签，只填号码本身（航空口径已自动摘掉）: 'VAT 123'") \
+        == "SHIPPER_INFO_EORI", "L3 前缀不该把这一列顶掉"
+    assert got("L3 CONSIGNEE_INFO_EORI 形态异常(过短): '123'") == "CONSIGNEE_INFO_EORI"
+    assert got("L3 SHIPPER_INFO_EORI 与电话同值，疑似电话栏吞了税号: '00280273000137'") \
+        == "SHIPPER_INFO_EORI"
+    assert got("保真 CONSIGNEE_INFO_TEL: 未在L1逐字转录中找到原文（可能被改写或转录遗漏）（值='0055 11'）") \
+        == "CONSIGNEE_INFO_TEL"
+    # 老形状一条都不许退化
+    assert got("TO1 疑似填成承运人码: 'JL'") == "TO1"
+    assert got("L3 DEST_NAME 未转成 IATA 三字码: 'MANAUS'（码表缺项，需补 CITY_IATA）") == "DEST_NAME"
+    assert got("CREATE_TIME 格式非 YYYY-MM-DD: '20/09/26'") == "CREATE_TIME"
+    assert got("HAWB_NO 疑似误填主单号: '999-1234567'") == "HAWB_NO"
+    assert got("PIECES 缺失或为0") == "PIECES"
+    # 主语位优先：两个号都在句里，但说话的主语是 MAWB_NO——不许因为"句里两个"就散成空
+    assert got("MAWB_NO 与 HAWB_NO 均为空") == "MAWB_NO"
+    # 认不出列名的老实返回空串：它只出现在顶部那排 chip 上（那里本来就能逐条确认）
+    assert got("SHIPPER 电话区号 +39(IT) 与国家 US 不一致，疑似电话串边") == ""
+    # 句中出现两个列名：同样不许挑一个挂上（这种文案今天还不存在，规则先立住——
+    # 否则将来谁写一条"两格互换"的旗，它就会随机挂到 KEYS 里排在前面那一列上）
+    assert got("保真 SHIPPER_INFO_TEL: 与 CONSIGNEE_INFO_TEL: 疑似互换") == ""
+    assert got("保真 TAX_ID: USCI 税号漏抄：票面有 91310000MA1FL2XY3Z，需核票填 SHIPPER_INFO_EORI 或 "
+               "CONSIGNEE_INFO_EORI（识别号只有 EORI 这一格，已有号就用 / 拼在一起两个都留）"
+               "（值='91310000MA1FL2XY3Z'）") == ""
+
+
+def test_the_flag_to_column_map_has_exactly_one_source():
+    """`flagsByField` 与 `chipOne` 从前各抄了一份那五种模式——两份必然走偏（这次就是：
+    一处改了另一处没改，旗在 chip 上能确认、在列上永远不显红）。判据只留 logic.js 一份。"""
+    js, lg = web_src.part("js/desk.js"), web_src.part("js/logic.js")
+    assert 'f.includes(kk +' not in js, "desk.js 里还留着一份自己写的匹配：两处判据迟早又分开"
+    assert js.count("L.flagKey(") >= 2, "两处都该改判到同一个 L.flagKey 上"
+    assert "flagKey(f, keys)" in lg, "logic.js 里那份判据本身没了"
+
+
+def test_a_flag_with_no_column_still_counts_as_a_todo():
+    """待办数从前只数行上的旗，于是挂不到列的那两类（区号串边、税号漏抄）能让待办条写「红旗 0」，
+    而提交那道门按 effectiveFlags 数——正是 2026-10-12「界面 红旗 0、提交仍被拒」的另一扇门。
+    L.todoOf 收第二份名单：没有列可挂的旗要进 n，但不许给它编一个假列名（keys 只收真列）。"""
+    rows = [{"k": "TO1", "lab": "航路 1", "g": "route", "flags": 0, "acked": False,
+             "raw": "AMS", "air": "AMS"},
+            {"k": "PIECES", "lab": "件数", "g": "cargo", "flags": 1, "acked": False,
+             "raw": "", "air": ""}]
+    one = web_src.logic("L.todoOf(r)", r=rows)
+    assert one["n"] == 1 and one["keys"] == ["PIECES"], one
+    two = web_src.logic("L.todoOf(r, o)", r=rows,
+                        o=["SHIPPER 电话区号 +39(IT) 与国家 US 不一致，疑似电话串边"])
+    assert two["n"] == 2, "没有列可挂的旗也要进待办数，否则这一页会说谎"
+    assert two["keys"] == ["PIECES"], "不许为它凭空造一个列名：跳转只能跳到真列上"
+    assert two["other"] == 1
+
+
+def test_a_chip_with_no_column_to_jump_to_says_so():
+    """顶部那排 chip 本来就把每条旗都列出来、都能确认（我上一轮说"点不到"是错的）；
+    缺的是它没告诉人"为什么这一条点跳转没反应"，以及那份数没进待办。
+    两处都得在：写明「不落在某一列」+ 待办数走同一个入口。"""
+    js = web_src.part("js/desk.js")
+    assert "不落在某一列" in js, "挂不到列的 chip 要自己说明为什么不能跳转"
+    assert "ticketTodo(" in js, "待办数与提交门要走同一个入口，别在渲染里各算一遍"

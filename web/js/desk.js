@@ -186,8 +186,7 @@ function checks(k, l2, l3){
 function flagsByField(qc){
   const map = {}, rest = [];
   for (const f of (qc && qc.flags) || []){
-    const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") ||
-                              f.includes(kk + " 未") || f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
+    const k = L.flagKey(f, KEYS);
     if (k) (map[k] = map[k] || []).push(f); else rest.push(f);
   }
   return {map, rest};
@@ -1316,6 +1315,13 @@ function fieldRows(t, ef){
     return o;
   });
 }
+/* 一张票"还剩哪些事"只有这一个算法入口：行上的旗 + 空栏 + 没有列可挂的旗。
+   从前同样两行抄了五处（提交按钮、武装那一下、待办条、跳下一个、跳首个），
+   少改一处就是待办条说的和提交门数的不是同一件事。 */
+function ticketTodo(t){
+  const ef = effectiveFlags(t), rows = fieldRows(t, ef);
+  return {ef, rows, todo: L.todoOf(rows, flagsByField({flags: ef}).rest)};
+}
 const BADGE_CLS = {flag: "warn", confirmed: "conf", empty: "emptyb", emptyok: "conf", miss: "miss", same: "same"};
 function rowCls(r, t){
   const s = r.st.s;
@@ -1376,9 +1382,9 @@ function drawSubmitBtn(t, ef, n){
 }
 function drawSubmitCtl(t){
   const old = $("#submit"); if (!old) return;
-  const ef = effectiveFlags(t), rows = fieldRows(t, ef);
+  const {ef, todo} = ticketTodo(t);
   const tmp = document.createElement("div");
-  tmp.innerHTML = drawSubmitBtn(t, ef, L.todoOf(rows).n);
+  tmp.innerHTML = drawSubmitBtn(t, ef, todo.n);
   old.replaceWith(tmp.firstChild);
   $("#submit").addEventListener("click", () => submitClick(t));
 }
@@ -1386,14 +1392,14 @@ function drawSubmitCtl(t){
    与作废、彻底删同一规矩——第一下不发请求。 */
 function armSubmit(t){
   DESK.armed = true;
-  const n = L.todoOf(fieldRows(t, effectiveFlags(t))).n;
+  const n = ticketTodo(t).todo.n;
   drawSubmitCtl(t);
   toast("再点一次就提交这 " + n + " 个空栏（没人确认过的会逐列记进台账）。红旗不在这一档里：它必须一条一条确认", "");
   clearTimeout(armSubmit.timer);
   armSubmit.timer = setTimeout(() => { DESK.armed = false; drawSubmitCtl(t); }, 2400);
 }
 function submitClick(t){
-  const ef = effectiveFlags(t), rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  const {ef, todo} = ticketTodo(t);
   if (ef.length){
     const k = firstFlagKey(t, ef);
     if (k) jumpToField(t, k);
@@ -1523,7 +1529,7 @@ function renderMain(){
   /* 重画一次就收回"武装"那一下：提交按钮的红态只代表"这最后一次点击会真的发送"，
      中间人又点了别的（确认、改值、换票）就等于改了主意，不该还留着。 */
   DESK.armed = false;
-  const rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  const {rows, todo} = ticketTodo(t);
   /* 进度分母＝刚进这张票时抓的那份待办快照。拿 38 列当分母，一眼看去全是"完成度 58%"的假象
      （22 列本来就没印）；0/0 是 100%，不是 NaN。 */
   if (t.todoBase == null) t.todoBase = todo.n;
@@ -1538,12 +1544,13 @@ function renderMain(){
      从前是 span 套 button，点哪儿都算跳转，确认要 stopPropagation 才不被带着走。
      确认过的也留在这一排（灰底 + 一颗撤回）：人确认过什么，界面上就该看得见什么。 */
   const chipOne = f => {
-    const k = KEYS.find(kk => f.startsWith(kk + " ") || f.includes(kk + ":") || f.includes(kk + " 未") ||
-                              f.includes(kk + " 缺失") || f.includes("'" + kk + "'"));
+    const k = L.flagKey(f, KEYS);
     const done = ackF.includes(f), isHard = f.startsWith("保真") || f.includes("缺失");
     return `<span class="chip ${done ? "done" : isHard ? "bad" : "warn"}">` +
       (k ? `<button type="button" class="chipb" data-jump="${k}" title="点击：跳到并高亮这个字段">${esc(f)}</button>`
-         : `<span class="chipx">${esc(f)}</span>`) +
+         /* 没有列可挂的旗也要写明"为什么这条点不动"：它说的是整张票（区号与国家串边、
+            票面有税号而两格 EORI 都没接住），挑一列挂上去就是猜。不写这一句，人只会以为按钮坏了。 */
+             : `<span class="chipx"><i class="chipn">不落在某一列</i>${esc(f)}</span>`) +
       (done ? `<button class="ackb" type="button" data-unack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
             : `<button class="ackb" type="button" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) +
       "</span>";
@@ -1619,7 +1626,7 @@ function setTxt(sel, s){ const el = $(sel); if (el) el.textContent = s; }
 /* 待办条、五段段头、提交按钮：这三处都是"数一数还剩什么"，改一格就要一起重算。
    只换 these 三块的innerHTML，绝不重建行（行里有正在编辑的 textarea：重建就丢焦点、打断输入法）。 */
 function refreshChrome(t){
-  const ef = effectiveFlags(t), rows = fieldRows(t, ef), todo = L.todoOf(rows);
+  const {ef, rows, todo} = ticketTodo(t);
   const hard = {}, soft = {};
   for (const r of rows){ if (r.st.s === "flag") hard[r.k] = 1; if (r.st.s === "empty") soft[r.k] = 1; }
   for (const seg of L.segState(rows, hard, soft)){
@@ -1667,7 +1674,7 @@ function jumpToField(t, k){
   return true;
 }
 function gotoNextTodo(t, from){
-  const ks = L.todoOf(fieldRows(t, effectiveFlags(t))).keys;
+  const ks = ticketTodo(t).todo.keys;
   const k = L.nextTodo(ks, from);
   if (!k){ toast("待办清零：可以提交了", "ok"); return; }
   if (!jumpToField(t, k)) toast("这一列在别的段里，先展开才看得到", "bad");
@@ -1758,7 +1765,7 @@ function wireMain(t){
     toast("本段「" + (GROUPS[g] || g) + "」" + rows.length + " 列已整段核对（留痕逐列记，可撤回）", "ok");
   }));
   $("#jumpFirst").addEventListener("click", () => {
-    const ks = L.todoOf(fieldRows(t, effectiveFlags(t))).keys;
+    const ks = ticketTodo(t).todo.keys;
     if (!ks.length){ toast("这一票没有待办了：可以提交", "ok"); return; }
     jumpToField(t, ks[0]);
   });

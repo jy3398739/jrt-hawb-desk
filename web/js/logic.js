@@ -459,9 +459,13 @@ const L = {
                    emptyok: "已确认", miss: "航空口径空", same: "已归一"}[s];
     return {s, label, todo: s === "flag" || s === "empty"};
   },
-  todoOf(rows){
+  /* 一张票的待办。other 是"这条旗说的是整张票、没有哪一列可挂"那份名单（区号串边、税号漏抄）：
+     它要进 n，否则待办条写「红旗 0」而提交那道门按全部旗数、回一句"还有未清的红旗"——
+     同一件事两个数，人就只能靠试。keys 只收真列名：跳转不能跳到一个不存在的列上。 */
+  todoOf(rows, other){
     const keys = (rows || []).filter(r => this.fieldStatus(r).todo).map(r => r.k);
-    return {keys, n: keys.length};
+    const nOther = (other || []).length;
+    return {keys, n: keys.length + nOther, other: nOther};
   },
   /* 进度：分母是"刚进这张票时的待办快照"，不是字段数（38 列里 22 列本来就没印，
      拿 38 当分母会让一眼看过去全是"完成度 58%"的假象）。0/0 算 100%，别出 NaN。 */
@@ -487,6 +491,19 @@ const L = {
     }
     order.forEach(g => { by[g].cleared = by[g].tot - by[g].todo; });
     return order.map(g => by[g]);
+  },
+  /* 一条红旗挂到哪一列，只有这一处判据。从前 desk.js 里 `flagsByField` 与 `chipOne` 各抄了
+     一份那五种模式，两份走偏过一次：旗在顶部 chip 上能确认、在列上却永远不显红。
+     先剥掉 `L3 `/`保真 ` 这类来源前缀——主语位那一列才是这条旗说的列；主语认不出再退一步：
+     全文里恰好出现一个列名就挂它，0 个或多个一律空串。空串不是失败：那条旗仍然在 chip 那一排、
+     照样能逐条确认；只是不许猜一列挂上去——猜错的旗会让人去核一个本来没问题的列。 */
+  flagKey(f, keys){
+    const ks = keys || [];
+    const body = String(f || "").replace(/^(?:L3|保真)\s+/, "");
+    for (const k of ks) if (body.startsWith(k + " ")) return k;
+    const hit = ks.filter(k => body.indexOf(k + ":") >= 0 || body.indexOf(k + " 未") >= 0
+                            || body.indexOf(k + " 缺失") >= 0 || body.indexOf("'" + k + "'") >= 0);
+    return hit.length === 1 ? hit[0] : "";
   },
   nextTodo(ks, cur){
     const a = ks || [];
