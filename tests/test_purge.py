@@ -1287,3 +1287,17 @@ def test_the_confirm_names_the_ones_that_have_not_matured():
     assert badge.startswith("function purgeBadge(n)"), "徽标那格还是原样"
     badge = _after(js, "PURGE.items = j.items", 400).split("}catch(e){")[0]
     assert "purgeAged()" in badge, "徽标改成数全部票了：它该只看到期的那一批"
+
+
+def test_a_window_that_scrolls_itself_keeps_its_header_pinned_to_its_own_top():
+    """全局 th 的 sticky top 是给「整页滚」准备的（要把表头停在顶栏底下 ≈ --hdh）。浮层正文
+    自己滚时再套这个偏移，等于把表头往下推 ~97px：它就从容器顶掉进列表中间，上下各露出一行
+    数据，读起来像同一行重复了三遍（2026-10-12 现场：清理面板第 3 行与第 4 行之间压着表头）。
+    这个坑从前踩过两次（#mstHawbBox、.statsbody），清理面板是第三次——而它这一版要列全部票，
+    几十行必滚。再加第四个自己滚的带表浮层，把它的选择器一并列进来。"""
+    css = web_src.css()
+    for sel in ("#mstHawbBox", ".statsbody", ".purge-body"):
+        m = re.search(re.escape(sel) + r"(?:\s+[\w.]+)?\s+th\s*\{([^}]*)\}", css)
+        assert m, sel + "：没有把表头重新钉住的规则"
+        assert re.search(r"(^|[;{\s])top:0\s*(;|$)", m.group(1)), \
+            sel + "：表头的 sticky top 还挂着整页那个偏移，会浮在列表中间"

@@ -606,6 +606,9 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
    会被上面那条 `.purge-run b` 顶掉（同为元素+类，后者更具体），浏览器里量出来就是一行黑字。 */
 .purge-run b.pkr-b{color:var(--c-bad-text)}
 .purge-body{overflow:auto;padding:0 16px 12px}
+/* 同 .statsbody：全局 th 的 sticky top 是给整页滚准备的，容器自己滚时再套那个偏移
+   就等于把表头往下推 ~97px，它会从容器顶掉进列表中间压住数据。 */
+.purge-body th{top:0}
 .purge-bar{display:flex;align-items:center;gap:10px;padding:11px 0 9px;flex-wrap:wrap;row-gap:6px}
 .purge-q{flex:1;min-width:200px;border:1px solid var(--c-line);border-radius:var(--r-md);
   padding:6px 9px;font-size:var(--f-md)}
