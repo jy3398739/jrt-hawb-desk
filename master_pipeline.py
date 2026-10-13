@@ -21,6 +21,7 @@ import config
 import company_api
 import master_fields as mf
 import store
+import usage
 import vlm_extract
 from fidelity import verify_fidelity
 from validator import validate_master
@@ -195,6 +196,7 @@ def run_master(mawb: str, mawb_order: dict) -> dict:
     tr = mf.build_transcript(mawb_order)
     bundle = config.master_model_bundle()
     t0 = time.time()
+    usage.begin()
     rec = {"mawb": str(mawb or "").strip(), "text_md5": _md5(tr["full_text"]),
            "face_md5": _face_md5(), "model": bundle["model"],
            "started_at": _now(), "transcript": tr,
@@ -217,6 +219,8 @@ def run_master(mawb: str, mawb_order: dict) -> dict:
                     "qc": {"flags": [f"主单解析失败 {e}"], "needs_review": True,
                            "missed_cols": [], "fidelity": None}})
     rec["elapsed"] = round(time.time() - t0, 1)
+    if isinstance(rec.get("qc"), dict):
+        rec["qc"]["usage"] = usage.take()   # 主单这条链更贵（默认公司百炼 + 可开思考），账要单独看得见
     rec["updated_at"] = _now()
     return _write(rec)
 

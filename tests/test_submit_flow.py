@@ -250,6 +250,64 @@ def test_server_recomputes_house_flags_and_blocks_unacked():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_number_the_human_filled_clears_the_missing_number_flag():
+    """盘上 L2 没有号（模型漏抄），人在核对区照着票面补上再发——这时还报「MAWB_NO 缺失」
+    就是一面看不见、一面过不去的旗：审核台按"当前值"判它已清（desk.js 的 awbFilled），
+    而服务端那道门读的是盘上那份 L2，人工值只进 air_reviewed。两边说的不是同一件事，
+    人只会看见"点提交→冒出一条没见过的红旗"（2026-10-12 已经为同类死旗修过一次，这处是
+    2026-10-13 核对效率审查时发现的另一个漏口）。缺不缺号，看**这次真要发出去的那份值**。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_fillno_"))
+    try:
+        with _desk_dirs(tmp):
+            stem = "CLA26090022"
+            raw = {"MAWB_NO": "", "HAWB_NO": stem, "DEST_NAME": "LAX", "TO1": "AMS",
+                   "PIECES": 1, "WEIGHT": 100.0, "CREATE_TIME": "2026-09-01",
+                   "CONSIGNEE_INFO_TEL": "+86 10 69479536", "CONSIGNEE_INFO_COUNTRY": "CN",
+                   "GOODS_NAME": "STEEL PARTS"}      # 除了漏抄主单号，这份 L2 别处都干净
+            (config.OUTPUT_RAW_DIR / f"{stem}.json").write_text(
+                json.dumps(raw, ensure_ascii=False), encoding="utf-8")
+            client = _login_as("马殿齐", "rv-123456", "reviewer")
+            tk = _clean_ticket()                     # air_reviewed 里主单号是补齐了的
+            r = client.post("/submit", json={"tickets": [tk]})
+            assert r.status_code == 200, \
+                f"号已经补齐还拦着提交（服务端看的是盘上那份漏抄的 L2）：{r.status_code} {r.text[:200]}"
+            assert store.ledger()[stem]["air_sent"]["MAWB_NO"] == "235-96146363"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_number_nobody_filled_is_still_reported_as_missing():
+    """反过来：谁都没补，缺号这条红旗必须在——它是"票面到底有没有印这个号"的提醒，
+    不是可以默默放过的格式问题。"""
+    import jobs
+    raw = {"MAWB_NO": "", "HAWB_NO": "CLA26090022", "DEST_NAME": "LAX"}
+    flags = jobs.recompute_flags(raw, dict(raw, MAWB_NO=""), None)
+    assert any("MAWB_NO 缺失" in f for f in flags), flags
+
+
+def test_the_missing_number_rule_lives_in_the_validator_only():
+    """判据一处：validator 收一份"这次要发出去的值"，缺号那条按它判。
+    在 jobs 或端点里再字符串匹配一遍旗面文案的话，改文案就有两处要跟着改。"""
+    import validator
+    raw = {"MAWB_NO": "", "HAWB_NO": "CLA26090022"}
+    assert any("MAWB_NO 缺失" in w for w in validator.validate_raw(raw)), \
+        "不传 sent 时必须照旧按 L2 自己判（解析那一刻还没有人工值）"
+    assert not [w for w in validator.validate_raw(raw, sent={"MAWB_NO": "235-96146363"})
+                if "MAWB_NO 缺失" in w], "号补齐了这条就该消"
+
+    def awb_flags(out):
+        return [w for w in out if "MAWB_NO" in w or "HAWB_NO" in w]
+
+    both = {"MAWB_NO": "", "HAWB_NO": ""}
+    assert any("均为空" in w for w in awb_flags(validator.validate_raw(both))), both
+    assert awb_flags(validator.validate_raw(both, sent={"MAWB_NO": "235-96146363",
+                                                         "HAWB_NO": "CLA26090022"})) == [], \
+        "两格都补上了，缺号那两条都不该留"
+    assert any("HAWB_NO 缺失" in w for w in awb_flags(
+        validator.validate_raw(both, sent={"MAWB_NO": "235-96146363"}))), \
+        "只补了一格：另一格那条要留着——两栏是各自独立判的"
+
+
 def test_submit_without_l2_on_disk_invents_no_flags():
     """服务端没有落盘的 L2/转录（比如票是在别的机器解析的）时，只能校 L3 那一层——
     不能因为拿不到 raw 就凭空报"MAWB_NO 缺失"，否则正常提交全被堵死。"""

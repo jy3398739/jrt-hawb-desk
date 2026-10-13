@@ -31,6 +31,22 @@ def test_l3_matches_baseline():
     assert not bad, f"{len(bad)} 处 L3 漂移：\n    " + "\n    ".join(bad[:12])
 
 
+def test_l3_output_is_exactly_the_current_column_contract():
+    """L3 出口必须**正好**是现行列面：少一列＝静默丢字段，多一列＝往契约外写东西。
+
+    上一条按 `for k in new` 遍历，所以 new 里少了哪一列它根本看不见（2026-10-13 效率审查
+    确认的那处护栏缺口：改列面时 L3 少输出一列，回归照样全绿）。这一条补的就是那个洞，
+    而且判据取自 fieldspec 这一份单一真源，不抄列数。"""
+    import fieldspec
+    want = set(fieldspec.desk_keys())
+    bad = []
+    for p in sorted((FIX / "input").glob("*.json")):
+        got = set(to_air.to_air(_read(p)))
+        if got != want:
+            bad.append(f"{p.name}：缺 {sorted(want - got)} 多 {sorted(got - want)}")
+    assert not bad, f"{len(bad)} 份夹具的 L3 出口与现行列面不一致：\n    " + "\n    ".join(bad[:8])
+
+
 def test_l3_has_no_iata_warnings():
     """L3 出口必须全是三字码：码表缺项在这里被抓住，而不是等业务方发现。"""
     bad = []

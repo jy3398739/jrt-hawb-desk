@@ -43,9 +43,13 @@ def _id_cell_warns(col: str, value: str, country: str = "", tel: str = "") -> li
     return warns
 
 
-def validate_raw(d: dict) -> list:
+def validate_raw(d: dict, sent: dict | None = None) -> list:
     """L2 原文口径校验：票面印什么 L2 就该照抄什么，所以这里只拦"绝不可能是票面值"的错误。
-    城市名（票面 To3 格印 MANAUS）在 L2 属正常，三字码强制检查在 validate_air(L3) 做。"""
+    城市名（票面 To3 格印 MANAUS）在 L2 属正常，三字码强制检查在 validate_air(L3) 做。
+
+    sent 是**这次真要发出去的那份值**（人工核对后的 L3）：只有提交门会传。缺号那两条按它判——
+    模型漏抄、人照着票面把号补上了，就不该再拦（解析那一刻没有 sent，仍按 L2 自己判）。
+    误填/形状那几条照旧读 L2：它们问的是"模型抄成了什么"，与发了什么无关。"""
     warns = []
 
     # 1) 航路栏填了 2 字母承运人码(JL/LH)或含数字的航班号(CA949) —— 一定不是 To 栏票面值
@@ -65,12 +69,14 @@ def validate_raw(d: dict) -> list:
     # 2) 主/分单号两栏独立，缺哪个都单独告警（历史 31 单 MAWB 全有、2 单票面确无 HAWB，
     #    但空缺更常见于两格分印时漏抄其中一格——如 MAWB_NO 有 fidelity 的反向核查兜底）
     mawb, hawb = str(d.get("MAWB_NO", "")).strip(), str(d.get("HAWB_NO", "")).strip()
-    if not mawb and not hawb:
+    have_m = bool(mawb) or bool(sent and str(sent.get("MAWB_NO") or "").strip())
+    have_h = bool(hawb) or bool(sent and str(sent.get("HAWB_NO") or "").strip())
+    if not have_m and not have_h:
         warns.append("MAWB_NO 与 HAWB_NO 均为空")
     else:
-        if not mawb:
+        if not have_m:
             warns.append("MAWB_NO 缺失（主单号常与分单号分两格印，需核票确认票面是否有）")
-        if not hawb:
+        if not have_h:
             warns.append("HAWB_NO 缺失（需核票确认票面是否有）")
     if re.match(r"^(999|020|131|074|016|057|490)\D?\d{7,8}", hawb.replace(" ", "")):
         warns.append(f"HAWB_NO 疑似误填主单号: {hawb!r}")

@@ -37,7 +37,7 @@
   GET  /layout/{stem}      L1 逐字转录（含每行 bbox），审核台「点字段定位票面行」用（需登录会话）
   GET  /render/{stem}      把归档票面按页转成 PNG（?page=&scale=），定位模式的底图（需登录会话）
 """
-import argparse, hashlib, json, logging, re, shutil, tempfile, time
+import argparse, hashlib, json, logging, re, shutil, tempfile, threading, time
 from pathlib import Path
 from urllib.parse import quote
 
@@ -807,17 +807,21 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1), user: dict = Depends(cu
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
     who = str(user.get("name") or "")
     scope = "all" if (all and user.get("role") == "admin") else "mine"
-    every = store.day_rows(d) if scope == "mine" else []
-    rows = store.day_rows(d, who=None if scope == "all" else who)
-    others = (len(every) - len(rows)) if scope == "mine" else 0
+    # 磁盘只碰两遍：那一天扫一次（按人筛在内存里做，判据仍是 store.owns 那一处），再一次不限日的
+    # 扫描——只为下面那两句"最近有票的是哪天"。从前是四遍（day_rows 两遍 + day_last_date 两遍，
+    # 而后者内部各又扫一遍），成本按这台机器经手过的总票数涨，不是按当天的涨。
+    every = store.day_rows(d)
+    rows = every if scope == "all" else [r for r in every if store.owns(r, who, d)]
+    all_days = store.day_rows()
+    others = len(every) - len(rows)
     who_r = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
     # last_date：空着的那一天要能答"最近有票的是哪天"（前端自己算不出：台账在本机、时区也可能不同）。
     # 按人看时它答的是"你"最近动过票的那天，与这一页同一口径，否则那句提示会把人支到空页上。
     # machine_last_date 另给一份全机的：一个人从没动过、而这台机器明明有票时，那两件事要分开说。
     return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who_r),
             "scope": scope, "me": who, "others_today": others,
-            "last_date": store.day_last_date(None if scope == "all" else who),
-            "machine_last_date": store.day_last_date()}
+            "last_date": store.day_latest(all_days, None if scope == "all" else who),
+            "machine_last_date": store.day_latest(all_days)}
 
 
 class VoidBody(BaseModel):
@@ -1043,15 +1047,20 @@ def layout(stem: str, _: None = Depends(require_web)):
 
 # 定位模式底图的页图缓存：同一张票反复点字段不该每次都重渲染；
 # 键含 scale，FIFO 挡 8 张（A4 @2x 一张 PNG 约 0.5-2MB，最坏十几 MB，够用也够小）。
+# 这份 dict 会被线程池与队列 worker 同时碰，所以读写都在 _RENDER_LOCK 里——淘汰那一步
+# `pop(next(iter(...)))` 在无锁下能撞上"字典大小在迭代中变了"。渲染本身留在锁外：
+# 一张四页票每页 100-300ms，全局锁住渲染就等于把并发核对压成串行。
 _RENDER_CACHE: dict = {}
+_RENDER_LOCK = threading.Lock()
 _RENDER_SCALE = (1, 3)
 
 
 def _drop_render_cache(key: str) -> None:
     """彻底删除一张票时把它的页图从缓存里摘掉。不清这一步，删完还能从内存缓存里
     把已经"人间蒸发"的票面翻出来——那张 PNG 正是这整件事要抹掉的东西。"""
-    for k in [k for k in _RENDER_CACHE if k[0] == key]:
-        _RENDER_CACHE.pop(k, None)
+    with _RENDER_LOCK:
+        for k in [k for k in _RENDER_CACHE if k[0] == key]:
+            _RENDER_CACHE.pop(k, None)
 
 
 purge.CACHE_HOOKS.append(_drop_render_cache)
@@ -1111,12 +1120,17 @@ def purge_run(body: PurgeItems, request: Request, _: None = Depends(require_admi
 
 
 @app.get("/render/{stem}")
-def render(stem: str, page: int = Query(1, ge=1, description="1 起的页码"),
+def render(stem: str, request: Request,
+           page: int = Query(1, ge=1, description="1 起的页码"),
            scale: float = Query(2, description="渲染倍率（≈72dpi 的倍数），服务端钳到 1-3"),
            _: None = Depends(require_web)):
     """把归档票面按页转成 PNG：浏览器内嵌 PDF 阅读器没法按区域高亮/放大，
     定位模式只能拿页图当底图再叠 bbox。TIFF 浏览器渲染不了，pymupdf 却读得动，
-    归档了就能定位。"""
+    归档了就能定位。
+
+    页图带 ETag 且 no-cache：定位模式里换页、点字段、来回切票都会反复取同一张 PNG，
+    而归档原件是不可变的——字节没变就该 304，不该重传（2026-10-13 效率审查 P0-4）。
+    不用长 max-age：删票与重解析都发生在服务端，得让浏览器每次来问一次才立刻看到新的。"""
     d = _archive_dir(stem)
     if d is None:
         raise HTTPException(404, "归档里没有这张票的原件，无法按页定位：它是在「上传一律落盘」"
@@ -1131,10 +1145,9 @@ def render(stem: str, page: int = Query(1, ge=1, description="1 起的页码"),
         return FileResponse(p, media_type=_PREVIEW_TYPES[p.suffix.lower()])   # 底图本来就用原图
     scale = min(max(float(scale), _RENDER_SCALE[0]), _RENDER_SCALE[1])
     key = (stem, page, scale)
-    hit = _RENDER_CACHE.get(key)
-    if hit is not None:
-        png, total = hit
-    else:
+    with _RENDER_LOCK:
+        hit = _RENDER_CACHE.get(key)
+    if hit is None:
         import pymupdf
         try:
             doc = pymupdf.open(str(p))
@@ -1150,10 +1163,16 @@ def render(stem: str, page: int = Query(1, ge=1, description="1 起的页码"),
             raise
         except Exception as e:
             raise HTTPException(415, f"票面按页渲染失败（{type(e).__name__}: {e}），请点「下载原件」在本地打开")
-        if len(_RENDER_CACHE) >= 8:
-            _RENDER_CACHE.pop(next(iter(_RENDER_CACHE)))
-        _RENDER_CACHE[key] = (png, total)
-    return Response(png, media_type="image/png", headers={"X-Ticket-Pages": str(total or 1)})
+        hit = (png, total, '"' + hashlib.sha1(png).hexdigest()[:16] + '"')
+        with _RENDER_LOCK:
+            if len(_RENDER_CACHE) >= 8:
+                _RENDER_CACHE.pop(next(iter(_RENDER_CACHE)))
+            _RENDER_CACHE[key] = hit
+    png, total, etag = hit
+    head = {"X-Ticket-Pages": str(total or 1), "ETag": etag, "Cache-Control": "no-cache"}
+    if etag in [x.strip() for x in request.headers.get("if-none-match", "").split(",")]:
+        return Response(status_code=304, headers=head)
+    return Response(png, media_type="image/png", headers=head)
 
 
 def main():

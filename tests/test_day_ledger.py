@@ -596,3 +596,88 @@ def test_a_master_row_lands_on_the_day_its_own_event_happened():
                                      "宛平", "reviewer")
         assert store.day_rows("2026-09-29", who="马殿齐") and not store.day_rows(TODAY, who="马殿齐")
         assert store.day_rows(TODAY, who="宛平") and not store.day_rows("2026-09-29", who="宛平")
+
+
+# ── 九、一次请求别扫四遍（2026-10-13 效率审查 P1-1）────────────────────────
+
+
+def test_the_day_route_scans_the_ledger_twice_not_four_times():
+    """从前一次 /day 内部跑四遍全量扫描：day_rows(d) 两遍（一遍取行、一遍数"别人经手几张"），
+    再加 day_last_date 两遍——而它自己内部又各走一遍 day_rows。今天的量看不出问题，但这份成本
+    按"这台机器经手过的总票数"涨，不是按今天的票数涨。压成两遍：那一天扫一次（按人筛在内存里做，
+    判据仍取自 store 那一处），两句"最近有票的是哪天"由一次不限日的扫描派生。"""
+    with _sandbox():
+        _uploaded("S1", "马殿齐", hawb="HS1")
+        store.mark_submitted("S1", "999-95764373", "HS1", "宛平", receipt={"accepted": 1})
+        n = {"rows": 0, "last": 0}
+        real_rows, real_last = store.day_rows, store.day_last_date
+
+        def spy_rows(*a, **kw):
+            n["rows"] += 1
+            return real_rows(*a, **kw)
+
+        def spy_last(*a, **kw):
+            n["last"] += 1
+            return real_last(*a, **kw)
+
+        store.day_rows, store.day_last_date = spy_rows, spy_last
+        try:
+            j = _login("admin", "admin123").get("/day", params={"date": TODAY}).json()
+        finally:
+            store.day_rows, store.day_last_date = real_rows, real_last
+        assert j["scope"] == "mine" and j["rows"] == [] and j["others_today"] == 1, j
+        assert j["machine_last_date"] == TODAY and j["last_date"] == "", j
+        assert n["rows"] <= 2, f"台账页扫了 {n['rows']} 遍：只该是「那一天」+「不限日」各一遍"
+        assert n["last"] == 0, "端点里调 day_last_date 等于把扫描翻倍——它内部还走一遍 day_rows"
+
+
+def test_the_widest_view_does_not_pay_for_the_count_it_needs():
+    """管理员看「全部」时不需要数"还有几张是别人的"，那份扫描一次都不该多付；
+    而两句日期仍要答得出来（空态那一句话靠它）。"""
+    with _sandbox():
+        _uploaded("S2", "马殿齐", hawb="HS2")
+        n = {"rows": 0}
+        real_rows = store.day_rows
+
+        def spy_rows(*a, **kw):
+            n["rows"] += 1
+            return real_rows(*a, **kw)
+
+        store.day_rows = spy_rows
+        try:
+            j = _login("admin", "admin123").get("/day", params={"date": TODAY, "all": 1}).json()
+        finally:
+            store.day_rows = real_rows
+        assert j["scope"] == "all" and [r["stem"] for r in j["rows"]] == ["S2"], j
+        assert j["others_today"] == 0 and j["last_date"] == TODAY, j
+        assert n["rows"] <= 2, f"「全部」那一档扫了 {n['rows']} 遍"
+
+
+def test_latest_day_from_one_scan_answers_exactly_what_the_old_one_did():
+    """端点里自己算的那句"最近有票的是哪天"必须与 store.day_last_date 一字不差：
+    两处算术迟早给出两个日期，而这句话是回答"没票还是坏了"的，说错比不说更糟。"""
+    with _sandbox():
+        _uploaded("E1", "马殿齐", when="2026-09-29", hawb="HE1")
+        _uploaded("E2", "宛平", when="2026-10-02", hawb="HE2")
+        every = store.day_rows()
+        for who in (None, "宛平", "马殿齐", "陈新"):
+            assert store.day_latest(every, who) == store.day_last_date(who), str(who)
+        assert store.day_latest(every) == "2026-10-02", every and [r["processed_at"] for r in every]
+        assert store.day_latest(every, "宛平") == "2026-10-02"
+        assert store.day_latest(every, "马殿齐") == "2026-09-29", \
+            "他最近一次动手是 9-29，10-02 那张不是他的，不能跟着涨"
+        assert store.day_latest(every, "陈新") == ""
+
+
+def test_the_endpoint_and_the_scanner_share_one_ownership_rule():
+    """「动过就算我的」这条判据只能有一处（store.owns）：端点为了少扫一遍而在内存里筛行，
+    自己再写一遍判据的话，筛出来的和扫出来的迟早不是同一批票。"""
+    with _sandbox():
+        _uploaded("P1", "马殿齐", when="2026-09-29", hawb="HP1")
+        store.mark_submitted("P1", "999-95764373", "HP1", "宛平", receipt={"accepted": 1})
+        every = store.day_rows("2026-09-29")
+        assert [r["stem"] for r in every if store.owns(r, "马殿齐", "2026-09-29")] == ["P1"]
+        assert [r["stem"] for r in every if store.owns(r, "宛平", "2026-09-29")] == [], \
+            "宛平是今天提交的，9-29 那一页不该有他"
+        assert [r["stem"] for r in store.day_rows("2026-09-29", who="马殿齐")] == ["P1"], \
+            "内存筛与逐行筛必须同一批"

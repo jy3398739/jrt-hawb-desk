@@ -390,6 +390,27 @@ def test_health_says_which_build_is_running():
             assert re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", j[k]), f"{k} 要给人能读的本地时间：{j[k]}"
 
 
+def test_git_commit_is_forked_once_per_process():
+    """/health 免登录，一旦挂上存活探测就是按秒打——每次现 fork 一个 git 进程是白付的钱
+   （2026-10-13 效率审查 P1-11）。HEAD 在一个进程的寿命里不会变（发版必然重启），
+    所以取一次就该记住；这条钉的是"第二次不许再 fork"。"""
+    class _R:
+        returncode = 0
+        stdout = "cafe123\n"
+
+    seen = []
+    real = config.subprocess.run
+    config._GIT_COMMIT = None                       # 假装进程刚起来
+    try:
+        config.subprocess.run = lambda *a, **kw: (seen.append(1), _R())[1]
+        assert config.git_commit() == "cafe123"
+        assert config.git_commit() == "cafe123", "缓存没吃到，返回值就不该一致"
+        assert len(seen) == 1, f"第二次仍去 fork 了 git（共 {len(seen)} 次）"
+    finally:
+        config.subprocess.run = real
+        config._GIT_COMMIT = None
+
+
 def _post(client, filename="CLA26090022\xa0HAWB.pdf", content=b"%PDF-1.4 fake-hawb", **kw):
     """上传一张票并取回最终结果。/extract 现在是"入队即 202 + 轮询 /job"，
     用例不该各写一遍轮询；要断言 202/位次本身的地方直接 client.post。"""
@@ -1267,6 +1288,51 @@ def test_render_returns_page_png_and_total_pages_header():
     anon = TestClient(server.app)
     with _stubbed(), _archive({"GLT1/GLT1.pdf": _mkpdf(2)}):
         assert anon.get("/render/GLT1").status_code == 401, "未登录要拒"
+
+
+def test_render_page_png_is_revalidated_instead_of_retransferred():
+    """页图是审核台最贵的带宽项，而归档原件不可变：换页、点字段、来回切票都在重传同一张 PNG
+    （2026-10-13 效率审查 P0-4——从前既没有 ETag 也没有 Cache-Control）。
+    给 ETag + no-cache：字节没变就 304 空体，不再重传；不用长 max-age，因为"这张票被清掉了"
+    与"这张票重解析了"都发生在服务端，必须让浏览器每次来问一次才能立刻看到新的。"""
+    client = TestClient(server.app)
+    server._RENDER_CACHE.clear()
+    try:
+        with _stubbed(), _archive({"GLT2/GLT2.pdf": _mkpdf(2)}):
+            _login_admin(client)
+            r = client.get("/render/GLT2?page=1&scale=2")
+            assert r.status_code == 200, r.text
+            tag = r.headers.get("etag")
+            assert tag, "页图没有 ETag：每换一页都得重传整张 PNG"
+            assert "no-cache" in (r.headers.get("cache-control") or ""), \
+                "要 no-cache：删票/重解析后浏览器不能继续拿旧图"
+            hit = client.get("/render/GLT2?page=1&scale=2", headers={"If-None-Match": tag})
+            assert hit.status_code == 304, f"同页同倍率该回 304，实际 {hit.status_code}"
+            assert hit.content == b"", "304 不许带正文"
+            assert hit.headers["x-ticket-pages"] == "2", "翻页那颗页数还得给，否则 304 之后前端算不出上下一页"
+            assert client.get("/render/GLT2?page=1&scale=2",
+                              headers={"If-None-Match": '"stale-etag"'}).status_code == 200
+            assert client.get("/render/GLT2?page=2&scale=2").headers["etag"] != tag, \
+                "不同页共用一个 ETag 等于让浏览器拿错图"
+            assert client.get("/render/GLT2?page=1&scale=3").headers["etag"] != tag, \
+                "倍率变了字节就变了，ETag 不许重复"
+    finally:
+        server._RENDER_CACHE.clear()
+
+
+def test_render_cache_is_written_under_one_lock():
+    """`_RENDER_CACHE` 会被 FastAPI 的线程池与队列 worker 同时读写：从前是无锁 dict，
+    淘汰那一步 `pop(next(iter(...)))` 在并发下能撞出"字典大小在迭代中变了"。
+    这里钉的是判据形状——读写缓存的那几行必须在同一把锁里。"""
+    src = Path(server.__file__).read_text(encoding="utf-8")
+    body = src[src.index("def render(stem"):]
+    body = body[:body.index("\ndef main()")]
+    assert "with _RENDER_LOCK:" in body, "页图缓存没有锁：并发核对时会撞坏 dict"
+    head = body.split("with _RENDER_LOCK:")[0]
+    leaks = [l.strip() for l in head.splitlines()
+             if "_RENDER_CACHE" in l and not l.strip().startswith("#")]
+    assert not leaks, "缓存读写漏在锁外：" + " | ".join(leaks[:3])
+    assert "threading.Lock()" in src[:src.index("def render(stem")], "锁没在模块级建好"
 
 
 def test_render_serves_image_tickets_and_degrades_honestly():

@@ -6,7 +6,7 @@
 
 ## 0. 这套系统在做什么
 
-票面（PDF / 图片 / Excel 电子单）→ L0 原件归档 → L1 逐字转录 → L2 模型提取 40 列
+票面（PDF / 图片 / Excel 电子单）→ L0 原件归档 → L1 逐字转录 → L2 模型提取 38 列
 → L3 航空口径归一（国家两位码 / 城市三字码 / 电话归一）→ 质检红旗 → 审核台人工核对
 → 回传公司 j9 AMS。
 
@@ -124,7 +124,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ## 7. 验证部署（每次装完/升级后都跑）
 
 ```bash
-.venv/bin/python -X utf8 tests/run_tests.py            # 全量回归，期望 0 失败（当前 287 项）
+.venv/bin/python -X utf8 tests/run_tests.py            # 全量回归，期望 0 失败（项数由它自己报，别抄在这里）
 curl -s http://127.0.0.1:8020/health                   # 版本戳 + 队列水位
 ```
 

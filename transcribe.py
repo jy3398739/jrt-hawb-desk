@@ -9,6 +9,7 @@ from openai import OpenAI
 
 import config
 import retry
+import usage
 from vlm_extract import img_to_data_urls
 
 TRANSCRIBE_PROMPT = """你是一台纯OCR转录机。请把这张航空分单(HAWB)上印刷/打印的所有文字逐行转录出来。
@@ -63,17 +64,19 @@ def _parse(text: str) -> dict:
     return {"lines": norm, "full_text": "\n".join(x["text"] for x in norm)}
 
 
-def transcribe_one(path) -> dict:
+def transcribe_one(path, urls=None) -> dict:
     """L1 转录单张图片/PDF（VLM 纯 OCR），失败自动重试。多页 PDF 每页一起下发。
     当前模型无视觉时直接拒绝：扫描件没有文字层，纯文本模型看不见票面，
-    硬跑只会拿回一段编造的"转录"。"""
+    硬跑只会拿回一段编造的"转录"。
+    urls 是管道已经渲染好的页图（一张票只渲染一遍，L1/L2 共用）；没给才自己渲染。"""
     if not config.MODEL_VISION:
         raise RuntimeError(
             f"当前模型不支持图片输入（{config.VLM_MODEL}），没法转录扫描件："
             "请在审核台顶栏或 .env 的 VLM_MODEL 切到视觉模型（intern-s2-official）")
     path = Path(path)
     client = _get_client()
-    content = [{"type": "image_url", "image_url": {"url": u}} for u in img_to_data_urls(path)]
+    pages = img_to_data_urls(path) if urls is None else urls
+    content = [{"type": "image_url", "image_url": {"url": u}} for u in pages]
     content.append({"type": "text", "text": TRANSCRIBE_PROMPT})
     last = None
     timeout_tries = 0
@@ -86,6 +89,7 @@ def transcribe_one(path) -> dict:
                 temperature=0.0,
                 extra_body=config.model_extra_body(),
             )
+            usage.note(resp, "L1")     # 转录与提取是两次独立收费：合成一栏就分不出扫描件贵在哪一步
             return _parse(resp.choices[0].message.content)
         except Exception as e:
             last = e

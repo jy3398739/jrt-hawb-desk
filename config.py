@@ -26,15 +26,24 @@ except Exception:
     pass  # 没装 python-dotenv 时直接读系统环境变量
 
 
+_GIT_COMMIT = None
+
+
 def git_commit() -> str:
     """当前代码的 git 短哈希。服务器只收 tar 推过去的文件、没有仓库，此时安静返回空串——
-    /health 拿它和 built_at（源码最新 mtime）搭配着看，就能说出"这台跑的是哪一版"。"""
-    try:
-        out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(BASE_DIR),
-                             capture_output=True, text=True, timeout=2)
-        return (out.stdout or "").strip() if out.returncode == 0 else ""
-    except Exception:
-        return ""
+    /health 拿它和 built_at（源码最新 mtime）搭配着看，就能说出"这台跑的是哪一版"。
+
+    取一次就记住：HEAD 在一个进程的寿命里不会变（发版必然重启），而 /health 是免登录的，
+    挂上存活探测就是按秒 fork 一个 git 进程。"""
+    global _GIT_COMMIT
+    if _GIT_COMMIT is None:
+        try:
+            out = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(BASE_DIR),
+                                 capture_output=True, text=True, timeout=2)
+            _GIT_COMMIT = (out.stdout or "").strip() if out.returncode == 0 else ""
+        except Exception:
+            _GIT_COMMIT = ""
+    return _GIT_COMMIT
 
 
 def fix_console() -> None:

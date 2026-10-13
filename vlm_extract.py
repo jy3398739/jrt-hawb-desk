@@ -12,6 +12,7 @@ from openai import OpenAI
 import codes
 import config
 import retry
+import usage
 
 PROMPT_HEAD = r"""你是航空运单(HAWB)信息提取员。下面给你两样东西：①分单图片 ②该图片的逐字转录文本（OCR原始结果）。
 请把下面列出的每一个字段都填进 JSON（票面没有就给空字符串），输出纯JSON（不要markdown代码块，不要解释文字）。
@@ -109,7 +110,8 @@ def extract_master(transcript: dict, model: dict | None = None) -> dict:
     model = model or config.master_model_bundle()
     return _chat_json(master_prompt(transcript), [], mf.MASTER_COLS, "主单", numeric=("SLAC",),
                       client=_client_for(model), model_id=model["model"],
-                      max_tokens=model["max_tokens"], extra_body=model["extra_body"])
+                      max_tokens=model["max_tokens"], extra_body=model["extra_body"],
+                      stage="主单")
 
 
 _extra_clients: dict[str, object] = {}
@@ -131,8 +133,10 @@ def _client_for(bundle: dict):
 def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
                numeric: tuple = ("PIECES", "SLAC", "WEIGHT"), client=None,
                model_id: str | None = None, max_tokens: int | None = None,
-               extra_body: dict | None = None) -> dict:
-    """发一次提取请求并解析 JSON，缺列补齐（数值列补 None，其余补空串）。失败按 VLM_RETRIES 重试。"""
+               extra_body: dict | None = None, stage: str = "L2") -> dict:
+    """发一次提取请求并解析 JSON，缺列补齐（数值列补 None，其余补空串）。失败按 VLM_RETRIES 重试。
+
+    stage 是 token 账记在哪个栏：分单 L2 与主单链共用这一函数，合成一栏就答不出"主单一张多少钱"。"""
     client = client or _get_client()
     content = [{"type": "image_url", "image_url": {"url": u}} for u in urls]
     content.append({"type": "text", "text": prompt})
@@ -147,6 +151,7 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
                 temperature=0.0,
                 extra_body=config.model_extra_body() if extra_body is None else extra_body,
             )
+            usage.note(resp, stage)        # 额度是本项目最贵的资源：每一次调用都得数得上来
             text = resp.choices[0].message.content.strip()
             if text.startswith("```"):
                 text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
@@ -228,12 +233,13 @@ def img_to_data_urls(path) -> list[str]:
         return [_encode(img)]
 
 
-def extract_one(path, transcript: dict | None = None) -> dict:
+def extract_one(path, transcript: dict | None = None, urls: list | None = None) -> dict:
     """L2 提取单张图片/PDF，返回 全字段 dict（保真原文口径）。
     传入 L1 转录结果时，转录文本随 prompt 下发，强制字段值逐字来自转录。
     当前模型无视觉（config.MODEL_VISION=False）时不下发票面图片、只吃转录文本——
     没有转录就直接报错：纯文本模型收图不会拒答而是顺着编（实测 DeepSeek-V4-Pro），
-    宁可这张票失败，也不能拿编出来的字段当真值。"""
+    宁可这张票失败，也不能拿编出来的字段当真值。
+    urls 是管道已经渲染好的页图（一张票只渲染一遍）；没给才自己渲染。"""
     path = Path(path)
     vision = config.MODEL_VISION
     has_tr = bool(transcript and transcript.get("lines"))
@@ -248,5 +254,8 @@ def extract_one(path, transcript: dict | None = None) -> dict:
     if has_tr:
         body = "\n".join(f"{x['i']}: {x['text']}" for x in transcript["lines"])
         prompt += PROMPT_TRANSCRIPT + body
-    urls = img_to_data_urls(path) if vision else []
-    return _chat_json(prompt, urls, FIELDS, path.name)
+    if vision:
+        pages = img_to_data_urls(path) if urls is None else urls
+    else:
+        pages = []          # 就算调用方递了页图也不下发：那条口径不属于"省一次渲染"
+    return _chat_json(prompt, pages, FIELDS, path.name)

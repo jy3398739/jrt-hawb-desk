@@ -592,9 +592,17 @@ def day_last_date(who: str = None) -> str:
     只为一句话：今日台账空着的时候，要能答"是没票还是坏了"。日期由服务端算——台账是本机的、
     不共享，而服务器与浏览器还可能各用各的时钟，前端猜出来的"今天"未必是这里的那天。
     这条路直接走 day_rows：这一页能看见的票，和这句话认的日子，必须是同一套算术
-    （从前它自己扫 qc + 主单缓存 + 分单台账，主单那一天只提交没解析就会漏）。"""
+    （从前它自己扫 qc + 主单缓存 + 分单台账，主单那一天只提交没解析就会漏）。
+
+    端点里别调它：它自带一次全量扫描，/day 已经扫过一遍了，改用 day_latest(那份行, who)。"""
+    return day_latest(day_rows(who=who), who)
+
+
+def day_latest(rows, who: str = None) -> str:
+    """从 day_rows 已经拿到的那份行里算"最近有票的是哪天"——不再回头重扫磁盘。
+    判据与 day_last_date 逐字同一套：全机口径看解析日与提交日，按人看他自己动过的那些日子。"""
     best = ""
-    for r in day_rows(who=who):
+    for r in rows or []:
         days = (r["touched"].get(who, []) if who else
                 [str(r.get("processed_at") or "")[:10],
                  str((r.get("submitted") or {}).get("at") or "")[:10]])
@@ -602,6 +610,12 @@ def day_last_date(who: str = None) -> str:
             if len(when) == 10 and when > best:
                 best = when
     return best
+
+
+def owns(row: dict, who: str, date: str = None) -> bool:
+    """这一行算不算"这个人那一天动过的"。逐行扫描与端点里的内存筛选共用这一处判据：
+    后者是为了少扫一遍磁盘才在内存里筛的，判据若另写一份，筛出来的迟早和扫出来的不是同一批票。"""
+    return _owned((row or {}).get("touched") or {}, who, date)
 
 
 def day_rows(date: str = None, who: str = None) -> list:

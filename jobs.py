@@ -5,6 +5,7 @@ import datetime, time
 from pathlib import Path
 
 import store
+import usage
 from pipeline import process_file
 from validator import validate_raw, validate_air
 from fidelity import verify_fidelity
@@ -27,6 +28,9 @@ def build_qc(path: Path, r: dict, meta: dict | None = None) -> dict:
             "uploader": str(meta.get("uploader") or ""),
             "uploader_role": str(meta.get("uploader_role") or ""),
             "model": r.get("model") or "", "model_choice": r.get("model_choice") or "",
+            # 这一票花了多少额度、时间花在哪儿（2026-10-13 效率审查 P0-5）。纯旁路记录：
+            # 不参与任何判据，也参与不了——它按线程记，跨票不累计。缺渠道的 usage 就是全 0。
+            "usage": r.get("usage") or {}, "timings": r.get("timings") or {},
             "processed_at": datetime.datetime.now().isoformat(timespec="seconds"),
             "needs_review": bool(flags), "flags": flags,
             "fidelity": ({"checked": fid["checked"], "passed": fid["passed"],
@@ -39,8 +43,9 @@ def recompute_flags(raw: dict | None, air: dict, transcript: dict | None = None)
     （字符串要对得上人工确认的那一条）。
 
     拿不到 L2 原文或 L1 转录时只算拿得到的那层，绝不因为"没文件"就凭空报"MAWB_NO 缺失"——
-    在别的机器解析过的票也要提得出去。"""
-    warns = list(validate_raw(raw)) if raw else []
+    在别的机器解析过的票也要提得出去。缺号那两条按 `rec` 判：模型漏抄、人在核对区补上了，
+    就不该再拦（判据在 validator 那一处，端点与前端都不再各自匹配一遍旗面文案）。"""
+    warns = list(validate_raw(raw, sent=air)) if raw else []
     warns += ["L3 " + w for w in validate_air(air or {})]
     if raw and transcript:
         fid = verify_fidelity(raw, transcript)
@@ -53,9 +58,10 @@ def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
     meta={"uploader","uploader_role"} 是给质检记录留痕用的（谁传的这张票）。"""
     path = Path(path)
     t0 = time.time()
+    usage.begin()
     r = {"stem": path.stem, "channel": "", "elapsed": 0.0, "raw": None, "air": None,
          "transcript": None, "warns": [], "fidelity": None, "archive": None,
-         "model": "", "model_choice": "", "qc": None, "error": ""}
+         "model": "", "model_choice": "", "usage": {}, "timings": {}, "qc": None, "error": ""}
     try:
         if save:
             r["archive"] = store.archive_original(path)          # L0
@@ -63,6 +69,7 @@ def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
         r["raw"], r["air"], r["channel"], r["transcript"] = (
             res["raw"], res["air"], res["channel"], res["transcript"])
         r["model"], r["model_choice"] = res.get("model") or "", res.get("model_choice") or ""
+        r["timings"] = res.get("timings") or {}
         src = res.get("src")
         if save and src and Path(src) != path:
             store.save_preview(path.stem, src)      # 电子单转出的 PDF：审核台回看票面靠它
@@ -78,6 +85,7 @@ def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
         r["error"] = f"{type(e).__name__}: {e}"
     finally:
         r["elapsed"] = round(time.time() - t0, 1)
+        r["usage"] = usage.take()      # 中途失败的票也要报出它白烧了多少额度
         r["qc"] = build_qc(path, r, meta)
         if save:
             if r["error"]:
