@@ -120,8 +120,11 @@ def test_a_cancelled_job_is_forgotten_like_any_other_finished_one():
     """摘掉的那张也是"已完结"：`_prune` 的清单里少一个档，跑一天就攒一堆没人等的作业
     （每条还带着自己的 cleanup 闭包）。这条与 DONE/FAILED 同一条规则，不该是特例。"""
     q = DeskQueue(slots=1, max_pending=10)
+    gate = threading.Event()
+    q.submit(lambda: gate.wait(5), who="宛平", name="block.pdf")   # 先占住唯一的 worker
     jid = q.submit(lambda: {"ok": True}, who="宛平", name="x.pdf")
-    assert q.cancel(jid) == "cancelled"
+    assert q.cancel(jid) == "cancelled", "这张得先真的停在队列里，否则测的是另一条分支"
     q._jobs[jid]["at"] = time.time() - 99999          # 假装已经过了 KEEP_SECONDS
     q.submit(lambda: {"ok": True})                    # prune 只在 submit 里顺带做
+    gate.set()
     assert q.get(jid) is None, "已取消的作业要跟着一起清出去"
