@@ -1586,6 +1586,7 @@ function renderMain(){
       </tr></thead><tbody>${rows}</tbody></table>
       <div class="ft bottom">
         <button class="btn" id="mvStage" type="button" title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
+        ${ME && ME.role === "inputter" ? `<button class="btn" id="mvReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写这 36 列、不碰公司、不改任何值">我核过了，先不发</button>` : ""}
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
@@ -1605,6 +1606,8 @@ function renderMain(){
     $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
     $("#mvStage").addEventListener("click", mvStage);
+    const mrv = $("#mvReviewed");
+    if (mrv) mrv.addEventListener("click", () => markReviewed("mawb", MV.mawb));
     $("#mvSubmit").addEventListener("click", () => mvSubmit());
     return;
   }
@@ -1677,6 +1680,7 @@ function renderMain(){
     ${segHtml}${orphanTable(t, ef)}
     <div class="ft bottom">
       <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
+      ${ME && ME.role === "inputter" && !t.submitted ? `<button class="btn" id="markReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写核对结果、不碰公司、不改任何值。要交给同事点「暂存到公司」，要发走点「提交本票」">我核过了，先不发</button>` : ""}
       ${drawSubmitBtn(t, ef, todo.n)}
       <button class="btn" id="expOne">导出本票 JSON</button>
       <button class="btn" id="expAll">导出全部已解析</button>
@@ -1794,6 +1798,8 @@ function wireMain(t){
   $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
   }));
+  const mrv = $("#markReviewed");
+  if (mrv) mrv.addEventListener("click", () => markReviewed("hawb", t.stem));
   $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
     const f = b.dataset.ack;
     t.ackF = t.ackF || [];
@@ -2418,10 +2424,12 @@ $("#mstResult").addEventListener("click", async e => {
    统计读 /stats：模型那一版与人最后定下的那一版逐列比（数只在 stats.py 算一处）。
    公司的发送状态不在这两张表里（要按主单去公司查，有限流），所以指路去「主单检索」。 */
 const VIEW = {cur: "desk", rows: [], date: "", lastDate: "", machineLast: "",
-              scope: "mine", others: 0, me: ""};
-/* 台账看谁的记录：只活在这一轮会话里，**不写本机偏好**——记住「全部」的下一次，
-   人会把全局的数当成自己的数去报。每次打开回到「我的」。 */
-const DAY = {scope: "mine"};
+              scope: "mine", others: 0, me: "", q: ""};
+/* 台账看哪一批：只活在这一轮会话里，**不写本机偏好**——记住「全部」的下一次，
+   人会把全局的数当成自己的数去报。默认那一档按角色给：录入员一进来就该看见活
+   （待我复核），别人还是「我的」。 */
+const DAY = {scope: ""};
+const dayScopeDefault = () => (ME && ME.role === "inputter") ? "toreview" : "mine";
 const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;
 function syncCards(){
@@ -2452,33 +2460,63 @@ async function loadDay(fade){
   box.innerHTML = '<div class="empty">正在读今天的台账…</div>';
   try{
     const picked = $("#dayDate").value;
+    const kw = ($("#dayQ").value || "").trim();
+    /* 输了号就回到「全部」这一档：搜索框问的是"这台机器上有没有这个号"，
+       在当前那一档里筛出来的空页会写成"查无此号"，那是假话（票在，只是不在这档里）。
+       哪一档亮着由服务端的 scope 说，这里不自己猜。 */
+    let s = DAY.scope || dayScopeDefault();
+    if (kw && (s === "toreview" || s === "reviewed")) s = "all";
     const q = [];
-    if (picked && picked !== VIEW.date) q.push("date=" + encodeURIComponent(picked));
-    if (DAY.scope === "all") q.push("all=1");
+    /* 每一档都交给服务端去筛：在浏览器里筛的那批行本来就是服务端按人给出来的，
+       筛不出别人的票，页上却写着"待你复核"——那就是这一页在说谎。 */
+    if (kw) q.push("q=" + encodeURIComponent(kw));
+    if (s === "all") q.push("all=1");
+    else if (s === "toreview" || s === "reviewed") q.push("scope=" + s);
+    else if (picked && picked !== VIEW.date) q.push("date=" + encodeURIComponent(picked));
     const r = await fetch(BASE + "/day" + (q.length ? "?" + q.join("&") : ""));
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     VIEW.date = j.date; VIEW.rows = j.rows || []; VIEW.lastDate = j.last_date || "";
     VIEW.machineLast = j.machine_last_date || ""; VIEW.others = Number(j.others_today) || 0;
-    VIEW.me = j.me || "";
-    /* scope 认服务端说的那一份，不认刚才点了什么：非管理员手敲 all=1 时服务端仍然只给自己的行，
-       那颗档就该退回「我的」——界面报的数必须和服务端发的是同一件事。 */
-    VIEW.scope = j.scope === "all" ? "all" : "mine";
+    VIEW.me = j.me || ""; VIEW.q = j.q || "";
+    /* 档认服务端说的那一份，不认刚才点了什么：角色拿不到的那一档服务端会退回自己的行，
+       界面报的数必须和服务端发的是同一件事。 */
+    VIEW.scope = ["mine", "all", "toreview", "reviewed"].includes(j.scope) ? j.scope : "mine";
     dayScopeSync();
-    $("#dayDate").value = j.date;               // 以服务端那天为准：服务器与本机时区可能不同
+    if (j.date) $("#dayDate").value = j.date;   // 以服务端那天为准：服务器与本机时区可能不同。
+                                                // 跨天那几档回的是空日期，别把框清成一片空白
     renderDay(fade !== false);
   }catch(e){
     box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
   }
 }
 function dayScopeSync(){
-  const box = $("#dayScope");
-  box.hidden = !(ME && ME.role === "admin");     // 「全部」只给管理员画；服务端那道是同一判据
-  box.querySelectorAll("button").forEach(b => {
+  const box = $("#dayScope"), role = ME && ME.role;
+  box.hidden = role === "reviewer";        // 制单员这一页只有自己的台账（服务端是同一判据，两边不许各判一次）
+  /* 录入员不必再要一颗「我的」：他在这台机器上经手的票，全部都在那两档复核清单里。
+     管理员四颗都要——他平时就是替两边看数的人。 */
+  box.querySelectorAll("[data-ds]").forEach(b => {
+    b.hidden = role === "inputter" && b.dataset.ds === "mine";
     const on = b.dataset.ds === VIEW.scope;
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", String(on));
   });
+  const flat = VIEW.scope === "toreview" || VIEW.scope === "reviewed" || !!VIEW.q;
+  const dw = $("#dayDateWrap");
+  if (dw) dw.hidden = flat;                // 这几档跨所有日子，留着日期框会让人以为它还在起作用
+}
+/* 录入员那颗：只留一条"我看过了"的痕。它**不是**暂存——暂存会把核对结果写进服务器并顺手
+   在公司那边占位（状态 0），而"先放着"这张票很可能还要回去问制单员。三件事各一颗：
+   留痕 / 交给同事（暂存）/ 发走公司（提交），按钮的 title 就把这个分工写在原地上。 */
+async function markReviewed(kind, key){
+  const r = await fetch(BASE + "/review", {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify({kind: kind, key: key})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok){
+    toast("留痕失败：" + (typeof j.detail === "string" ? j.detail : ("HTTP " + r.status)), "bad");
+    return;
+  }
+  toast("已记下「" + ME.name + " 核过，先不发」——没有暂存，也没有发公司", "ok");
 }
 /* 空着的一页必须自己回答"是没票还是坏了"（用户："今天台账里面为什么没有内容了"）。
    选哪一句由 L.dayEmpty 判（四类各有用例），这里只把话画出来：四种各占一支，
@@ -2495,6 +2533,11 @@ function dayEmptyHtml(){
         + "（点一下就过去；换日期也可以用上面那个日期框）。</div>",
     never: () => '<div class="empty">你在这台机器上还没有过台账记录。这台机器最近有票的是 '
         + link(VIEW.machineLast) + "。" + toAll + "</div>",
+    clean: () => '<div class="empty">没有待复核的票：这台机器上别人暂存的，要么已经核过、要么已经发走公司了。'
+        + '核过还没发的在 <button type="button" class="lk" data-ds="reviewed"'
+        + ' title="这些不需要再看第二遍，只等谁点提交">「我核过·没提交」</button> 那一档。</div>',
+    nohit: () => `<div class="empty">这台机器上没有号是 ${esc(VIEW.q)} 的票（带不带连字符都算同一个号）。`
+        + "台账是本机各记各账的：另一台机器上提交过的票，在这里查不到。</div>",
     none: () => '<div class="empty">这台机器还没有过任何台账记录。</div>'
   };
   return (SAY[L.dayEmpty(VIEW)] || SAY.none)();
@@ -3162,6 +3205,10 @@ $("#dayScope").addEventListener("click", e => {
   DAY.scope = b.dataset.ds;
   loadDay();
 });
+/* 号检索与那颗「刷新」是同一个动作：重新问一次服务端，回车即查、清空即回默认那一档。
+   不在浏览器里筛——那一屏行本来就是服务端筛过一轮的，筛不出没给的东西。 */
+$("#dayQ").addEventListener("keydown", e => { if (e.key === "Enter") loadDay(); });
+$("#dayQ").addEventListener("search", () => loadDay());
 $("#daySort").addEventListener("click", e => {
   const b = e.target.closest("[data-s]"); if (!b) return;
   DV.sort = b.dataset.s;

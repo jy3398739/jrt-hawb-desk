@@ -104,7 +104,14 @@ const L = {
      others 今天有票，但没有一张是你动过的 / last 你这一天没动过，别的日子动过 /
      never 你在这台机器上从没动过票，可这台机器有别人的 / none 这台机器从没记录过任何票。 */
   dayEmpty(v){
-    const x = v || {}, mine = x.scope !== "all";
+    const x = v || {}, s = x.scope;
+    /* 每一档的空页说的是不同的事，一句都不能混：
+       待复核为空是"活干完了"（好消息），查无此号是"这个号这台机器上没有"（另一件事），
+       两者都不许退化成"今天没票"——那会把人支到别的日期上去翻。 */
+    if (s === "toreview") return "clean";
+    if (s === "reviewed") return "none";
+    if (x.q) return "nohit";
+    const mine = s !== "all";
     if (mine && Number(x.others) > 0) return "others";
     if (x.lastDate && x.lastDate !== x.date) return "last";
     if (mine && x.machineLast) return "never";

@@ -795,6 +795,36 @@ def job_cancel(job_id: str, user: dict = Depends(current_user)):
     return {"ok": state == "cancelled", "state": state}
 
 
+class ReviewBody(BaseModel):
+    kind: str = "hawb"        # hawb = 分单（key 给 stem）；mawb = 主单（key 给主单号）
+    key: str = ""
+
+
+@app.post("/review")
+def review(body: ReviewBody, user: dict = Depends(current_user)):
+    """录入员"这张我看过了，先不发"——只留一条痕：不写核对结果、不碰公司、不改任何值。
+
+    为什么不复用暂存：`/stage` 会把 `air_final` 写进去并顺手在 j9 占位（状态 0）。
+    而"先放着"这张票很可能还要回去问制单员——那时候把值交给公司就成了一次假交付，
+    也正是用户说的"录入员正常情况下不该暂存"那一层。
+    留痕与暂存共用同一份记录、同一处判据（`store.staged_edits` 把 review 那条挑出去，
+    所以一次复核既不会把 parsed 顶成 staged，也不会让「谁交的这列」答错）。
+    形状与 `/void` 一致：`kind` + `key`。"""
+    k = str(body.kind or "hawb").strip().lower()
+    who, role = str(user.get("name") or ""), str(user.get("role") or "")
+    if k not in ("hawb", "mawb"):
+        raise HTTPException(400, "票种只认 hawb / mawb")
+    try:
+        rec = (master_pipeline.review_master(body.key, who, role) if k == "mawb"
+               else store.review_ticket(body.key, who, role))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    last = (rec.get("events") or [{}])[-1]
+    LOG.info("复核留痕 who=%s(%s) %s=%s at=%s", who, role, k, body.key, last.get("at"))
+    return {"ok": True, "kind": k, "key": rec.get("stem") or rec.get("mawb") or body.key,
+            "at": str(last.get("at") or "")}
+
+
 @app.get("/results")
 def results(_: None = Depends(require_web)):
     raw_dir, air_dir = config.OUTPUT_RAW_DIR, config.OUTPUT_AIR_DIR
@@ -807,7 +837,10 @@ def results(_: None = Depends(require_web)):
 
 
 @app.get("/day")
-def day(date: str = "", all: int = Query(0, ge=0, le=1), user: dict = Depends(current_user)):
+def day(date: str = "", all: int = Query(0, ge=0, le=1),
+        scope: str = Query("", description="mine / all / toreview（待我复核）/ reviewed（我核过·没提交）"),
+        q: str = Query("", description="分单号或主单号：归一后跨所有日子找"),
+        user: dict = Depends(current_user)):
     """某一天经手过的**分单与主单**一张表看完（解析/红旗/提交/原件），行上带 kind。
     台账是本机的、两台机器各记各账，这一页就是把"今天谁做了什么"摊开在同一张桌子上；
     公司侧的发送状态要按主单查（限流），所以不混进这一页，去「主单检索」看。
@@ -820,22 +853,48 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1), user: dict = Depends(cu
     d = (date or time.strftime("%Y-%m-%d")).strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
+    q = str(q or "").strip()
+    if q and (len(q) > 40 or re.search(r"[/\\]", q)):
+        # 长度与分隔符都要挡：这一格最后会去比 norm_no 过的字符串，不挡的话在 Linux 上
+        # 是一次 `stat()` 抛 ENAMETOOLONG 而不是干净地"查无此号"（同族的坑踩过一次）
+        raise HTTPException(400, "这个号没法查（太长或带路径分隔符）")
+    qn = store.norm_no(q)
     who = str(user.get("name") or "")
-    scope = "all" if (all and user.get("role") == "admin") else "mine"
-    # 磁盘只碰两遍：那一天扫一次（按人筛在内存里做，判据仍是 store.owns 那一处），再一次不限日的
-    # 扫描——只为下面那两句"最近有票的是哪天"。从前是四遍（day_rows 两遍 + day_last_date 两遍，
-    # 而后者内部各又扫一遍），成本按这台机器经手过的总票数涨，不是按当天的涨。
-    every = store.day_rows(d)
-    rows = every if scope == "all" else [r for r in every if store.owns(r, who, d)]
-    all_days = store.day_rows()
-    others = len(every) - len(rows)
+    role = str(user.get("role") or "")
+    # 谁能拿哪一档，只有这一处判据：录入员的职责就是复核别人交上来的票，所以"这台机器所有人的"
+    # 与两档复核清单对他放开；制单员仍只看自己（他没提这个需求，放开是另一件事）。
+    # 拿不到的人**退回他自己那一份并把 scope 如实报成 mine**，不是报错——前端认的就是响应里这一格。
+    may = role in ("admin", "inputter")
+    want = (scope or "").strip().lower() or ("all" if may and (qn or all) else "mine")
+    if want not in ("mine", "all", "toreview", "reviewed"):
+        want = "mine"
+    if want != "mine" and not may:
+        want = "mine"
+    # 复核那一档与号检索都不按天：昨天暂存的今天还得核，手里只有一个号的时候更不该先猜哪天。
+    flat = want in ("toreview", "reviewed") or bool(qn)
+    every = store.day_rows(None if flat else d)
+    if want in ("toreview", "reviewed"):
+        rows = [r for r in every if not r.get("submitted") and not r.get("voided")
+                and bool(r.get("reviewed_by_inputter")) == (want == "reviewed")]
+    else:
+        rows = every if want == "all" else [r for r in every if store.owns(r, who, None if flat else d)]
+    if qn:
+        # 整号相等，或（归一后至少 5 位时）截段命中：只允许整号的话，人敲号尾那几个字符
+        # 会看到"查无此号"，而那正是这一页最容易被误读成"票丢了"的一种空。
+        loose = len(qn) >= 5
+
+        def _hit(v):
+            v = store.norm_no(v)
+            return bool(v) and (v == qn or (loose and qn in v))
+
+        rows = [r for r in rows if _hit(r.get("mawb")) or _hit(r.get("hawb"))
+                or _hit(r.get("stem")) or _hit(r.get("source_name"))]
+    all_days = every if flat else store.day_rows()
+    others = 0 if want in ("toreview", "reviewed") else len(every) - len(rows)
     who_r = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
-    # last_date：空着的那一天要能答"最近有票的是哪天"（前端自己算不出：台账在本机、时区也可能不同）。
-    # 按人看时它答的是"你"最近动过票的那天，与这一页同一口径，否则那句提示会把人支到空页上。
-    # machine_last_date 另给一份全机的：一个人从没动过、而这台机器明明有票时，那两件事要分开说。
-    return {"ok": True, "date": d, "rows": rows, "reviewers": sorted(who_r),
-            "scope": scope, "me": who, "others_today": others,
-            "last_date": store.day_latest(all_days, None if scope == "all" else who),
+    return {"ok": True, "date": "" if flat else d, "rows": rows, "reviewers": sorted(who_r),
+            "scope": want, "me": who, "others_today": others, "q": q, "count": len(rows),
+            "last_date": store.day_latest(all_days, None if want in ("all", "toreview", "reviewed") or qn else who),
             "machine_last_date": store.day_latest(all_days)}
 
 

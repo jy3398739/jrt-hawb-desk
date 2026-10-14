@@ -118,10 +118,27 @@ def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = N
     return _write(rec)
 
 
-def mark_master_sent(mawb: str, by: str) -> dict | None:
-    """给主单记录盖"已发出"的章；没暂存过就不盖章也不造记录。"""
+def review_master(mawb: str, by: str, role: str) -> dict:
+    """录入员"这条主单我看过了，先不发"——只追加一条留痕事件。
+
+    与分单侧 `store.review_ticket` 同一套语义：留痕不是交付，所以 `ams_final`、暂存人、
+    暂存时间一个都不动，公司那边也不碰（这张主单可能还要回去问制单员）。
+    判据也不另起一处——`store.reviewed_by_inputter()` 认的就是事件里出现过 inputter。"""
     rec = read_master(mawb)
-    if not rec or not rec.get("events"):
+    if not rec:
+        raise ValueError("这条主单还没有解析结果（先在审核台检索一次主单号）")
+    events = list(rec.get("events") or [])
+    events.append({"by": str(by or ""), "role": str(role or ""), "at": _now(),
+                   "edits": {}, "kind": "review", "acked_flags": []})
+    rec["events"] = events
+    return _write(rec)
+
+
+def mark_master_sent(mawb: str, by: str) -> dict | None:
+    """给主单记录盖"已发出"的章；没暂存过就不盖章也不造记录。
+    只留过复核痕（kind=review）也不算"暂存过"——判据是 `store.staged_edits` 那一处。"""
+    rec = read_master(mawb)
+    if not rec or not store.staged_edits(rec):
         return rec
     rec["submitted_at"] = _now()
     rec["submitter"] = str(by or "")

@@ -529,21 +529,25 @@ def test_my_empty_day_says_someone_else_has_tickets_today():
         assert quiet["rows"] == [] and quiet["others_today"] == 0, "那天连别人都没动过票"
 
 
-def test_the_scope_chip_is_admin_only_and_never_remembered():
-    """那颗档：只对管理员画、每次打开回到「我的」、换档要重新拉数据（不是在这批行里筛）。
+def test_the_scope_chip_is_role_based_and_never_remembered():
+    """那颗档：按角色画哪几颗、每次打开回到默认那一档（录入员是「待我复核」，别人是「我的」）、
+    换档要重新拉数据（不是在这批行里筛）。
     记住「全部」的下一次，人会把全局数当成自己的数去报——所以它不许进本机偏好。"""
     page, js = web_src.part("index.html"), web_src.part("js/desk.js")
     assert 'id="dayScope"' in page and 'data-ds="mine"' in page and 'data-ds="all"' in page, \
         "缺「我的 / 全部」那颗档"
     ls = js.split("const LS = {")[1].split("};")[0]
     assert "scope" not in ls, "那颗档不许写进本机偏好（LS）"
-    assert 'DAY = {scope: "mine"}' in js, "初始值必须是「我的」"
+    assert 'DAY = {scope: ""}' in js, "初始值要留空，由角色当场给默认档——写死一个就等于替录入员选了档"
+    assert "dayScopeDefault" in js and "inputter" in js[js.index("const dayScopeDefault"):], \
+        "默认档按角色给：录入员一进来该看见活，不该先去摸那颗档"
     load = _fn(js, "async function loadDay(")
-    assert 'DAY.scope === "all"' in load and "all=1" in load, "换档没重新拉数据：只在这批行里筛，筛不出别人的"
-    assert "VIEW.scope = j.scope" in load, "档上显示的是自己刚才点了什么，不是服务端真给了哪一份"
+    assert '"all=1"' in load and "scope=" in load, "换档没重新拉数据：只在这批行里筛，筛不出别人的"
+    assert "VIEW.scope =" in load and "j.scope" in load, "档上显示的是自己刚才点了什么，不是服务端真给了哪一份"
     sync = _fn(js, "function dayScopeSync(")
-    assert 'ME.role === "admin"' in sync and "hidden" in sync, "「全部」那一档要对非管理员藏掉"
-    assert "VIEW.scope" in sync, "服务端拒了 all 之后，那颗档要退回「我的」，不能留着亮着"
+    assert 'role === "reviewer"' in sync and "hidden" in sync, "制单员不该看得见这几颗档（服务端同一判据）"
+    assert 'role === "inputter"' in sync, "录入员与管理员各看得见哪几颗档，要在这儿分得开"
+    assert "VIEW.scope" in sync, "服务端拒了那一档之后，档要退回它真给的那一份，不能留着亮着"
     empty = _fn(js, "function dayEmptyHtml(")
     assert "VIEW.others" in empty and "别人经手" in empty, "空态要答得出「票都在，但不是你的」这一种"
     assert "VIEW.machineLast" in empty, "自己从没动过、这台机器却有票时，两件事要分开说"
@@ -681,3 +685,106 @@ def test_the_endpoint_and_the_scanner_share_one_ownership_rule():
             "宛平是今天提交的，9-29 那一页不该有他"
         assert [r["stem"] for r in store.day_rows("2026-09-29", who="马殿齐")] == ["P1"], \
             "内存筛与逐行筛必须同一批"
+
+
+# ── 录入员那一档：待我复核 / 我核过·待提交 / 跨天号检索 ─────────────────────────
+def _mk(stem, mawb="999-95764373", hawb="JRT28643", when=TODAY, stage=None, review=None, sent=False):
+    """在盘上摆一张票，并（按需）让它被制单员暂存过、被录入员复核过、被提交走。"""
+    _ticket(stem, mawb=mawb, hawb=hawb, when=when)
+    (config.ARCHIVE_DIR / stem).mkdir(exist_ok=True)
+    if stage:
+        store.stage_ticket(stem, {"MAWB_NO": mawb, "HAWB_NO": hawb}, stage, "reviewer")
+    if review:
+        store.review_ticket(stem, review, "inputter")
+    if sent:
+        store.mark_submitted(stem, mawb, hawb, "马殿齐", {"mode": "mock"})
+
+
+def test_the_review_list_is_every_unsubmitted_ticket_no_inputter_has_touched():
+    """录入员的活清单不是"今天的台账"：别人昨天暂存的票今天还得核。
+    判据与提交门同源（`reviewed_by_inputter`），也不许把已经发走的票算进来。"""
+    with _sandbox():
+        _mk("只解析的")
+        _mk("制单员暂存的", stage="马殿齐")
+        _mk("已复核待提交的", stage="马殿齐", review="郭健康")
+        _mk("已经发走的", stage="马殿齐", sent=True)
+        auth.set_password("郭健康", "pw-12345", "inputter")
+        inp = _login("郭健康", "pw-12345")
+        j = inp.get("/day", params={"scope": "toreview"}).json()
+        assert j["scope"] == "toreview", j["scope"]
+        assert {r["stem"] for r in j["rows"]} == {"只解析的", "制单员暂存的"}, \
+            f"待复核 = 未提交且没录入员碰过：{[r['stem'] for r in j['rows']]}"
+        j2 = inp.get("/day", params={"scope": "reviewed"}).json()
+        assert [r["stem"] for r in j2["rows"]] == ["已复核待提交的"], j2["rows"]
+
+
+def test_a_reviewer_asking_for_the_review_list_still_gets_only_his_own():
+    """这一档是给录入员的：制单员带 scope=toreview 不该看见全机别人的票。
+    服务端退回他自己那一份并把 scope 如实报成 mine——前端认的就是这一格。"""
+    with _sandbox():
+        _mk("甲的票", stage="马殿齐")
+        _mk("乙的票", stage="刘明")
+        auth.set_password("马殿齐", "pw-12345", "reviewer")
+        rev = _login("马殿齐", "pw-12345")
+        j = rev.get("/day", params={"scope": "toreview"}).json()
+        assert j["scope"] == "mine", f"制单员拿不到复核档：{j['scope']}"
+        assert all("马殿齐" in str(r.get("stager")) or "马殿齐" in str(r.get("uploader"))
+                   for r in j["rows"]), j["rows"]
+        adm = _login("admin", "admin123")
+        assert adm.get("/day", params={"scope": "toreview"}).json()["scope"] == "toreview", \
+            "管理员要能替录入员看这一档（他平时就是这么核的）"
+
+
+def test_a_number_search_finds_the_ticket_on_any_day_and_in_any_format():
+    """号检索：录入员手里只有一个单号，不该先猜它是哪天经手的。
+    归一化与主单侧同一处（`store.norm_no`），带不带连字符都得命中。"""
+    with _sandbox():
+        _mk("八月的票", mawb="235-96146363", hawb="CLA26090022", when="2026-08-02")
+        _mk("今天的票", mawb="999-95764373", hawb="JRT28643")
+        auth.set_password("郭健康", "pw-12345", "inputter")
+        inp = _login("郭健康", "pw-12345")
+        for q in ("23596146363", "235-96146363", "cla26090022"):
+            j = inp.get("/day", params={"q": q}).json()
+            assert [r["stem"] for r in j["rows"]] == ["八月的票"], f"q={q} 命中错了：{[r['stem'] for r in j['rows']]}"
+        assert inp.get("/day", params={"q": "JRT28643"}).json()["rows"], "别只命中主单号，分单号也要"
+        # 只给号尾那几个字符也要命中：整号相等的话，"查无此号"会被读成"票丢了"
+        assert [r["stem"] for r in inp.get("/day", params={"q": "96146363"}).json()["rows"]] == ["八月的票"]
+        assert inp.get("/day", params={"q": "99"}).json()["rows"] == [], \
+            "太短的号不做截段匹配：一个「99」命中全表，这一格就废了"
+
+
+def test_a_number_search_refuses_a_path_and_a_run_on():
+    with _sandbox():
+        auth.set_password("郭健康", "pw-12345", "inputter")
+        inp = _login("郭健康", "pw-12345")
+        assert inp.get("/day", params={"q": "a/b"}).status_code == 400
+        assert inp.get("/day", params={"q": "x" * 300}).status_code == 400, \
+            "超长不挡的话，Linux 上 stat() 会抛 ENAMETOOLONG 而不是干净地查无"
+
+
+def test_the_inputter_gets_a_review_list_a_search_box_and_a_review_mark():
+    """录入员那一档的三样东西都在"今日归档"这一页上：两档复核清单、按号跨天检索、
+    以及票上那颗「我核过了，先不发」。筛与算都在服务端，前端只负责把点的这一档说出去
+    （在浏览器里筛等于把别人的票发到他的 F12 里，而页上写的还是"只看待复核"）。"""
+    js, page = web_src.part("js/desk.js"), web_src.part("index.html")
+    assert 'id="dayQ"' in page, "台账页要有按号检索那一格"
+    assert 'data-ds="toreview"' in page and 'data-ds="reviewed"' in page, "两档复核清单要真画出来"
+    ld = web_src.fn(js, "async function loadDay(")
+    assert "scope=" in ld and "q=" in ld, "点哪一档就把哪一档交给服务端，别在浏览器里筛"
+    assert "VIEW.scope =" in ld and "j.scope" in ld, "档认服务端说的那一份：拿不到那一档时要能退回"
+    assert 'if (kw && (s === "toreview" || s === "reviewed")) s = "all"' in ld, \
+        "输了号就回到「全部」：在当前那一档里筛出来的空页会写成「查无此号」，那是假话"
+    sync = web_src.fn(js, "function dayScopeSync(")
+    assert "inputter" in sync, "录入员与管理员各看得见哪几档由角色决定"
+    assert "markReviewed" in js and '"/review"' in js, "票上要有那颗只留痕、不暂存、不碰公司的按钮"
+
+
+def test_the_empty_day_page_says_which_of_the_four_thing_it_is():
+    """空页必须自己答"是没票还是坏了"。新增的两档与号检索各有一句：
+    待复核为空是好消息（都核完了），查无此号是另一件事——都写成"今天没票"就把人支走了。"""
+    e = lambda **v: web_src.logic("L.dayEmpty(v)", v=v)
+    assert e(scope="toreview", rows=[], date="", others=0, lastDate="", machineLast="") == "clean"
+    assert e(scope="all", q="CLA26090022", rows=[], date="", others=0,
+             lastDate="2026-10-01", machineLast="2026-10-01") == "nohit"
+    assert e(scope="mine", rows=[], date="2026-10-14", others=3,
+             lastDate="2026-10-14", machineLast="2026-10-14") == "others", "老句子不许被新档挤掉"

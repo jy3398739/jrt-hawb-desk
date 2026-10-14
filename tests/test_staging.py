@@ -436,3 +436,73 @@ def test_search_lists_tickets_that_were_only_uploaded_too():
     finally:
         _undo(old)
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_review_mark_stages_nothing_and_touches_no_company出口():
+    """录入员"看过了，先不发"要能落盘，但它**不是暂存**：
+    ① 不许写 air_final（那等于替他把没核完的值交给公司占位）；
+    ② 不许碰公司任何一口（这张票可能还要回去问制单员）；
+    ③ 状态得仍然是 parsed——只解析没人暂存的票是需求一明确要录入员看得见的。
+    留痕落在同一份 staged 文件里的一条事件上，判据仍是 reviewed_by_inputter 那一处。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_rev_"))
+    old = _env(tmp)
+    boom = lambda *a, **k: (_ for _ in ()).throw(AssertionError("复核留痕居然碰了公司"))
+    real = (company_api._j9_post, company_api.submit_order, company_api.submit_master,
+            company_api.stage_order)
+    try:
+        company_api._j9_post = company_api.submit_order = company_api.submit_master = \
+            company_api.stage_order = boom
+        client = _client_as(tmp, "郭健康", "inputter")
+        r = client.post("/review", json={"key": STEM})
+        assert r.status_code == 200, f"复核留痕失败：{r.status_code} {r.text[:200]}"
+        rec = json.loads((config.STAGED_DIR / f"{STEM}.json").read_text(encoding="utf-8"))
+        assert not rec.get("air_final"), "留痕不许把核对结果当成暂存写进去"
+        assert not rec.get("stager"), "stager 说的是谁暂存的，不能被一次复核顶掉"
+        ev = rec["events"][-1]
+        assert ev["role"] == "inputter" and ev["by"] == "郭健康" and ev["edits"] == {}, ev
+        assert store.reviewed_by_inputter(rec) is True
+        row = [x for x in store.ticket_rows() if x["stem"] == STEM][0]
+        assert row["state"] == "parsed", f"没人暂存过的票不能因为一次复核就变 staged：{row['state']}"
+    finally:
+        (company_api._j9_post, company_api.submit_order, company_api.submit_master,
+         company_api.stage_order) = real
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_review_mark_on_a_staged_ticket_leaves_everything_else_alone():
+    """已暂存的票上留痕：值、暂存人、暂存时间、逐字段差异一个字都不许动，只多一条事件。
+    动了任何一格，"这一列是谁交的"就答不出来了（需求三要的正是分开算）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_rev_"))
+    old = _env(tmp)
+    try:
+        store.stage_ticket(STEM, {"MAWB_NO": MAWB, "HAWB_NO": HAWB, "ORIGIN_NAME": "BJS",
+                                  "DEST_NAME": "ORD"}, "马殿齐", "reviewer")
+        before = json.loads((config.STAGED_DIR / f"{STEM}.json").read_text(encoding="utf-8"))
+        rec = store.review_ticket(STEM, "郭健康", "inputter")
+        for k in ("air_final", "air_model", "edits", "stager", "stager_role", "staged_at"):
+            assert rec[k] == before[k], f"留痕把 {k} 改了：{before[k]!r} → {rec[k]!r}"
+        assert len(rec["events"]) == len(before["events"]) + 1
+        assert rec["events"][-1].get("kind") == "review"
+        assert store.ticket_rows()[0]["reviewed_by_inputter"] is True
+    finally:
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_review_needs_a_login_and_a_ticket_this_box_knows():
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_rev_"))
+    old = _env(tmp)
+    try:
+        client = TestClient(server.app)
+        assert client.post("/review", json={"key": STEM}).status_code == 401, "留痕要登录"
+        auth.ensure_seed()
+        client2 = _client_as(tmp, "郭健康", "inputter")
+        bad = client2.post("/review", json={"key": "a/b"})
+        assert bad.status_code == 400, f"带路径的 stem 要挡：{bad.status_code}"
+        missing = client2.post("/review", json={"key": "NOPE9999"})
+        assert missing.status_code == 400, "这台机器上没有这张票，别假装留下了痕"
+        assert not (config.STAGED_DIR / "NOPE9999.json").exists()
+    finally:
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)

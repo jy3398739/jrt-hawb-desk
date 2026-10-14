@@ -432,7 +432,7 @@ def master_rows(date: str = None, who: str = None) -> list:
             state = "failed"
         elif e:
             state = "submitted"
-        elif events:
+        elif staged_edits(rec):
             state = "staged"
         else:
             state = "parsed"
@@ -552,7 +552,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str 
             state_of = "failed"
         elif e:
             state_of = "submitted"
-        elif st:
+        elif staged_edits(st):
             state_of = "staged"
         else:
             state_of = "parsed"
@@ -741,6 +741,57 @@ def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = N
                "sent_fingerprint": prev.get("sent_fingerprint") or ""}
         atomic.write_json(_staged_file(name), rec, mode=0o600)
     return rec
+
+
+def review_ticket(stem: str, by: str, role: str) -> dict:
+    """录入员"这张我看过了，先不发"——只追加一条留痕事件，别的什么都不动。
+
+    为什么单开一个动作而不复用暂存：暂存会把 `air_final` 写进去并顺手在公司那边占位
+    （`hawb2` 落状态 0），而"先放着"这张票很可能还要回去问制单员，那时候把值交给公司
+    就成了一次假交付。所以这里只记事实：**谁、什么时候、以什么角色看过这张**。
+    判据不另起一处——`reviewed_by_inputter()` 认的就是"事件里出现过 inputter"，
+    提交门、待复核那一档、统计三处读的还是同一个算式。
+    一条留痕也不许把票从 parsed 顶成 staged（见 `staged_edits`）。"""
+    name = safe_stem(stem)
+    if name is None:
+        raise ValueError(f"stem 不合法（不接受带路径的名字）：{stem!r}")
+    qc = {}
+    try:
+        qc = json.loads((config.OUTPUT_QC_DIR / f"{name}.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    with _STAGED_LOCK:
+        prev = load_staged(name) or {}
+        if not prev and not qc:
+            raise ValueError(f"这台机器上没有这张票（既没有质检记录也没有暂存记录），留痕不留")
+        try:
+            air = json.loads((config.OUTPUT_AIR_DIR / f"{name}.json").read_text(encoding="utf-8"))
+        except Exception:
+            air = {}
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        events = list(prev.get("events") or [])
+        events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
+                       "edits": {}, "kind": "review", "acked_flags": []})
+        rec = dict(prev)
+        rec.update({"stem": name,
+                    "source_name": prev.get("source_name") or qc.get("source_name") or name,
+                    "mawb": prev.get("mawb") or str(air.get("MAWB_NO", "") or "").strip(),
+                    "hawb": prev.get("hawb") or str(air.get("HAWB_NO", "") or "").strip(),
+                    "model": prev.get("model") or qc.get("model") or "",
+                    "channel": prev.get("channel") or qc.get("channel") or "",
+                    "uploader": prev.get("uploader") or qc.get("uploader") or "",
+                    "uploader_role": prev.get("uploader_role") or qc.get("uploader_role") or "",
+                    "events": events})
+        rec["key"] = rec.get("key") or number_key(rec["mawb"], rec["hawb"])
+        atomic.write_json(_staged_file(name), rec, mode=0o600)
+    return rec
+
+
+def staged_edits(rec: dict) -> list:
+    """这份暂存记录里**真的交出过核对结果**的那些事件。
+    复核留痕（kind=review）不算：它只说明有人看过，没有把值交到任何地方。
+    票的 `staged / parsed` 两档就认这一个函数，别在渲染里再判一遍。"""
+    return [e for e in (rec or {}).get("events") or [] if e.get("kind") != "review"]
 
 
 def reviewed_by_inputter(rec: dict) -> bool:
