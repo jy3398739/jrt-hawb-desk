@@ -1006,12 +1006,15 @@ function addFiles(files){
    服务器认的是登录会话里的身份。 */
 /* 暂存的回执要说两件事：本机这份存没存上（同事能不能接着看）、公司那边占上位没有。
    公司那一发失败不回滚本机这份，所以只补一句原因，不整条报"失败"——
-   报失败会让人以为白点了，又去点一次，而白点的其实只是公司那半。 */
+   报失败会让人以为白点了，又去点一次，而白点的其实只是公司那半。
+   锁行（状态 1/2）更不是失败：那一行公司本来就不收了，这是**预期结局**，
+   说成失败是 2026-10-14 公司那台截图里最误导人的两个字。 */
 function stageMsg(n, c){
   const base = "已暂存（改了 " + (n || 0) + " 列）：同事检索这条单号就能看到";
   if (!c) return base;
   if (c.ok && c.mode === "live") return "已暂存并寄到公司（状态 0，还能继续改）：改了 " + (n || 0) + " 列";
   if (c.ok) return base + "；公司那边没发（本机 mock 模式）";
+  if (c.locked) return base + "；这条在公司已经离开暂存档（状态 " + (c.status || "?") + "），不再收改动";
   return base + "；" + (c.skipped || "公司暂存失败：" + (c.error || "未知原因"));
 }
 async function stageTicket(t){
@@ -1026,12 +1029,17 @@ async function stageTicket(t){
       throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
     }
     const n = (j.staged && j.staged[0] && j.staged[0].edited) || 0;
+    const c = j.staged && j.staged[0] && j.staged[0].company;
     t.staged = {at: nowTxt(), by: who, edited: n};
+    /* 公司锁了行就把它记在票上：下一次不用又点一次提交才发现改不动了。
+       锁行那一档气泡走中性色——绿色说"全成了"、红色说"白点了"，两样都不对。 */
+    t.locked = c && c.locked ? (c.status || 1) : "";
     render();
-    toast(stageMsg(n, j.staged && j.staged[0] && j.staged[0].company), "ok");
+    if (t.locked) toast(stageMsg(n, c), "");
+    else toast(stageMsg(n, c), "ok");
   }catch(e){ toast("暂存失败：" + (e.message || e), "bad"); }
 }
-async function submitTicket(t, ackNoReview){
+async function submitTicket(t){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
   // 提交门（前端体验层，服务端另有一道只认主/分单号的硬门）：
@@ -1046,7 +1054,6 @@ async function submitTicket(t, ackNoReview){
     toast("还有未清的红旗：先逐条处理完才能提交（" + remaining[0] + (remaining.length > 1 ? " 等 " + remaining.length + " 条" : "") + "）", "bad"); return;
   }
   const p = payloadFor(t, who);
-  if (ackNoReview) p.acked_no_review = true;   // 只在人确认过之后才带，不许默认替人确认
   const body = {tickets:[p], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
   t.state = "submitting"; render();
   let pending = false, notes = [];
@@ -1059,8 +1066,8 @@ async function submitTicket(t, ackNoReview){
       notes = Array.isArray(j.notes) ? j.notes : [];
       if (!r.ok || j.ok === false){
         // 服务端 400 的 detail 可能是字符串（缺号），也可能是 {message, flags}（红旗未清）
-        // 或 {message, ack}（没人复核过）：不把 message 挖出来，制单员只会看到光秃秃一句
-        // "HTTP 400"，不知道该改哪。
+        // 或 {message, ack}（主单还没提交发送，2026-10-14 加的第三道门）：不把 message 挖出来，
+        // 制单员只会看到光秃秃一句 "HTTP 400"，不知道该改哪。
         const d = j.detail;
         if (d && d.ack === "master_first"){
           /* 顺序这一道（2026-10-14 用户定案：先提交主单，再提交分单）：服务器说这张分单名下
@@ -1069,13 +1076,6 @@ async function submitTicket(t, ackNoReview){
           t.state = "done"; render();
           if (confirm((d.message || "这张分单的主单还没提交发送。") + "\n\n点「确定」过去交主单，回来再提交这张分单。"))
             gotoMaster(String(d.mawb || reviewed(t).MAWB_NO || ""));
-          return;
-        }
-        if (d && d.ack === "no_inputter_review"){
-          // 第三道门：服务器说这张票没有录入员复核过的暂存记录。问一次，点了确认才重发；
-          // 不点就当没发生过——绝不能自己替他确认。
-          t.state = "done"; render();
-          if (confirm(d.message || "这张票没有录入员复核过的暂存记录。")) submitTicket(t, true);
           return;
         }
         if (d && Array.isArray(d.flags) && d.flags.length){
@@ -1588,6 +1588,7 @@ function renderMain(){
       </div>
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机未保存的编辑与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
       ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
+      ${MV.locked ? `<div class="chips"><span class="chip">这条主单在公司已经离开暂存档（状态 ${esc(MV.locked)}），公司不再收改动</span></div>` : ""}
       ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机未保存的编辑里</span></div>` : ""}
       ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
@@ -1674,7 +1675,7 @@ function renderMain(){
       <span class="dot ${c}" aria-hidden="true"></span>
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
-          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机未保存的编辑载入" : "")}${label ? " · " + label : ""}
+          ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.locked ? " · 公司已离开暂存档（状态 " + esc(t.locked) + "），不再收改动" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机未保存的编辑载入" : "")}${label ? " · " + label : ""}
           · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
     <div class="todo">
@@ -2368,10 +2369,15 @@ async function mvStage(){
       const d = j.detail;
       throw new Error((d && (d.message || (typeof d === "string" ? d : ""))) || j.error || ("HTTP " + r.status));
     }
-    toast(stageMsg(j.edited, j.company), "ok");
+    /* 锁行不是失败：气泡走中性色（绿色=全成了，红色=白点了，两样都不对）。
+       toast 的第二参只许写字面量类别，所以这里分成两条写，不用三元拼。 */
+    MV.locked = j.company && j.company.locked ? (j.company.status || 1) : "";
+    if (MV.locked) toast(stageMsg(j.edited, j.company), "");
+    else toast(stageMsg(j.edited, j.company), "ok");
+    render();
   }catch(e){ toast("主单暂存失败：" + (e.message || e), "bad"); }
 }
-async function mvSubmit(ackNoReview){
+async function mvSubmit(){
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
   const left = mvFlags().filter(f => !MV.acked.includes(f));
@@ -2383,7 +2389,6 @@ async function mvSubmit(ackNoReview){
   const btn = $("#mvSubmit"); if (btn) btn.disabled = true;
   try{
     const payload = {mawb: MV.mawb, reviewer: who, ams: mvValues(), acked_flags: MV.acked};
-    if (ackNoReview === true) payload.acked_no_review = true;   // 只在人确认过之后才带
     const r = await fetch(BASE + "/master/submit", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(payload)});
     const j = await r.json().catch(() => ({}));
@@ -2394,9 +2399,6 @@ async function mvSubmit(ackNoReview){
         MV.msg = "服务端重算后仍有 " + d.flags.length + " 条红旗，确认后再提交";
         mvSave();                              // 退回的红旗也是工作，刷新不能又丢一遍
         toast(MV.msg, "bad");
-      } else if (r.status === 400 && d.ack === "no_inputter_review"){
-        // 与分单同一条门：没人复核过要多点一次确认，点才算；不点什么都不发
-        if (confirm(d.message || "这条主单没有录入员复核过的暂存记录。")) mvSubmit(true);
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};

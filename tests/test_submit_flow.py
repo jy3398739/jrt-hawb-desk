@@ -23,11 +23,9 @@ WEB = Path(__file__).resolve().parent.parent / "web" / "index.html"
 
 
 def _clean_ticket(stem="CLA26090022", mawb="235-96146363", hawb="CLA26090022"):
-    # acked_no_review：这张票没有被录入员复核过的暂存记录，发送要带这一次确认（见
-    # test_sending_work_nobody_reviewed_needs_its_own_ack）。放进夹具是为了让其它用例
-    # 只管自己那件事，但"必须显式带"这条由那条用例单独钉。
+    # 2026-10-14 用户把「未经录入员复核」那次确认删了（留痕照旧），所以这里不再带
+    # acked_no_review：那个键已经从提交体里去掉，带上它也没人读。
     return {"stem": stem, "filename": stem + ".pdf", "reviewer": "马殿齐",
-            "acked_no_review": True,
             "air_reviewed": {"MAWB_NO": mawb, "HAWB_NO": hawb, "SHIPPET": ""}}
 
 
@@ -619,13 +617,13 @@ def test_submit_without_a_stage_still_records_the_sent_values():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_sending_work_nobody_reviewed_needs_its_own_ack_and_leaves_a_trace():
-    """用户定案（四条里的第三条）：制单员仍可直发，但"没经录入员复核"要多点一次确认，并留痕。
+def test_unreviewed_work_goes_straight_but_still_leaves_its_trace():
+    """没人复核过的票：**直接发，不再问一句**（2026-10-14 用户："把这个提示删掉"，
+    选的是"只删确认框、留痕不动"），但台账照旧记 `no_inputter_review`。
 
-    留痕不是为了拦人，是为了以后能回答"跳过复核直接发的那批票错得多不多"。
-    没有这一档，需求三会把"没复核就发的"和"复核过才发的"混在一起算——那正是
-    判断"能不能直接对接平台数据"最需要的对照。
-    门是服务端算的：暂存记录里没有 inputter 的角色事件，就必须带 `acked_no_review`。
+    留痕才是这条的目的：以后要能回答"跳过复核直接发的那批错得多不多"。
+    确认框只是让人多点一次，它并不产生任何数据——砍掉它不丢信息，砍掉记号才丢。
+    判据仍在服务端算（暂存记录里有没有 inputter 的角色事件），前端说什么都不算。
     """
     tmp = Path(tempfile.mkdtemp(prefix="hawb_ack_"))
     try:
@@ -634,28 +632,35 @@ def test_sending_work_nobody_reviewed_needs_its_own_ack_and_leaves_a_trace():
             tk = _clean_ticket()
             tk["air_reviewed"]["DEST_NAME"] = "ORD"
             assert rv.post("/stage", json={"tickets": [tk]}).status_code == 200
-
-            no_ack = dict(tk)
-            no_ack.pop("acked_no_review")
-            r = rv.post("/submit", json={"tickets": [no_ack]})
-            assert r.status_code == 400, f"没人复核过的票居然直接发出去了：{r.status_code} {r.text[:150]}"
-            d = r.json()["detail"]
-            assert d.get("ack") == "no_inputter_review", f"没告诉前端要点哪一种确认：{d}"
-            assert "录入员" in d["message"] and "复核" in d["message"], d
-            assert "CLA26090022" not in store.ledger(), "被拒的提交不许进台账"
-
-            r2 = rv.post("/submit", json={"tickets": [tk]})     # tk 带 acked_no_review
-            assert r2.status_code == 200, r2.text
-            assert store.ledger()["CLA26090022"]["no_inputter_review"] is True, store.ledger()
+            r = rv.post("/submit", json={"tickets": [tk]})
+            assert r.status_code == 200, f"没复核过也该直接发出去（只留痕）：{r.status_code} {r.text[:150]}"
+            assert "acked_no_review" not in r.text, "提交体里不该再有这个键"
+            e = store.ledger()["CLA26090022"]
+            assert e["no_inputter_review"] is True and e["inputter_self_submit"] is False, e
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_a_ticket_the_inputter_reviewed_sends_without_the_extra_ack():
-    """录入员核对（暂存）过的票，直发不再要那次确认；台账也就不该留"未经复核"的记号。
+def test_the_review_gate_no_longer_bounces_a_submit_back():
+    """老那三道门里的第三道（回 400 要 ack）必须彻底拆掉：留着服务端这道 400，
+    前端删了确认框就等于把提交悄悄打死——人点提交只会看见一句失败。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_ack_"))
+    try:
+        with _desk_dirs(tmp):
+            rv = _login_as("马殿齐", "rv-123456", "reviewer")
+            tk = _clean_ticket()
+            r = rv.post("/submit", json={"tickets": [tk]})       # 连暂存都没有，更没人复核过
+            assert r.status_code == 200, f"这道门还在：{r.status_code} {r.text[:150]}"
+            assert store.ledger()["CLA26090022"]["no_inputter_review"] is True
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
-    这一条是上一条的另一半：确认只欠在"没人复核过"上，不能变成每次提交都点一下的橡皮章——
-    点多一次的确认人和不点一样，留着它就没有信息量了。"""
+
+def test_a_ticket_the_inputter_reviewed_sends_without_being_bounced():
+    """录入员核对（暂存）过的票，直发一路走好；台账也就不该留"未经复核"的记号。
+
+    这一条是上一条的另一半：上一条款的是"没人复核过也照样放行"，这一条款的是
+    "复核过的别被认错"——两档都靠暂存记录里的角色事件判，判错了留痕就废了。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_ack_"))
     try:
         with _desk_dirs(tmp):
@@ -666,28 +671,24 @@ def test_a_ticket_the_inputter_reviewed_sends_without_the_extra_ack():
             inp = _login_as("刘明", "in-123456", "inputter")
             assert inp.post("/stage", json={"tickets": [tk]}).status_code == 200
 
-            no_ack = dict(tk)
-            no_ack.pop("acked_no_review")
-            r = inp.post("/submit", json={"tickets": [no_ack]})
-            assert r.status_code == 200, f"录入员自己核对过并暂存过的票，不该再要确认：{r.text[:150]}"
+            r = inp.post("/submit", json={"tickets": [tk]})
+            assert r.status_code == 200, f"录入员自己核对过并暂存过的票，不该被挡：{r.text[:150]}"
             assert store.ledger()["CLA26090022"]["no_inputter_review"] is False, store.ledger()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def test_desk_asks_before_sending_unreviewed_work():
-    """前端拿到那条 400 要问人，不能自己替他确认，也不能把这句话吞成"HTTP 400"。
-
-    自动带上 acked_no_review 等于这道门形同虚设；而只回一句 HTTP 400，制单员不知道
-    要点什么，最后只会骂系统坏了。"""
+def test_desk_no_longer_asks_about_a_missing_review():
+    """前端那个「未经录入员复核，仍要回传公司」的确认框要拆干净：
+    留着 `ackNoReview` 这条参数链，等于留着一套没人触发的死代码（下一次改提交门的人会
+    以为还有这道门）。红旗那档的确认不在这条里——那是逐条点「确认无误」，不是这个。"""
     js = web_src.desk()
-    assert "no_inputter_review" in js, "没接服务端那条「未经录入员复核」的确认要求"
-    i = js.index("async function submitTicket(")
-    body = js[i:js.index("\n}", i)]
-    assert "confirm(" in body, "要用一次明确的确认（本台删草稿、删账号也是走 confirm）"
-    # ack 只能是"人确认过之后"才带上的：写成无条件就等于这道门由前端替他过了
-    assert re.search(r"if\s*\(\s*ackNoReview\s*\)\s*p\.acked_no_review\s*=\s*true", body), \
-        "acked_no_review 必须只在确认之后带上，不能默认发出去"
+    for frag in ("no_inputter_review", "acked_no_review", "ackNoReview"):
+        assert frag not in js, f"前端还留着确认框的零件：{frag}"
+    body = web_src.fn(js, "async function submitTicket(t)")
+    assert body.count("confirm(") == 1, "提交里只剩主单那一档确认，复核确认不该还在"
+    assert body.index("confirm(") > body.index('d.ack === "master_first"'), \
+        "剩下那一次确认必须是主单先行的，不是别处冒出来的"
 
 
 def test_desk_has_a_stage_button_that_cannot_reach_the_company():
@@ -744,23 +745,17 @@ def test_a_batch_reports_which_tickets_made_it_when_one_does_not():
 
 
 def test_an_inputter_submitting_himself_is_not_counted_as_unreviewed():
-    """录入员本人直接提交：确认这一步照旧点一次（这次提交没有暂存那一步的逐字段留痕，得让人
-    知道），但话要说准、数要记对。2026-10-12 现场：郭健康是录入员，提交时却被问「没有录入员
-    复核过的暂存记录」，点下去这张票就进了「未经录入员复核」那一档——那一档是给"制单员跳过
-    复核直发"准备的对照组，把录入员自己的提交算进去，数就说谎了。"""
+    """录入员本人直接提交：不发确认框了（2026-10-14），但**数要记对**——
+    他这次提交就是他的核对，不许落进「未经录入员复核」那一档。
+    2026-10-12 现场：郭健康是录入员，提交时却被问「没有录入员复核过的暂存记录」，
+    点下去这张票就进了对照组——那一档是给"制单员跳过复核直发"准备的，混进录入员自己
+    的提交，以后答"没复核就发的错得多不多"就说谎了。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_self_"))
     try:
         with _desk_dirs(tmp):
             inp = _login_as("刘明", "in-123456", "inputter")
-            tk = _clean_ticket()
-            no_ack = dict(tk)
-            no_ack.pop("acked_no_review")
-            r = inp.post("/submit", json={"tickets": [no_ack]})
-            assert r.status_code == 400, "点一次确认这一步要留着：这次提交确实没有暂存留痕"
-            d = r.json()["detail"]
-            assert d.get("ack") == "no_inputter_review" and "你就是录入员" in d["message"], d
-            assert "未经录入员复核" not in d["message"], "对录入员说这句是在否认他的身份"
-            assert inp.post("/submit", json={"tickets": [tk]}).status_code == 200
+            r = inp.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r.status_code == 200, f"录入员本人提交不该被任何确认卡住：{r.text[:150]}"
             e = store.ledger()["CLA26090022"]
             assert e["inputter_self_submit"] is True and e["no_inputter_review"] is False, e
     finally:
@@ -768,10 +763,13 @@ def test_an_inputter_submitting_himself_is_not_counted_as_unreviewed():
 
 
 def test_the_confirm_wording_comes_from_the_server_only():
-    """确认框那两行从前是前端把一句硬话接在服务器 message 后面：服务器换成「你就是录入员」
-    之后，后面那半句还在，等于系统替自己说了一句它不该说的话。话只由服务端出，前端只画。"""
+    """还留着的那一次确认（主单没提交发送）话只能由服务端出，前端只画：
+    从前那句「未经录入员复核，仍要回传公司」就是前端把一句硬话接在服务器 message 后面，
+    服务器改了口径后半句还在，等于系统替自己说了一句它不该说的话。"""
     js = web_src.part("js/desk.js")
     assert "确认「未经录入员复核，仍要回传公司」" not in js, "前端还在自己拼那句确认话"
+    assert "先把主单交了" in js or "d.message" in js, "主单那一档要说服务器给的原文"
+    assert "还没提交发送：先把主单交了" not in js, "前端不许把服务器那句话再抄一份写死"
 
 
 # ── 主单先于分单（2026-10-14 用户定案：提交的时候要先提交主单，再提交分单）────────

@@ -6,7 +6,8 @@ import re
 
 import codes
 
-# 需要回查原文的文本字段（INFO 合并串是系统拼接、数值/日期是类型转换，不参与）
+# 需要回查原文的文本字段（*_INFO 整串不参与：它是那一格的照抄串，内容已被同主体
+# 逐个回查过的子字段覆盖，再回查一遍只是自己数自己两遍；数值/日期是类型转换，也不参与）
 LONG_FIELDS = ["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
                "CONSIGNEE_INFO_COMP_NAME", "CONSIGNEE_INFO_COMP_ADDRESS", "GOODS_INFO"]
 SHORT_FIELDS = ["HAWB_NO", "ORIGIN_NAME", "TO1", "TO2", "TO3", "DEST_NAME",

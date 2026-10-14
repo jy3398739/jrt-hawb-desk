@@ -244,8 +244,7 @@ def test_master_submit_blocks_flags_and_passes_after_ack():
             assert sent == [], "被门拦下时一次公司请求都不该发"
             flags = mp.master_flags(bad)
             r2 = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
-                                                "ams": bad, "acked_flags": flags,
-                                                "acked_no_review": True})
+                                                "ams": bad, "acked_flags": flags})
             assert r2.status_code == 200, r2.text
             assert any(j9_fake.is_send(s["path"]) for s in sent), "确认无误后才真正回传（走 mawb3）"
             led = json.loads((tmp / "master_submitted.json").read_text(encoding="utf-8"))
@@ -269,7 +268,7 @@ def test_master_submit_maps_locked_record_to_409_and_config_to_502():
         try:
             c = _login()
             r = c.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
-                                               "ams": dict(AMS), "acked_no_review": True})
+                                               "ams": dict(AMS)})
             assert r.status_code == 409, r.text
             assert "SEND_STATUS" in r.text
         finally:
@@ -279,7 +278,7 @@ def test_master_submit_maps_locked_record_to_409_and_config_to_502():
         try:
             c2 = _login()
             r2 = c2.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "admin",
-                                                 "ams": dict(AMS), "acked_no_review": True})
+                                                 "ams": dict(AMS)})
             assert r2.status_code == 502, f"live 缺端点要 502 而不是静默成功：{r2.status_code} {r2.text[:120]}"
         finally:
             config.COMPANY_API_MODE = old_mode
@@ -327,8 +326,9 @@ def test_master_stage_parks_a_copy_at_the_company_but_never_sends():
         _restore(old, tmp)
 
 
-def test_master_submit_requires_the_ack_when_no_inputter_reviewed():
-    """与分单同一条门：没录入员复核过就要一次显式确认，台账留下 no_inputter_review 与发出去的值。
+def test_master_submit_sends_unreviewed_work_and_leaves_the_trace():
+    """与分单同一条口径（2026-10-14 用户把那次确认删了，留痕不动）：没录入员复核过也直接发，
+    台账留下 no_inputter_review 与发出去的值。
 
     同构不是抄样式：主单同样是整表写回，没核对过就发，出事时一样要能回答"这张当时谁看过"。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mack_"))
@@ -341,13 +341,7 @@ def test_master_submit_requires_the_ack_when_no_inputter_reviewed():
         assert rv.post("/master/stage", json={"mawb": "176-62400004", "ams": ams}).status_code == 200
         r = rv.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "马殿齐",
                                            "ams": ams, "acked_flags": []})
-        assert r.status_code == 400, f"没人复核过却直接发出去了：{r.status_code} {r.text[:150]}"
-        assert r.json()["detail"].get("ack") == "no_inputter_review", r.text
-        assert store.master_ledger() == {}, "被拒的提交不许进主单台账"
-
-        r2 = rv.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "马殿齐",
-                                            "ams": ams, "acked_flags": [], "acked_no_review": True})
-        assert r2.status_code == 200, r2.text
+        assert r.status_code == 200, f"没复核过也该直接发出去（只留痕）：{r.status_code} {r.text[:150]}"
         e = store.master_ledger()["17662400004"]
         assert e["no_inputter_review"] is True and e["ams_sent"]["GOODS_NAME"] == "PISTON ROD ASSY", e
         rec = json.loads((config.MASTER_DIR / "17662400004.json").read_text(encoding="utf-8"))
@@ -373,18 +367,19 @@ def test_desk_has_a_master_stage_button_next_to_the_submit_one():
     assert 'BASE + "/master/stage"' in body, "暂存没接到 /master/stage"
     assert "/master/submit" not in body, "主单暂存里混进了回传那条路：那会真写公司"
     assert 'MV.rec.ams_final' in js or "rec.ams_final" in js, "打开主单要认服务器上那份人工值"
-    # 主单同样要有"未经录入员复核"的那次确认，而且不能把事件对象当成确认参数（老 listener 的坑）
+    # 主单那颗提交不收任何参数： MouseEvent 当成"人确认过了"是老 listener 的坑，
+    # 而"未经录入员复核"那次确认 2026-10-14 已经删掉，参数链整个不留。
     i2 = js.index("async function mvSubmit(")
     body2 = js[i2:js.index("\n}", i2)]
-    assert "no_inputter_review" in body2, "主单没接未经复核的确认要求"
-    assert "if (ackNoReview === true) payload.acked_no_review = true;" in body2, \
-        "acked_no_review 必须只在人确认之后才带"
+    assert "async function mvSubmit()" in js, "主单提交不该再收 ackNoReview 这种参数"
+    for frag in ("acked_no_review", "ackNoReview", "no_inputter_review"):
+        assert frag not in body2, f"确认框拆了，前端还留着它的零件：{frag}"
     assert 'addEventListener("click", () => mvSubmit())' in js, \
-        "直接把 mvSubmit 当监听器会把 MouseEvent 当成 ackNoReview，等于默认替人确认"
+        "直接把 mvSubmit 当监听器会把 MouseEvent 当成参数传进去"
 
 
 def test_a_master_the_inputter_sends_himself_is_not_marked_unreviewed():
-    """与分单同一条：录入员本人直发主单，确认照点一次，台账记的是 inputter_self_submit，
+    """与分单同一条：录入员本人直发主单，不问确认，台账记的是 inputter_self_submit，
     不是「未经录入员复核」。两条链统一的是机制，不是各自再判一次。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mself_"))
     old = _isolate(tmp)
@@ -395,11 +390,7 @@ def test_a_master_the_inputter_sends_himself_is_not_marked_unreviewed():
         ams = dict(AMS, GOODS_NAME="PISTON ROD ASSY")
         body = {"mawb": "176-62400004", "reviewer": "刘明", "ams": ams, "acked_flags": []}
         r = inp.post("/master/submit", json=body)
-        assert r.status_code == 400, r.text
-        d = r.json()["detail"]
-        assert "你就是录入员" in d["message"] and "未经录入员复核" not in d["message"], d
-        body["acked_no_review"] = True
-        assert inp.post("/master/submit", json=body).status_code == 200
+        assert r.status_code == 200, f"录入员本人提交该一次就过：{r.status_code} {r.text[:150]}"
         e = store.master_ledger()["17662400004"]
         assert e["inputter_self_submit"] is True and e["no_inputter_review"] is False, e
     finally:

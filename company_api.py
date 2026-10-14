@@ -65,7 +65,13 @@ class CompanyPreReadFailed(CompanyApiError):
 
 class CompanyLocked(RuntimeError):
     """SEND_STATUS 闸门拦下：那一行已经离开暂存档（1 已提交发送 / 2 外围已发送成功），
-    公司侧两个写口都会 400「已提交，不能更新」。本地先拦下来，省一次白发与一句看不懂的 400。"""
+    公司侧两个写口都会 400「已提交，不能更新」。本地先拦下来，省一次白发与一句看不懂的 400。
+
+    状态一起带出去：调用方要分清"这一行锁了"（预期结局，别报失败）与"公司连不上"（真失败）。"""
+
+    def __init__(self, msg: str, status=None):
+        super().__init__(msg)
+        self.status = status
 
 
 # 公司侧 SEND_STATUS 字典（2026-10-09 文档）：只有 0 能写。1 是"已提交发送、还没发出去"，
@@ -79,7 +85,7 @@ def _gate(status, label):
     if status is None or status == 0:
         return
     raise CompanyLocked(f"{label} 公司侧 SEND_STATUS={status}：{SEND_STATE.get(status, '未知状态')}，"
-                        f"只有 0（暂存）允许再写")
+                        f"只有 0（暂存）允许再写", status=status)
 
 
 _RATE = {"hits": [], "lock": threading.Lock()}

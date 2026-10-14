@@ -347,8 +347,7 @@ def _desk(tmp: Path, air: dict):
 
 
 def _tk(**extra):
-    tk = {"stem": "CLA26090022", "filename": "CLA26090022.pdf", "acked_no_review": True,
-          "air_reviewed": dict(AIR)}
+    tk = {"stem": "CLA26090022", "filename": "CLA26090022.pdf", "air_reviewed": dict(AIR)}
     tk.update(extra)
     return tk
 

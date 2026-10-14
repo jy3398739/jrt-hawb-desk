@@ -23,7 +23,7 @@
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
   POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器 + 公司占位(mawb2，状态 0)
-  POST /master/submit      需登录会话；主单**提交发送**公司(mawb3)的唯一出口；没录入员复核过要带 acked_no_review
+  POST /master/submit      需登录会话；主单**提交发送**公司(mawb3)的唯一出口；没录入员复核过照样发、台账留痕
   GET  /results            已落盘条数（需登录会话）
   GET  /tickets            需登录会话；本机经手过的票与状态 parsed/staged/submitted/failed，可带 ?date=&state=&mawb=
   GET  /day                需登录会话；今日台账（分单+主单合一张表，按天），可带 ?date=
@@ -354,7 +354,6 @@ class MasterSubmitBody(BaseModel):
     reviewer_role: str = ""      # 一律由服务端按会话覆写：请求里写什么都不认
     ams: dict = {}
     acked_flags: list = []
-    acked_no_review: bool = False
 
 
 @app.post("/master/stage")
@@ -375,6 +374,10 @@ def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
         try:
             res = company_api.stage_master({"mawb": rec["mawb"], "ams": rec.get("ams_final") or {}})
             company = {"ok": True, "mode": res.get("mode"), "action": res.get("action")}
+        except company_api.CompanyLocked as e:
+            LOG.info("主单公司锁行，本机这份仍已存 %s who=%s：%s", rec.get("mawb"),
+                     user.get("name"), e)
+            company = {"ok": False, "locked": True, "status": e.status, "error": str(e)[:200]}
         except Exception as e:
             LOG.warning("主单公司暂存失败 %s who=%s：%s", rec.get("mawb"), user.get("name"), e)
             company = {"ok": False, "error": str(e)[:200]}
@@ -404,8 +407,6 @@ def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
     except master_pipeline.MasterFlagged as e:
         # detail 带结构化红旗：前端逐条出「确认无误」按钮，不用解析提示文案
         raise HTTPException(400, {"message": str(e), "flags": e.flags})
-    except master_pipeline.MasterNeedsAck as e:
-        raise HTTPException(400, {"message": str(e), "ack": e.ack})
     except company_api.CompanyLocked as e:
         LOG.warning("主单回传被公司锁行：%s → %s", body.mawb, e)
         raise HTTPException(409, str(e))
@@ -468,9 +469,9 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
     ① 主/分单号必须可归一化——复合键是"日后能否按号打开原件"的唯一连接键，缺号进索引等于塞坏数据；
     ② 红旗按**提交时刻的当前值**重算（`jobs.recompute_flags`，与解析时同一批判据同一套文案），
        未清的必须逐条 `acked_flags` 确认；改了值旧旗文案会变，自动要重新确认；
-    ③ 没有"录入员复核过的暂存记录"的，必须带 `acked_no_review`（一次显式确认），台账留痕
-       `no_inputter_review`——制单员可以直发，但这一档不能悄悄发生，否则需求三会把
-       "没复核就发的"和"复核过才发的"混在一个数里。
+    ③ 没有"录入员复核过的暂存记录"的，**照样直发**（2026-10-14 删掉了那次确认框），但台账留痕
+       `no_inputter_review`——这一档不能悄悄发生却也不拦人，否则需求三答不出
+       "没复核就发的"和"复核过才发的"分别错多少。
     任一不过 → 400 且**一个公司请求都不发**（先整批门检，再逐张发，别提交一半）。
     复核人取登录会话身份。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，补号后重新提交即可。
     机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。
@@ -504,22 +505,17 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         claim = {str(x) for x in (tk.get("acked_empty") if isinstance(tk.get("acked_empty"), list) else [])}
         acked_empty = [k for k in blanks if k in claim]
         skipped_empty = [k for k in blanks if k not in claim]
-        # 第三道门（2026-10-08 用户定案）：制单员可以直发，但"没有录入员复核过的暂存记录"
-        # 必须多点一次确认。判据只认服务器上的暂存事件，不认前端写的任何名字；
-        # 确认之后台账留 no_inputter_review，否则以后答不出"跳过复核直接发的那批错得多不多"。
+        # 第三道门（2026-10-08 定案，2026-10-14 用户改口径："把这个提示删掉"）：
+        # 没有录入员复核过的暂存记录**照样直发，不再多点一次确认**，但台账仍记
+        # no_inputter_review。留痕才是这条的目的——确认框本身不产生任何数据，
+        # 砍掉它不丢信息，砍掉记号才会丢"没复核就发的那批错得多不多"这个对照。
+        # 判据只认服务器上的暂存事件，不认前端写的任何名字。
         st = store.load_staged(stem) or {}
         reviewed = store.reviewed_by_inputter(st)
-        # 提交人自己就是录入员：这次提交即他的核对。确认仍点一次（没有暂存那一步的逐字段留痕），
-        # 但话要说准，且台账记 inputter_self_submit、不记"未经录入员复核"——那一档是"制单员
-        # 跳过复核直发"的对照组，混进录入员自己的提交，对照就废了（2026-10-12 郭健康现场）。
+        # 提交人自己就是录入员：这次提交即他的核对，台账记 inputter_self_submit、
+        # 不记"未经录入员复核"——那一档是"制单员跳过复核直发"的对照组，
+        # 混进录入员自己的提交，对照就废了（2026-10-12 郭健康现场）。
         self_submit = (not reviewed) and str(user.get("role") or "") == "inputter"
-        if not reviewed and not tk.get("acked_no_review"):
-            raise HTTPException(400, {
-                "message": (f"{hawb} 你就是录入员：这次提交即视为你的核对"
-                            "（这张票没有暂存那一步的逐字段留痕）" if self_submit else
-                            f"{hawb} 没有录入员复核过的暂存记录："
-                            "确认「未经录入员复核，仍要回传公司」后再提交"),
-                "ack": "no_inputter_review"})
         # 顺序这一道：本机主单台账没记的，去问公司一次（可能别处已经发过了），再决定挡不挡。
         # 放在最后是因为前面几道都是"这张票自己还没好"，先把内容说清，才轮到"先去做另一件事"。
         mk = store.norm_no(mawb)
@@ -604,6 +600,11 @@ def _company_stage(saved: dict, user: dict) -> dict:
     try:
         res = company_api.stage_order({"mawb": saved["mawb"], "hawb": saved["hawb"],
                                        "stem": saved["stem"], "air": saved["air_final"]})
+    except company_api.CompanyLocked as e:
+        # 锁行不是失败：那一行已经离开状态 0（已提交发送 / 外围已发送），公司本来就不收改动。
+        # 说成"失败"会让人以为整次白点，于是再点一次（2026-10-14 公司那台现场的截图）。
+        LOG.info("公司锁行，本机这份仍已存 stem=%s who=%s：%s", saved["stem"], user.get("name"), e)
+        return {"ok": False, "locked": True, "status": e.status, "error": str(e)[:200]}
     except Exception as e:
         LOG.warning("公司暂存失败 stem=%s who=%s：%s", saved["stem"], user.get("name"), e)
         return {"ok": False, "error": str(e)[:200]}

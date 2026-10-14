@@ -45,15 +45,6 @@ class MasterFlagged(RuntimeError):
         self.flags = list(flags or [])
 
 
-class MasterNeedsAck(RuntimeError):
-    """主单没被录入员复核过（暂存记录里没有 inputter 的角色事件），要多点一次确认才发。
-    带 `ack` 让前端知道要点哪一种确认——与分单 `/submit` 的第三道门同构。"""
-
-    def __init__(self, msg: str, ack: str = "no_inputter_review"):
-        super().__init__(msg)
-        self.ack = ack
-
-
 def _now() -> str:
     return datetime.datetime.now().isoformat(timespec="seconds")
 
@@ -302,16 +293,11 @@ def submit_master(payload: dict) -> dict:
         raise MasterFlagged("主单还有未确认的红旗，逐条点「确认无误」后才能回传公司：\n" +
                             "\n".join(left), left)
     reviewed = store.reviewed_by_inputter(cached)
-    # 提交人自己就是录入员时，这次提交就是他的核对：确认仍要点一次（这一次没有暂存那一步的
-    # 逐字段留痕，得让人知道），但台账不许记成「未经录入员复核」——那一档是"制单员跳过复核
-    # 直发"的对照组，混进录入员自己的提交，对照就废了（2026-10-12 现场：录入员被这样问）。
+    # 与分单同一条口径（2026-10-14 用户把那次确认删了，留痕不动）：没复核过照样发，
+    # 台账记 no_inputter_review。提交人自己就是录入员时记 inputter_self_submit、
+    # 不记「未经录入员复核」——那一档是"制单员跳过复核直发"的对照组，
+    # 混进录入员自己的提交，对照就废了（2026-10-12 现场：录入员被这样问）。
     self_submit = (not reviewed) and str(p.get("reviewer_role") or "") == "inputter"
-    if not reviewed and not p.get("acked_no_review"):
-        raise MasterNeedsAck(
-            f"主单 {mawb} 你就是录入员：这次提交即视为你的核对"
-            "（这张主单没有暂存那一步的逐字段留痕）" if self_submit else
-            f"主单 {mawb} 没有录入员复核过的暂存记录："
-            "确认「未经录入员复核，仍要回传公司」后再提交")
     # 只发调用方给过的列（clean_ams 会丢掉没给的）：公司写口是整表写回，
     # "这次没碰"要由 company_api 用库里的现值补齐，"人工清空"才是显式 null。
     res = company_api.submit_master({"mawb": mawb, "ams": mf.clean_ams(ams)})

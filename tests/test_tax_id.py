@@ -79,7 +79,9 @@ def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
     assert l3["SHIPPER_INFO_TEL"] == "+862258388999", l3["SHIPPER_INFO_TEL"]
     assert l3["SHIPPER_INFO_EORI"] == USCI, "税号要落在 EORI 格，不是消失"
     assert USCI not in l3["SHIPPER_INFO_COMP_ADDRESS"], l3["SHIPPER_INFO_COMP_ADDRESS"]
-    assert USCI not in l3["SHIPPER_INFO"], "合并串里也不能再挂着没归位的号"
+    # 这份 L2 没给整串，出口就得是空的——以前这里是"重拼后的串里不许再挂着没归位的号"，
+    # 现在整串不拼了，号在照抄串里出现本来就是票面印的，该管的只剩地址那一格。
+    assert l3["SHIPPER_INFO"] == "", l3["SHIPPER_INFO"]
 
 
 def test_l3_keeps_both_the_eori_and_the_tax_number_in_one_cell():
@@ -112,9 +114,10 @@ def test_l3_strips_the_ticket_label_off_the_number_before_filing_it():
     assert to_air.to_air(l2d)["CONSIGNEE_INFO_EORI"] == "769638661"
 
 
-def test_l3_falls_back_to_the_merged_info_string():
-    """模型只把 USCI 留在 L2 合并串里（地址、电话都干净）时，L3 重建合并串前先摘出来，
-    否则整号随合并串被重写而丢失（BJS00032108 发货人即如此）。"""
+def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
+    """票面把 USCI 只印在整串那一格（地址、电话都干净，BJS00032108 发货人即如此）时，
+    L3 要从整串里把号认出来、归进 EORI——但整串本身一个字不动：那号码就是票面那一格印的，
+    照抄串里留着它是对的，公司要的是 EORI 那一格另外也得有它。"""
     l2d = l2(MAWB_NO="999-30825351", HAWB_NO="BJS00032108",
              SHIPPER_INFO="BEIJING SHUNYI CO LTD, ROOM 101 BEIJING CN, "
                           "TEL: +861065766886 USCI:91110105562078969J",
@@ -125,6 +128,8 @@ def test_l3_falls_back_to_the_merged_info_string():
     l3 = to_air.to_air(l2d)
     assert l3["SHIPPER_INFO_EORI"] == "91110105562078969J", l3["SHIPPER_INFO_EORI"]
     assert l3["SHIPPER_INFO_TEL"] == "+861065766886", l3["SHIPPER_INFO_TEL"]
+    assert l3["SHIPPER_INFO"] == l2d["SHIPPER_INFO"], \
+        f"整串被动过了：{l3['SHIPPER_INFO']!r}"
 
 
 def test_l3_moves_a_legacy_tax_column_into_eori():

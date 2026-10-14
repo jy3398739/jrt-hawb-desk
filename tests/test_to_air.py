@@ -6,6 +6,7 @@
 import codes
 import to_air
 import validator
+import vlm_extract
 
 # 缺陷1：票面"电话+联系人+CNPJ"挤同一格，整行照抄后剥字母会拼成 26 位怪物号（PEK1642839）
 # 缺陷4：Excel 前导单引号强制文本，LibreOffice 把 ' 印进 PDF 文字层，L3 丢 +（AE20260916）
@@ -50,8 +51,8 @@ def test_iata_place_mapping():
 
 
 def test_country_with_parenthesised_iso2():
-    """票面把号码和国码写在一格里（'Slovak Republic (SK)'，999-95764815 收货人）：
-    L3 必须归成 SK。不归一会导致合并串里国家重复出现两次、括号被截断。"""
+    """票面把国名和国码写在一格里（'Slovak Republic (SK)'，999-95764815 收货人）：
+    L3 必须归成 SK。不归一的话发给公司的 *_INFO_COUNTRY 那一格还是个短语，公司按两字母码校验会拒。"""
     assert to_air.country_to_iso2("Slovak Republic (SK)") == "SK"
     assert to_air.country_to_iso2("SLOVAK REPUBLIC (sk)") == "SK"
     assert to_air.country_full("Slovak Republic (SK)") == "SLOVAK REPUBLIC"
@@ -59,23 +60,63 @@ def test_country_with_parenthesised_iso2():
     assert to_air.country_to_iso2("Vietnam (VNM)") == "VIETNAM (VNM)"
 
 
-def test_party_info_has_no_duplicated_country():
-    """整格照抄的收货人：街道/城市/国家分栏后，合并串里国家只出现一次且为 ISO2。"""
-    l2 = {k: "" for k in codes.TARGET_KEYS_OUT}
-    l2.update({"MAWB_NO": "999-95764815", "HAWB_NO": "SL0001",
-               "CONSIGNEE_INFO_COMP_NAME": "ERBOS s. r. o.",
-               "CONSIGNEE_INFO_COMP_ADDRESS": "Horna Trnovska 432/105, 010 01 Zilina, Slovak Republic (SK)",
-               "CONSIGNEE_INFO_CITTY": "Zilina", "CONSIGNEE_INFO_COUNTRY": "Slovak Republic (SK)",
-               "CONSIGNEE_INFO_POSTAL": "010 01", "CONSIGNEE_INFO_EORI": "SK2121094140",
-               "CONSIGNEE_INFO_TEL": "+421417212345"})
-    l3 = to_air.to_air(l2)
-    assert l3["CONSIGNEE_INFO_COUNTRY"] == "SK", l3["CONSIGNEE_INFO_COUNTRY"]
-    info = l3["CONSIGNEE_INFO"]
-    # 国家只在末尾以 ISO2 出现一次：不再有 '(SK,' 这类括号残片（TRNOVSKA 里也含 SK，不能按子串计数）
-    assert "(SK" not in info and "SLOVAK REPUBLIC" not in info, info
-    assert info.count(", SK,") == 1, info
-    assert l3["CONSIGNEE_INFO_TEL"] == "+421417212345", l3["CONSIGNEE_INFO_TEL"]
-    assert not [w for w in validator.validate_air(l3) if "CONSIGNEE" in w], info
+def test_party_whole_string_is_the_transcribed_text_not_an_assembly():
+    """2026-10-14 业主定案：发货人/收货人「整串」这一列只许是票面那一格的照抄串，
+    L3 不再从子字段重拼。重拼把三种破坏都干过（对照 L3 夹具）：同一段街道出现两遍
+    （2_sch_1 收货人、5e696c 收货人）、邮编省名整段丢掉（5_dhl 收货人的 KA 560058）、
+    公司名第二行被挪到地址后面（4_ceva 发货人）——而这一列是制单员核对时读的那一眼。
+
+    子列照常归一：同一条里 *_INFO_COUNTRY 要落成两字母码、*_INFO_TEL 要清成号码本体。"""
+    l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    l2d.update({
+        "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261001",
+        "SHIPPER_INFO": "KG FRIDMAN AB, GJUTERIGATAN 11-13 SE-652 21 KARLSTAD, SWEDEN, "
+                        "TEL: +46 (0)70 31 76 762",
+        "SHIPPER_INFO_COMP_NAME": "KG FRIDMAN AB",
+        "SHIPPER_INFO_COMP_ADDRESS": "GJUTERIGATAN 11-13 SE-652 21 KARLSTAD, SWEDEN",
+        "SHIPPER_INFO_CITY": "KARLSTAD", "SHIPPER_INFO_COUNTRY": "SWEDEN",
+        "SHIPPER_INFO_POSTAL": "652 21", "SHIPPER_INFO_TEL": "+46 (0)70 31 76 762"})
+    l3 = to_air.to_air(l2d)
+    assert l3["SHIPPER_INFO"] == l2d["SHIPPER_INFO"], \
+        f"整串被改了：{l3['SHIPPER_INFO']!r}"
+    assert l3["SHIPPER_INFO"].count("GJUTERIGATAN") == 1, "重拼会把街道再挂一遍"
+    # 同一格的国家/电话照常归一——这次动的只有整串的取值来源
+    assert l3["SHIPPER_INFO_COUNTRY"] == "SE", l3["SHIPPER_INFO_COUNTRY"]
+    assert l3["SHIPPER_INFO_TEL"] == "+46703176762", l3["SHIPPER_INFO_TEL"]
+
+
+def test_l3_invents_no_whole_string_when_the_model_left_it_empty():
+    """模型没抄整串（只给了子字段）时，L3 要留空，不许由代码拼一份顶上。
+    「这格是空的」与「这格是代码造的」在公司那边长得一模一样，但只有前者是能被发现的漏——
+    留空会进制单员的空栏确认，造出来的串谁都不会去看第二眼。"""
+    l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    l2d.update({
+        "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261002",
+        "CONSIGNEE_INFO_COMP_NAME": "BIG METAL LTD",
+        "CONSIGNEE_INFO_COMP_ADDRESS": "OCCUPATIONAL ROAD 1, LONDON SE17 3BE GB",
+        "CONSIGNEE_INFO_CITTY": "LONDON", "CONSIGNEE_INFO_COUNTRY": "GB",
+        "CONSIGNEE_INFO_TEL": "+442077010005"})
+    l3 = to_air.to_air(l2d)
+    assert l3["CONSIGNEE_INFO"] == "", f"空整串被代码拼出来了：{l3['CONSIGNEE_INFO']!r}"
+    assert l3["CONSIGNEE_INFO_TEL"] == "+442077010005", l3["CONSIGNEE_INFO_TEL"]
+    assert l3["CONSIGNEE_INFO_COUNTRY"] == "GB", l3["CONSIGNEE_INFO_COUNTRY"]
+
+
+def test_prompt_asks_for_a_transcribed_party_string():
+    """提示词要与 L3 同口径：L3 不再重拼，提示词却还写着「这两个串允许按规定格式拼接」，
+    模型就照旧交一份自己拼的串，而这一串会被当成"票面原文"送进公司——比原来更糟。
+
+    断言只看这两件事：这两列各自行里要出现"照抄"、不许再出现"拼接"（"不是拼接"这种否定句除外）；
+    铁律 C 不许再给这两列开例外。具体措辞随提示词调，别把字句钉死。"""
+    blob = vlm_extract.PROMPT_HEAD
+    assert "系统拼接" not in blob, blob[:200]
+    for key in ("SHIPPER_INFO", "CONSIGNEE_INFO"):
+        i = blob.index(key + " - ")
+        line = blob[i:blob.index("\n", i)]
+        assert "照抄" in line, f"{key} 那一行没要求照抄：{line}"
+        assert "拼接" not in line.replace("不是拼接", ""), f"{key} 还在允许拼接：{line}"
+    c = blob[blob.index("C. 不猜不补"):blob.index("D. CREATE_TIME")]
+    assert "允许" not in c, f"铁律 C 还在给哪一列开口子：{c}"
 
 
 def test_accented_city_name_folds():
@@ -131,7 +172,8 @@ def test_to_air_end_to_end_on_one_ticket():
     assert "CNPJ" not in l3["SHIPPER_INFO_TEL"]
     # 电话已单独成字段，L3 街道里不该再留号码，但门牌号要保住（_drop_phone_segs 接进 to_air 了吗）
     assert l3["SHIPPER_INFO_COMP_ADDRESS"] == "NO.91 XINGANG ROAD", l3["SHIPPER_INFO_COMP_ADDRESS"]
-    assert l3["SHIPPER_INFO"].endswith("TEL: +8613944484042"), l3["SHIPPER_INFO"]
+    assert l3["SHIPPER_INFO"] == "", \
+        "这份 L2 没给整串：出口必须是空的，代码不许拿子字段拼一份顶上（2026-10-14 定案）"
     assert validator.validate_air(l3) == [], validator.validate_air(l3)
 
 

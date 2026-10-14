@@ -47,6 +47,26 @@ def test_l3_output_is_exactly_the_current_column_contract():
     assert not bad, f"{len(bad)} 份夹具的 L3 出口与现行列面不一致：\n    " + "\n    ".join(bad[:8])
 
 
+def test_l3_keeps_the_party_whole_strings_as_transcribed():
+    """整串这一列只有一个来源：L2 那份照抄串（2026-10-14 业主定案「整串提取不要有优化」）。
+
+    这条不看 expected、直接拿 input 比：L3 一旦恢复从子字段重拼，这里先红，而不是等 40 份
+    expected 一起漂移了才在 diff 里发现。expected 也要一起核——基线里还留着旧的重拼串，
+    说明 --update-baseline 没跑，发出去的就是两份口径。"""
+    bad = []
+    for p in sorted((FIX / "input").glob("*.json")):
+        d = _read(p)
+        got = to_air.to_air(d)
+        ep = FIX / "expected" / p.name
+        old = _read(ep) if ep.exists() else {}
+        for k in ("SHIPPER_INFO", "CONSIGNEE_INFO"):
+            if str(got.get(k, "") or "") != str(d.get(k, "") or ""):
+                bad.append(f"{p.name}:{k} 整串被 L3 改了")
+            if ep.exists() and str(old.get(k, "") or "") != str(d.get(k, "") or ""):
+                bad.append(f"{p.name}:{k} 冻结的期望值还是重拼那一份")
+    assert not bad, "整串口径没对上：\n    " + "\n    ".join(bad[:10])
+
+
 def test_l3_has_no_iata_warnings():
     """L3 出口必须全是三字码：码表缺项在这里被抓住，而不是等业务方发现。"""
     bad = []

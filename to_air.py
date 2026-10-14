@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """第一遍原文口径 JSON -> 第二遍航空口径 JSON。
 复用 codes.py 的 parse_party / COUNTRY_ISO2 / lookup_city / iata_place。
+发货人/收货人的 *_INFO 整串不在归一之列：那一列只许是票面那一格的照抄串（2026-10-14 业主定案）。
 """
 import re
 import codes
@@ -16,7 +17,8 @@ _EXTRA_COUNTRY = {
 _ALL_ISO2 = _ISO2 | set(_EXTRA_COUNTRY.values())
 
 # 票面把国名和国码写在同一格里：'Slovak Republic (SK)'（999-95764815 收货人）。
-# 不摘括号则整串当"查不到原样返回"，合并串里国家会被拼两次、括号截断成 '(SK,'。
+# 不摘括号则整串当"查不到原样返回"，发给公司的 *_INFO_COUNTRY 那一格还是个短语，
+# 而公司按两字母码校验。（整串自 v1.24 起不再由代码重拼，括号残片不会再出现在那一列。）
 _PAREN_ISO2 = re.compile(r"^(.*?)[,\s]*\(([A-Z]{2})\)$")
 
 
@@ -112,8 +114,8 @@ def _fix_addr_country(addr: str, country0: str) -> str:
     return addr
 
 
-def _no_comma_split(addr: str, city: str, state: str, country: str, postal: str):
-    """无逗号长串地址: 从尾部反复剥离 邮编/国家/州/城市(含 CITY 标签), 返回 (街道, locality原文)。
+def _no_comma_split(addr: str, city: str, state: str, country: str, postal: str) -> str:
+    """无逗号长串地址: 从尾部反复剥离 邮编/国家/州/城市(含 CITY 标签), 返回街道部分。
     不走 _parse_party——无逗号时它会整行误判 locality 导致地址重复。"""
     toks = addr.split()
     vals = [v for v in (postal, country, state, city) if v]
@@ -137,17 +139,7 @@ def _no_comma_split(addr: str, city: str, state: str, country: str, postal: str)
             if strip_span(v):
                 changed = True
                 break
-    street = re.sub(r"\s{2,}", " ", " ".join(toks)).strip(" ,")
-    locality = ""
-    if postal and city:
-        for s in (f"{postal} {city}", f"{city} {postal}"):
-            i = addr.lower().find(s.lower())
-            if i >= 0:
-                locality = re.sub(r"\s{2,}", " ", addr[i:i + len(s)].strip())
-                break
-    if not locality:
-        locality = city or ""
-    return street, locality
+    return re.sub(r"\s{2,}", " ", " ".join(toks)).strip(" ,")
 
 
 def _alnum0(v) -> str:
@@ -202,7 +194,7 @@ def to_air(d: dict) -> dict:
         taken = {_alnum0(x) for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", ""))} | \
             {_alnum0(x) for x in ids}
         addr, pulled = _pull_tax(addr, "", taken)
-        if not pulled:      # 只留在合并串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
+        if not pulled:      # 只留在整串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
             _, pulled = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
         if pulled:
             ids.append(pulled)
@@ -216,7 +208,7 @@ def to_air(d: dict) -> dict:
         postal0 = d.get(pfx + "_INFO_POSTAL", "")
 
         if "," not in addr_fixed:
-            street, locality = _no_comma_split(addr_fixed, city0, state0, country_full0, postal0)
+            street = _no_comma_split(addr_fixed, city0, state0, country_full0, postal0)
             pp = {"name": name, "country": country_full0, "tel": tel0, "fax": fax0, "eori": eori0}
         else:
             p = {"name": name, "address": addr_fixed.replace(", ", "\n"),
@@ -225,14 +217,9 @@ def to_air(d: dict) -> dict:
                 p["tax_id"] = eori0
             pp = codes.parse_party(p)
             street = pp["street"] or addr_fixed
-            locality = pp["locality"]
 
         street = _drop_phone_segs(street)
         country2 = country_to_iso2(country0 or pp["country"])
-        # locality 尾部常还留着国家（全称或 'GB'/'BR' 这类码），_INFO 末尾会再拼一次国家码
-        for tail in filter(None, (country_full0, str(country0).strip(), country2)):
-            locality = re.sub(r"[,\s]+" + re.escape(tail) + r"\s*$", "",
-                              locality, flags=re.I).strip(" ,")
 
         city_code = codes.lookup_city(city0) or city0
         tel = _clean_phone(_first_phone(tel0) or pp["tel"])
@@ -245,14 +232,10 @@ def to_air(d: dict) -> dict:
         out[pfx + "_INFO_FAX"] = fax
         if not out.get(pfx + "_INFO_EORI") and pp.get("eori"):
             out[pfx + "_INFO_EORI"] = pp["eori"]
-
-        parts = [x for x in (pp["name"] or name, street, locality, country2) if x]
-        if tel:
-            parts.append("TEL: " + tel)
-            if fax and fax != tel:
-                parts.append("FAX: " + fax)
-        elif fax:
-            parts.append("FAX: " + fax)
-        out[pfx + "_INFO"] = ", ".join(parts)
+        # 到这里 *_INFO 整串一个字都不动（out 是 d 的副本，L2 抄来什么就是什么）。以前这里按
+        # 子字段重拼过一遍，40 份夹具实测三种破坏：同一段街道挂两遍（2_sch_1/5e696c 收货人）、
+        # 邮编省名整段丢掉（5_dhl 收货人的 KA 560058）、公司名第二行被挪到地址后面
+        # （4_ceva 发货人）——而这一列正是制单员核对时读的那一眼，串一重排就等于抄错票。
+        # 整串为空时也不拼：留空会进制单员的空栏确认，拼出来的串谁都不会再看第二眼。
 
     return {k: out.get(k, "") for k in codes.TARGET_KEYS_OUT}

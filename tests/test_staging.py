@@ -151,6 +151,39 @@ def test_stage_parks_a_copy_at_the_company_without_sending():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_company_locked_row_says_so_instead_of_failing():
+    """公司那一行已经离开状态 0（1 已提交发送 / 2 外围已发送成功）时，暂存不是"失败"，
+    是**这条已经不该再改了**：本机这份照存、同事照看，回执要把它说成状态而不是错误。
+    2026-10-14 现场（公司那台 Windows）：绿色气泡里写着"公司暂存失败：…SEND_STATUS=1…"，
+    人读到的就是"白点了"，于是再点一次——而白点的从来只是公司那半。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    old_mode = config.COMPANY_API_MODE
+    config.COMPANY_API_MODE = "live"
+    real = (company_api.stage_order, company_api.submit_order, server._company_submit)
+    try:
+        client = _client_as(tmp, "马殿齐", "reviewer")
+
+        def locked(p):
+            company_api._gate(1, p["hawb"])      # 抛的就是生产那一条，连文案一起验
+            raise AssertionError("状态 1 不该走到写公司那一步")
+
+        company_api.stage_order = locked
+        server._company_submit = lambda *a, **k: (_ for _ in ()).throw(AssertionError("暂存不许提交发送"))
+        r = client.post("/stage", json={"tickets": [_ticket()]})
+        assert r.status_code == 200, "公司锁行不该让本机暂存报错"
+        c = r.json()["staged"][0]["company"]
+        assert c["ok"] is False and c.get("locked") is True, f"锁行要单独说，不能混进失败：{c}"
+        assert c.get("status") == 1, f"要说清是哪一档（1 已提交发送 / 2 外围已发送）：{c}"
+        assert "SEND_STATUS" in (c.get("error") or ""), c
+        assert (config.STAGED_DIR / f"{STEM}.json").is_file(), "本机这份必须在"
+    finally:
+        (company_api.stage_order, company_api.submit_order, server._company_submit) = real
+        config.COMPANY_API_MODE = old_mode
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_stage_needs_a_login_session():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
     old = _env(tmp)

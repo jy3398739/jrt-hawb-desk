@@ -1502,6 +1502,14 @@ def test_the_stage_button_reports_both_the_local_copy_and_the_company_one():
     assert "mock" in body, "本机 mock 模式要说清没发公司，不然人以为已经寄出去了"
     assert "状态 0" in body, "成功那一档要写明是可反复改的状态 0，不是已发送"
     assert "skipped" in body and "error" in body, "缺号与公司失败两档都得有话说"
+    locked = [l for l in body.splitlines() if "locked" in l]
+    assert locked, "公司锁行（状态 1/2）要单独一档：那是这条已经不该再改了，不是失败"
+    assert all("失败" not in l for l in locked), "锁行那一档再说「失败」，人就以为整次白点了"
+    # 只写"已暂存"是不够的：公司那一发没进去，人得看见状态号和"不再收改动"才不会再点提交。
+    assert "c.status" in body and "不再收改动" in "".join(locked), \
+        "锁行那一档要报出状态号并说清不再收改动：" + "".join(locked)
+    assert "t.locked" in js and "MV.locked" in js, \
+        "锁过一次的票要记在票上：不然人每换一张都要再点一次提交才知道改不动"
     assert js.count(">暂存到公司</button>") == 2, "分单与主单两颗按钮要同名，只改一颗另一张表还在说旧口径"
     assert js.count("才会真的发送") >= 2, "悬停要写清只有提交才发送——这决定人会否误以为已经发出去了"
 
