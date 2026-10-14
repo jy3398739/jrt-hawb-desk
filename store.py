@@ -558,7 +558,10 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str 
             state_of = "parsed"
         if state and state_of != state:
             continue
-        row_mawb = e.get("mawb") or air.get("MAWB_NO", "") or st.get("mawb", "")
+        # 号以**人确认过的那份**为准：air 是模型解析的原样，人在核对区改对了号、暂存上去，
+        # air 一个字都不会变——把它排在暂存前面，改过号的票在台账与名下分单里就还挂着旧号
+        # （2026-10-14 现场）。提交过的仍以台账为准（那才是公司真正认识的那一行）。
+        row_mawb = e.get("mawb") or st.get("mawb") or air.get("MAWB_NO", "")
         if want_mawb and norm_no(row_mawb) != want_mawb:
             continue
         rows.append({"kind": "hawb", "stem": stem, "source_name": rec.get("source_name") or stem,
@@ -569,7 +572,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str 
                      "uploader_role": rec.get("uploader_role") or "",
                      "model": rec.get("model") or st.get("model") or "",
                      "mawb": row_mawb,
-                     "hawb": e.get("hawb") or air.get("HAWB_NO", "") or st.get("hawb", ""),
+                     "hawb": e.get("hawb") or st.get("hawb") or air.get("HAWB_NO", ""),
                      "flags": len(rec.get("flags") or []),
                      "needs_review": bool(rec.get("needs_review")),
                      "failed": bool(rec.get("error")),

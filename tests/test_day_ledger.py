@@ -62,6 +62,29 @@ def _ticket(stem, mawb="999-95764373", hawb="JRT28643", when=TODAY, flags=None, 
                          "flags": flags or [], "error": error})
 
 
+def test_a_corrected_house_number_wins_over_the_parsed_one():
+    """人照着票面把分单号改对并暂存之后，这一行报的必须是**他确认过的那个号**。
+    从前取的是 `output/air` 那份模型原样（人改它不会变），暂存里的新号排在它后面——
+    2026-10-14 现场：模型把 56115007026 抄成 BJS12113891，admin 改对并暂存，
+    「名下分单」还按旧号列着一行"公司侧还没有"，看着就是改了没生效（主单那侧一直是
+    `ams_final` 优先，分单这行是漏改的一处）。"""
+    with _sandbox():
+        import company_api
+        stem = "131-35377731分单"
+        # 模型两个号都抄错了：主单号抄成另一张、分单号抄成票面上那串数字
+        _ticket(stem, mawb="131-00000000", hawb="BJS12113891")
+        store.stage_ticket(stem, {"MAWB_NO": "131-35377731", "HAWB_NO": "56115007026",
+                                  "DEST_NAME": "AMS"}, "admin", "admin")
+        rows = store.ticket_rows(mawb="131-35377731")
+        assert len(rows) == 1, f"按改对的主单号就该找得到这张票：{[(r['stem'], r['mawb']) for r in rows]}"
+        assert rows[0]["hawb"] == "56115007026", f"行上还是模型抄错的那个号：{rows[0]}"
+        assert rows[0]["mawb"] == "131-35377731", f"主单号同理：{rows[0]}"
+        assert rows[0]["state"] == "staged"
+        pend = company_api.local_pending("131-35377731")
+        assert [(p["mawb"], p["hawb"]) for p in pend] == [("131-35377731", "56115007026")], \
+            f"名下分单那张表读的就是这份名单：{pend}"
+
+
 def test_rows_cover_only_that_day_and_join_the_three_sources():
     with _sandbox():
         _ticket("999-95764373JRT28643", when=TODAY, flags=["SHIPPER_INFO_TEL 缺区号"])
