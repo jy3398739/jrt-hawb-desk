@@ -464,7 +464,7 @@ def _sent_fingerprint(mawb: str, hawb: str, rec: dict) -> str:
 def submit(body: SubmitBody, user: dict = Depends(current_user)):
     """制单员提交：这是"回传公司 + 进索引"的唯一出口。
 
-    三道门都以服务端为准，不信前端（前端那道只是体验）：
+    前三道门都以服务端为准，不信前端（前端那道只是体验）：
     ① 主/分单号必须可归一化——复合键是"日后能否按号打开原件"的唯一连接键，缺号进索引等于塞坏数据；
     ② 红旗按**提交时刻的当前值**重算（`jobs.recompute_flags`，与解析时同一批判据同一套文案），
        未清的必须逐条 `acked_flags` 确认；改了值旧旗文案会变，自动要重新确认；
@@ -473,11 +473,16 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
        "没复核就发的"和"复核过才发的"混在一个数里。
     任一不过 → 400 且**一个公司请求都不发**（先整批门检，再逐张发，别提交一半）。
     复核人取登录会话身份。缺号≠处理失败：这里只挡提交，票的 L2/L3 早已落盘，补号后重新提交即可。
-    机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。"""
+    机批/监控/站点不经过这里，所以它们落的脏 output 永远进不了索引。
+
+    第四道门是**顺序**（2026-10-14 用户定案："提交的时候要先提交主单，再提交分单"）：这条分单
+    名下的主单还没提交发送就先别发。公司那边收一条指向不存在主单的分单，等于交付半套数据，
+    比两张都没发出去更难收拾。挡下时不去替人点主单那颗提交——那一发只能是人工那一下。"""
     tickets = body.tickets if isinstance(body.tickets, list) else []
     if not tickets:
         raise HTTPException(400, "没有待提交的票据")
-    passed = []
+    masters = store.master_ledger()      # 整批只读一次：循环里反复开台账是白费
+    passed, blocked, notes = [], {}, []
     for tk in tickets:
         if not isinstance(tk, dict):
             raise HTTPException(400, "票据格式不正确：tickets 里每一项都应是对象")
@@ -515,8 +520,24 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
                             f"{hawb} 没有录入员复核过的暂存记录："
                             "确认「未经录入员复核，仍要回传公司」后再提交"),
                 "ack": "no_inputter_review"})
+        # 顺序这一道：本机主单台账没记的，去问公司一次（可能别处已经发过了），再决定挡不挡。
+        # 放在最后是因为前面几道都是"这张票自己还没好"，先把内容说清，才轮到"先去做另一件事"。
+        mk = store.norm_no(mawb)
+        if mk not in masters:
+            verdict, why = company_api.master_sent(mawb)
+            if verdict == "not_sent":
+                blocked[mk] = mawb
+            elif verdict == "unknown":
+                notes.append(f"没读到主单 {mawb} 在公司侧的状态（{why}）："
+                             "本机台账说它没提交过，这次按你说的走")
         passed.append((tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty,
                        skipped_empty, self_submit))
+    if blocked:
+        names = "、".join(list(blocked.values())[:2])
+        more = "" if len(blocked) <= 2 else f" 等 {len(blocked)} 条"
+        raise HTTPException(400, {
+            "message": f"主单 {names}{more} 还没提交发送：先把主单交了，再回来提交它名下的分单",
+            "ack": "master_first", "mawb": next(iter(blocked.values()))})
     results, codes = [], []
     for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty, self_submit in passed:
         # 逐张收集成败，不在第一张错上 raise：/submit 收的是列表，前面几张已经写进公司库了，
@@ -564,7 +585,7 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             "message": f"{len(bad)} 张没发出去（{bad[0]['error']}）"
                        + (f"；另外 {n_ok} 张已成功并发出，台账已记，别再重发这批" if n_ok else ""),
             "results": results})
-    return {"ok": True, "results": results}
+    return {"ok": True, "results": results, "notes": notes}
 
 
 class StageBody(BaseModel):

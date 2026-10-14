@@ -331,6 +331,40 @@ def stage_master(payload: dict) -> dict:
     return _master_write(payload, False)
 
 
+def master_sent(mawb: str) -> tuple:
+    """这条主单在公司那边算不算已经提交发送：`("sent"|"not_sent"|"unknown", 一句话)`。
+
+    给「先提交主单，再提交分单」那道门用（2026-10-14 用户定案）。本机主单台账只记得从这台
+    机器发出去的那些，而主单可能是公司那边或另一处先录好、已经发送的——只认本机台账就会
+    把那种情况挡错，所以要再去问一次状态：`≥1`（已提交发送 / 外围已发送成功）= sent，
+    `0` 或公司那边根本没这条 = not_sent，问不出来 = unknown。
+
+    **只读**：这道门要是顺手把主单也发了，就等于系统替人按了那颗提交。
+    mock 模式没有公司可问，回 not_sent 是真的——那个世界里它确实没发出去过；
+    但 live 却没配 URL/key，那是配置坏了，回 unknown 让人去修，别当成"没发"卡住整条链。
+    """
+    m = _norm_mawb(mawb)
+    if not m:
+        return "not_sent", "没有主单号"
+    if config.COMPANY_API_MODE != "live":
+        return "not_sent", ""
+    if not config.COMPANY_API_URL or not config.COMPANY_MAWB_KEY:
+        return "unknown", "live 模式缺 COMPANY_API_URL / COMPANY_MAWB_KEY"
+    try:
+        rows = _j9_post("/api/v1/j9/mawb/", {"master_no": m},
+                        config.COMPANY_MAWB_KEY)["data"] or []
+    except (CompanyApiError, CompanyNotConfigured, CompanyPreReadFailed) as e:
+        return "unknown", str(e)[:160]
+    if not rows:
+        return "not_sent", ""
+    status = (rows[0].get("AMS_RECORD") or {}).get("SEND_STATUS")
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        status = 0
+    return ("sent" if status >= 1 else "not_sent"), ""
+
+
 def order_record(mawb: str, hawb: str, air: dict, existing: dict | None) -> dict:
     """拼整表写回的 `HAWB_RECORD`：公司读回来的原值打底 → 我方解析值覆盖 → 没给的列补 null 占位。
 

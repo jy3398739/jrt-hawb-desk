@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import auth
+import company_api
 import config
 import server
 import web_src
@@ -31,25 +32,34 @@ def _clean_ticket(stem="CLA26090022", mawb="235-96146363", hawb="CLA26090022"):
 
 
 @contextlib.contextmanager
-def _desk_dirs(tmp: Path, air: dict | None = None, qc_extra: dict | None = None):
+def _desk_dirs(tmp: Path, air: dict | None = None, qc_extra: dict | None = None,
+               master_sent: bool = True):
     """把提交/暂存这条链路会读写的目录全指到临时目录，并备好这张票的 L3 与质检。
 
     一个都不能漏指：少指 OUTPUT_RAW_DIR 那次，用例往运维机的真 output/raw 落了一份假 L2，
     本机因为残留同名文件查不出来，是部署时的回归闸门在干净机器上才抓到的。
+
+    `master_sent=True` 是 2026-10-14 那条「先提交主单再提交分单」的**前置**：分单提交门读的是
+    主单台账，所以这里必须一并把 MASTER_DIR / MASTER_LEDGER 指开——不指开的话，那道门就在读
+    这台机器真 output 里的主单台账，换台机器同一批用例结果就不同。要测门本身就用
+    `master_sent=False`。
     """
     stem = "CLA26090022"
+    mawb = "235-96146363"
     old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
            config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR,
-           config.TRANSCRIPT_DIR, config.SUBMIT_GUARD_DIR, auth.USERS_FILE)
+           config.TRANSCRIPT_DIR, config.SUBMIT_GUARD_DIR, config.MASTER_DIR,
+           config.MASTER_LEDGER, auth.USERS_FILE)
     try:
         config.SUBMIT_LEDGER, config.ARCHIVE_DIR = tmp / "submitted.json", tmp / "archive"
         config.STAGED_DIR, config.SUBMIT_GUARD_DIR = tmp / "staged", tmp / "submit_guard"
         config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR = tmp / "air", tmp / "raw"
         config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR = tmp / "qc", tmp / "transcript"
+        config.MASTER_DIR, config.MASTER_LEDGER = tmp / "master", tmp / "master_submitted.json"
         auth.USERS_FILE = tmp / "users.json"
         for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
                   config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
-                  config.SUBMIT_GUARD_DIR):
+                  config.SUBMIT_GUARD_DIR, config.MASTER_DIR):
             p.mkdir(parents=True)
         (config.ARCHIVE_DIR / stem).mkdir()
         a = {"MAWB_NO": "235-96146363", "HAWB_NO": stem, "DEST_NAME": "LAX"}
@@ -62,11 +72,36 @@ def _desk_dirs(tmp: Path, air: dict | None = None, qc_extra: dict | None = None)
               "flags": [], "error": ""}
         qc.update(qc_extra or {})
         store.save_qc(stem, qc)
+        if master_sent:
+            sent_master(a.get("MAWB_NO") or mawb)
         yield
     finally:
         (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
          config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
-         config.SUBMIT_GUARD_DIR, auth.USERS_FILE) = old
+         config.SUBMIT_GUARD_DIR, config.MASTER_DIR, config.MASTER_LEDGER,
+         auth.USERS_FILE) = old
+
+
+def _masters_in(tmp: Path, master_sent: bool = True):
+    """主单那两处指进临时目录，并按需预置「这条主单已提交发送」——返回还原用的 undo。
+
+    分单提交门读的就是主单台账，所以每个"期望提交成功"的用例都需要这条前置；让它去读这台
+    机器真 output 里的主单台账，等于把用例结果绑在机器上。用 `_desk_dirs` 的用例不必再调这里。
+    """
+    old = (config.MASTER_DIR, config.MASTER_LEDGER)
+    config.MASTER_DIR, config.MASTER_LEDGER = tmp / "master", tmp / "master_submitted.json"
+    config.MASTER_DIR.mkdir(parents=True, exist_ok=True)
+    if master_sent:
+        sent_master()
+
+    def undo():
+        config.MASTER_DIR, config.MASTER_LEDGER = old
+    return undo
+
+
+def sent_master(mawb: str = "235-96146363", by: str = "马殿齐"):
+    """写一条「这条主单已提交发送」进主单台账——用的就是真那条链落的同一个函数。"""
+    return store.mark_master_submitted(mawb, by, {"mode": "mock"})
 
 
 def test_norm_no_and_composite_key():
@@ -161,6 +196,7 @@ def test_submit_clean_writes_ledger_mock_receipt():
     config.ARCHIVE_DIR = tmp / "archive"
     (config.ARCHIVE_DIR / "CLA26090022").mkdir(parents=True)   # 提交过的票，原件就在归档里
     old_users = auth.USERS_FILE
+    undo_masters = _masters_in(tmp)
     try:
         client = _logged_client(tmp)
         r = client.post("/submit", json={"tickets": [_clean_ticket()]})
@@ -170,6 +206,7 @@ def test_submit_clean_writes_ledger_mock_receipt():
         assert store.ledger()["CLA26090022"]["key"] == "23596146363|CLA26090022"
         assert store.lookup_stem("235-96146363", "CLA26090022") == "CLA26090022"
     finally:
+        undo_masters()
         auth.USERS_FILE = old_users
         config.SUBMIT_LEDGER = old_ledger
         config.ARCHIVE_DIR = old_arc
@@ -199,6 +236,7 @@ def test_submit_records_acked_flags_in_ledger():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
     config.SUBMIT_LEDGER = tmp / "submitted.json"
     old_users = auth.USERS_FILE
+    undo_masters = _masters_in(tmp)
     try:
         client = _logged_client(tmp)
         acked = ['CONSIGNEE_INFO_TEL 的电话区号 +39(IT) 与 CONSIGNEE_INFO_COUNTRY IS 不一致，疑似电话串边']
@@ -211,6 +249,7 @@ def test_submit_records_acked_flags_in_ledger():
         assert r.status_code == 200, r.text
         assert store.ledger()["TAO2"]["acked_flags"] == []
     finally:
+        undo_masters()
         auth.USERS_FILE = old_users
         config.SUBMIT_LEDGER = old_ledger
         shutil.rmtree(tmp, ignore_errors=True)
@@ -225,6 +264,7 @@ def test_server_recomputes_house_flags_and_blocks_unacked():
     config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
     config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
     old_users = auth.USERS_FILE
+    undo_masters = _masters_in(tmp)
     try:
         client = _logged_client(tmp)
         tk = _clean_ticket()
@@ -245,6 +285,7 @@ def test_server_recomputes_house_flags_and_blocks_unacked():
         assert r2.status_code == 200, r2.text
         assert store.ledger()["CLA26090022"]["acked_flags"] == flags, "人工确认要留痕"
     finally:
+        undo_masters()
         auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
                           config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -317,11 +358,13 @@ def test_submit_without_l2_on_disk_invents_no_flags():
     config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
     config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
     old_users = auth.USERS_FILE
+    undo_masters = _masters_in(tmp)
     try:
         client = _logged_client(tmp)
         r = client.post("/submit", json={"tickets": [_clean_ticket()]})
         assert r.status_code == 200, r.text
     finally:
+        undo_masters()
         auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
                           config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -335,6 +378,7 @@ def test_reviewer_is_the_session_identity_not_the_payload():
     config.SUBMIT_GUARD_DIR = tmp / "submit_guard"
     config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
     old_users = auth.USERS_FILE
+    undo_masters = _masters_in(tmp)
     try:
         auth.USERS_FILE = tmp / "users.json"
         auth.ensure_seed()
@@ -346,6 +390,7 @@ def test_reviewer_is_the_session_identity_not_the_payload():
         assert c.post("/submit", json={"tickets": [tk]}).status_code == 200
         assert store.ledger()["CLA26090022"]["reviewer"] == "宛平", "留痕要取会话身份"
     finally:
+        undo_masters()
         auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
                           config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -360,6 +405,7 @@ def test_ledger_records_what_was_actually_sent():
     config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
     old_users = auth.USERS_FILE
     real_submit = server._company_submit
+    undo_masters = _masters_in(tmp)
     try:
         # 公司回执形状照 live 那样（回归默认 mock，mock 没有 action/before，不能拿它验留痕字段）
         server._company_submit = lambda payload: {"mode": "live", "accepted": True,
@@ -375,6 +421,7 @@ def test_ledger_records_what_was_actually_sent():
         assert e["before"] == {"PIECES": 5}, "提交前读到的公司原行要留一份（整表写回出事时靠它看抹掉了什么）"
     finally:
         server._company_submit = real_submit
+        undo_masters()
         auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
                           config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -392,6 +439,7 @@ def test_submit_is_logged_with_who_and_result():
     config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR = tmp / "nol2", tmp / "notrans"
     old_users = auth.USERS_FILE
     got = []
+    undo_masters = _masters_in(tmp)
 
     class _Cap(logging.Handler):
         def emit(self, record):
@@ -407,6 +455,7 @@ def test_submit_is_logged_with_who_and_result():
     finally:
         server.LOG.removeHandler(handler)
         server.LOG.setLevel(lvl)
+        undo_masters()
         auth.USERS_FILE, (config.SUBMIT_LEDGER, config.SUBMIT_GUARD_DIR,
                           config.OUTPUT_RAW_DIR, config.TRANSCRIPT_DIR) = old_users, old
         shutil.rmtree(tmp, ignore_errors=True)
@@ -446,6 +495,7 @@ def test_company_submit_failure_is_logged_with_the_numbers():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))
     config.SUBMIT_LEDGER, auth.USERS_FILE = tmp / "submitted.json", tmp / "users.json"
     got = []
+    undo_masters = _masters_in(tmp)
 
     class _Cap(logging.Handler):
         def emit(self, record):
@@ -467,6 +517,7 @@ def test_company_submit_failure_is_logged_with_the_numbers():
     finally:
         server.LOG.removeHandler(handler)
         server.LOG.setLevel(lvl)
+        undo_masters()
         server._company_submit, config.SUBMIT_LEDGER, auth.USERS_FILE = old_submit, old_ledger, old_users
         shutil.rmtree(tmp, ignore_errors=True)
     assert any("96146363" in m and "CLA26090022" in m and "超长" in m for m in got), \
@@ -504,6 +555,7 @@ def test_submit_records_what_was_actually_sent_and_who_staged_it():
     old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR,
            config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR,
            config.TRANSCRIPT_DIR, auth.USERS_FILE)
+    undo_masters = _masters_in(tmp)          # 分单提交门的前置：这条主单已经发出去了
     try:
         config.SUBMIT_LEDGER = tmp / "submitted.json"
         config.ARCHIVE_DIR = tmp / "archive"
@@ -542,6 +594,7 @@ def test_submit_records_what_was_actually_sent_and_who_staged_it():
         assert st["submitted_at"] and st["submitter"] == "马殿齐", st
         assert st["sent_fingerprint"] == e["sent_fingerprint"], "两边指纹对不上，盖章等于没盖"
     finally:
+        undo_masters()
         (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
          config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
          auth.USERS_FILE) = old
@@ -719,3 +772,212 @@ def test_the_confirm_wording_comes_from_the_server_only():
     之后，后面那半句还在，等于系统替自己说了一句它不该说的话。话只由服务端出，前端只画。"""
     js = web_src.part("js/desk.js")
     assert "确认「未经录入员复核，仍要回传公司」" not in js, "前端还在自己拼那句确认话"
+
+
+# ── 主单先于分单（2026-10-14 用户定案：提交的时候要先提交主单，再提交分单）────────
+def _live_read(sent, status=0, boom=None):
+    """只把公司 HTTP 那一层换成假的：读主单状态走它，写不写分单由用例自己盯。
+
+    `status=None` = 公司那边读回空（这条主单从没录过）；`boom` = 这次读失败。
+    """
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+           config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY = config.COMPANY_HAWB_KEY = "k"
+    real = company_api._j9_post
+
+    def fake(path, body, key, timeout=None):
+        sent.append(path)
+        if boom is not None:
+            raise boom
+        if status is None:
+            return {"code": 0, "data": []}
+        return {"code": 0, "data": [{"AMS_RECORD": {"SEND_STATUS": status}}]}
+
+    company_api._j9_post = fake
+
+    def undo():
+        company_api._j9_post = real
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old
+    return undo
+
+
+def _no_write_outside():
+    """把分单的提交发送出口打成 raise：挡下的那一下必须连一次公司写请求都不发。"""
+    return lambda *a, **k: (_ for _ in ()).throw(AssertionError("主单还没发就碰了公司写口"))
+
+
+def test_house_submit_is_blocked_until_its_master_is_sent():
+    """主单还没提交发送时，这张分单不许走：半套数据先进公司库，比两张都没发更难收拾
+    （分单那行指向的主单还不存在，外围取数取到的是缺主单的一条）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    old_submit = server._company_submit
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            server._company_submit = _no_write_outside()
+            client = _logged_client(tmp)
+            r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r.status_code == 400, f"主单没发，分单该被挡下：{r.status_code} {r.text[:160]}"
+            d = r.json()["detail"]
+            assert d.get("ack") == "master_first", f"要给出前端接得住的那个 ack：{d}"
+            assert store.norm_no(str(d.get("mawb"))) == "23596146363", f"得点名是哪条主单：{d}"
+            assert store.ledger() == {}, "被挡下的提交不许进台账/索引"
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_master_sent_afterwards_lets_the_house_through():
+    """门不是死路：人去把主单交了（主单那颗提交，不是系统代点），同一张分单就该放行。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            client = _logged_client(tmp)
+            assert client.post("/submit", json={"tickets": [_clean_ticket()]}).status_code == 400
+            sent_master()
+            r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r.status_code == 200, f"主单已发出，分单不该再被挡：{r.status_code} {r.text[:160]}"
+            assert store.ledger()["CLA26090022"]["key"] == "23596146363|CLA26090022"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_master_sent_by_somebody_else_counts_as_sent():
+    """本机主单台账只记得从这台机器发出去的：主单可能是公司那边（或另一台机器）先录好、
+    已经发送的。那种情况挡人就是挡错了——所以本机没记的时候要去问公司一次状态。"""
+    import j9_fake
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    old_submit = server._company_submit
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            sent = []
+            undo = _live_read(sent, status=1)
+            server._company_submit = lambda p: {"mode": "mock", "accepted": True}
+            try:
+                client = _logged_client(tmp)
+                r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+                assert r.status_code == 200, f"公司侧状态=1 就是已发出：{r.status_code} {r.text[:160]}"
+                assert any(p.endswith("/mawb/") for p in sent), f"该问过公司一次：{sent}"
+                assert all(not j9_fake.is_write(p) for p in sent), \
+                    f"这道门只许读，不许替人把主单发出去：{sent}"
+            finally:
+                undo()
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_master_the_company_never_had_is_still_blocked():
+    """公司读回空列表＝这条主单从没录过，确实没发：照样挡。
+    少了这条，上面那条"读到状态就放行"就没人证明它不是一路绿灯。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    old_submit = server._company_submit
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            sent = []
+            undo = _live_read(sent, status=None)
+            server._company_submit = _no_write_outside()
+            try:
+                client = _logged_client(tmp)
+                r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+                assert r.status_code == 400, f"公司那边没这条主单，分单不该走：{r.text[:160]}"
+                assert r.json()["detail"].get("ack") == "master_first"
+            finally:
+                undo()
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_master_read_that_fails_does_not_hold_the_house_back():
+    """读不到 ≠ 没发：公司接口抖动时把整条提交链卡死，人只会当作系统坏了。
+    分单写口自己还要先读后写，真有问题公司会拦。但这次"没验成"要如实说出来，别让人以为查过主单。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    old_submit = server._company_submit
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            sent = []
+            undo = _live_read(sent, boom=company_api.CompanyApiError("j9 连不上：timed out"))
+            server._company_submit = lambda p: {"mode": "mock", "accepted": True}
+            try:
+                client = _logged_client(tmp)
+                r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+                assert r.status_code == 200, f"问不出主单状态不该卡住分单：{r.status_code} {r.text[:160]}"
+                notes = r.json().get("notes") or []
+                assert notes and "235-96146363" in " ".join(notes), f"要说明哪条没验成：{notes}"
+            finally:
+                undo()
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_mock_mode_never_asks_the_company_about_the_master():
+    """mock 模式一条请求都不许出网，这道门在 mock 下只认本机台账。
+    判据本身不随模式变（有=放行、没有=挡），变的只是查得到的来源——写成两套判据的话，
+    回归绿而线上挡人就是必然（这条链已经踩过一次）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    real = company_api._j9_post
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            company_api._j9_post = _no_write_outside()
+            client = _logged_client(tmp)
+            r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r.status_code == 400, f"mock 下也该按台账挡：{r.status_code} {r.text[:160]}"
+            assert r.json()["detail"].get("ack") == "master_first"
+    finally:
+        company_api._j9_post = real
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_number_gate_still_answers_first():
+    """主单号都没填就先报缺号：门读的就是这个号，号是空的时候报「主单还没提交发送」
+    是把因果关系说反了，人还会以为去发主单就行。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            client = _logged_client(tmp)
+            r = client.post("/submit", json={"tickets": [_clean_ticket(mawb="")]})
+            d = r.json()["detail"]
+            assert r.status_code == 400 and (isinstance(d, str) or d.get("ack") != "master_first"), \
+                f"缺号要先答缺号：{d}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_batch_under_one_unsent_master_is_blocked_once():
+    """整批门检的语义不能破：两张分单挂同一条没发的主单，只回一句、一个公司请求都不发。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_order_"))
+    old_submit = server._company_submit
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            server._company_submit = _no_write_outside()
+            client = _logged_client(tmp)
+            t1 = _clean_ticket(stem="H1", hawb="H1")
+            t2 = _clean_ticket(stem="H2", hawb="H2")
+            r = client.post("/submit", json={"tickets": [t1, t2]})
+            assert r.status_code == 400, r.text[:160]
+            d = r.json()["detail"]
+            assert d.get("ack") == "master_first" and str(d.get("mawb")) == "235-96146363", d
+            assert d["message"].count("235-96146363") == 1, f"同一条主单别说两遍：{d['message']}"
+            assert store.ledger() == {}
+    finally:
+        server._company_submit = old_submit
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_desk_walks_the_human_to_the_master_instead_of_clicking_it():
+    """挡下那一下不能只是一句报错：要能把人带去主单核对页。
+    但「送入主单核对」那段只许有一份——卡片那颗按钮与这道门的跳转各抄一遍，
+    迟早一边改了另一边没改（这块已经为"两处抄一份"修过三次）。
+    跳转里绝不许出现主单的提交口：那一发永远是人工那一下。"""
+    js = web_src.part("js/desk.js")
+    assert 'master_first' in js, "前端没接住这道门的 ack，人只会看见一句光秃秃的 HTTP 400"
+    assert "function gotoMaster" in js, "挡下之后没有那条去路"
+    assert js.count("function openMvFromMst") == 1, "开主单核对页的代码不止一份"
+    # 断言只能落在 gotoMaster 这一段里：拿 split(...)[1][:1200] 会一路吃到隔壁函数，
+    # 从 addEventListener 那份共用调用里蒙对（M12 变异就是这样活的）。
+    jump = web_src.fn(js, "async function gotoMaster(mawb)")
+    assert "openMvFromMst(" in jump, "跳转没走那份共用的开页代码，自己另抄一段迟早漂移"
+    assert "/master/submit" not in jump, "跳转里不许自动提交主单：那一发只能是人工点"

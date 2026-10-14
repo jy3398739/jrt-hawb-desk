@@ -1049,18 +1049,28 @@ async function submitTicket(t, ackNoReview){
   if (ackNoReview) p.acked_no_review = true;   // 只在人确认过之后才带，不许默认替人确认
   const body = {tickets:[p], submitted_at:nowTxt(), client:"hawb-review-desk/1.0"};
   t.state = "submitting"; render();
-  let pending = false;
+  let pending = false, notes = [];
   try{
     const r = await fetch(SUBMIT_URL, {method:"POST", headers:{"Content-Type":"application/json"},
                                        body:JSON.stringify(body)});
     if (r.status === 404 || r.status === 405) pending = true;
     else {
       const j = await r.json().catch(() => ({ok:false, error:"返回不是 JSON（HTTP " + r.status + "）"}));
+      notes = Array.isArray(j.notes) ? j.notes : [];
       if (!r.ok || j.ok === false){
         // 服务端 400 的 detail 可能是字符串（缺号），也可能是 {message, flags}（红旗未清）
         // 或 {message, ack}（没人复核过）：不把 message 挖出来，制单员只会看到光秃秃一句
         // "HTTP 400"，不知道该改哪。
         const d = j.detail;
+        if (d && d.ack === "master_first"){
+          /* 顺序这一道（2026-10-14 用户定案：先提交主单，再提交分单）：服务器说这张分单名下
+             的主单还没提交发送。这里只负责把人带过去——主单那颗提交永远是人工那一下，
+             不许在这条路径上替他点。 */
+          t.state = "done"; render();
+          if (confirm((d.message || "这张分单的主单还没提交发送。") + "\n\n点「确定」过去交主单，回来再提交这张分单。"))
+            gotoMaster(String(d.mawb || reviewed(t).MAWB_NO || ""));
+          return;
+        }
         if (d && d.ack === "no_inputter_review"){
           // 第三道门：服务器说这张票没有录入员复核过的暂存记录。问一次，点了确认才重发；
           // 不点就当没发生过——绝不能自己替他确认。
@@ -1090,6 +1100,9 @@ async function submitTicket(t, ackNoReview){
   }
   t.state = "done"; t.submitted = {mode:"server", at:nowTxt()};
   dropDraft(t.stem); render(); toast("已提交：" + t.stem, "ok");
+  /* 回执里服务端随带的话要露头（比如"没读到这条主单在公司侧的状态，这次按你说的走"）：
+     它没让提交失败，但也不等于验过了——不说，人就会以为顺序已经替他把过关。 */
+  notes.forEach(n => toast(String(n), ""));
 }
 function exportTickets(list, name){
   if (!list.length){ toast("没有可导出的票据", "bad"); return; }
@@ -2401,23 +2414,41 @@ $("#mstHawbBox").addEventListener("click", e => {
   e.preventDefault(); openHouse(a.dataset.open);
 });
 $("#mstNo").addEventListener("keydown", e => { if (e.key === "Enter") mstSearch(false); });
-$("#mstResult").addEventListener("click", async e => {
-  const use = e.target.closest("[data-mv]");
-  if (use){
-    if (!MST_LAST) return;
-    if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
-    MV = {mawb: use.dataset.mv, order: MST_LAST.mawb_order || {}, rec: {},
-          edit: {}, editBase: {}, acked: [], extraFlags: [], conflicts: [], msg: "", submitted: null};
-    mvSetRec(MST_LAST.master || {});
-    render(); mvPoll();
-    $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静
-    toast((Object.keys(MV.edit).length
-            ? "已载入主单 " + MV.mawb + "：本机未提交的 " + Object.keys(MV.edit).length + " 列改动已恢复"
-              + (MV.conflicts.length ? "（其中 " + MV.conflicts.length + " 列与最新解析对不上，见下方红条）" : "")
-            : "已载入主单 " + MV.mawb + " 的解析结果")
-          + "（36 列可改，提交前由服务端重算红旗）", "ok");
+/* 打开主单核对页的唯一入口：卡片里那颗「送入主单核对」与「主单还没提交发送」那道门的跳转
+   共用这一份。两处各抄一遍，迟早一边改了另一边没改（这块已经为同一件事修过三次）。 */
+function openMvFromMst(mawb){
+  if (!MST_LAST || !mawb) return false;
+  if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
+  MV = {mawb: mawb, order: MST_LAST.mawb_order || {}, rec: {},
+        edit: {}, editBase: {}, acked: [], extraFlags: [], conflicts: [], msg: "", submitted: null};
+  mvSetRec(MST_LAST.master || {});
+  render(); mvPoll();
+  $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静
+  toast((Object.keys(MV.edit).length
+          ? "已载入主单 " + MV.mawb + "：本机未提交的 " + Object.keys(MV.edit).length + " 列改动已恢复"
+            + (MV.conflicts.length ? "（其中 " + MV.conflicts.length + " 列与最新解析对不上，见下方红条）" : "")
+          : "已载入主单 " + MV.mawb + " 的解析结果")
+        + "（36 列可改，提交前由服务端重算红旗）", "ok");
+  return true;
+}
+/* 分单提交被"先主单后分单"那道门挡下来时走这里：把人带到那条主单的核对页，
+   过去由他自己点主单那颗提交。这个函数里出现 /master/submit 就是越界——那一发只能是人工。 */
+async function gotoMaster(mawb){
+  if (!mawb){ toast("这张分单没写主单号：先补上主单号", "bad"); return; }
+  setView("desk");
+  $("#mstNo").value = mawb;
+  await mstSearch(false);
+  /* 检索没回来（号在公司查不到、或回来的根本不是这条）就别开页：
+     开一张空核对页，人只会当成系统坏了。 */
+  if (!MST_LAST || L.normNo(String(MST_LAST.mawb || "")) !== L.normNo(mawb)){
+    toast("主单 " + mawb + " 没检索回来：先去「主单检索」看清原因，再提交这张分单", "bad");
     return;
   }
+  openMvFromMst(mawb);
+}
+$("#mstResult").addEventListener("click", e => {
+  const use = e.target.closest("[data-mv]");
+  if (use) openMvFromMst(use.dataset.mv);
 });
 /* ── 三个视图（§3.3）：核对工作台 / 今日台账 / 统计，同一页互切，票据与草稿都不重载 ─────
    今日台账读 /day：那一天这台机器经手过哪些票、谁提交的、还有几张没回公司。

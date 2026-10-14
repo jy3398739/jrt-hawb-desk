@@ -307,26 +307,32 @@ AIR = {"MAWB_NO": "235-96146363", "HAWB_NO": "CLA26090022", "DEST_NAME": "LAX",
 @contextlib.contextmanager
 def _desk(tmp: Path, air: dict):
     """把提交这一程会读写的目录全指到临时目录，并落好这张票的 L3（L2 故意不落盘：
-    没落盘时服务端按「L3 空即空」算，用例只关心空栏留痕，不必再造一份 L2）。"""
+    没落盘时服务端按「L3 空即空」算，用例只关心空栏留痕，不必再造一份 L2）。
+
+    主单那两处也必须指开并预置「已提交发送」：分单提交门读的就是主单台账（2026-10-14 定案
+    先主单再分单）。不指开的话，这道门就在读这台机器真 output 里的主单台账，换台机器结果就不同。
+    """
     stem = "CLA26090022"
     old = (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
            config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
-           config.SUBMIT_GUARD_DIR, auth.USERS_FILE)
+           config.SUBMIT_GUARD_DIR, config.MASTER_DIR, config.MASTER_LEDGER, auth.USERS_FILE)
     try:
         config.SUBMIT_LEDGER, config.ARCHIVE_DIR = tmp / "submitted.json", tmp / "archive"
         config.STAGED_DIR, config.SUBMIT_GUARD_DIR = tmp / "staged", tmp / "submit_guard"
         config.OUTPUT_AIR_DIR, config.OUTPUT_RAW_DIR = tmp / "air", tmp / "raw"
         config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR = tmp / "qc", tmp / "transcript"
+        config.MASTER_DIR, config.MASTER_LEDGER = tmp / "master", tmp / "master_submitted.json"
         auth.USERS_FILE = tmp / "users.json"
         for p in (config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
                   config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
-                  config.SUBMIT_GUARD_DIR):
+                  config.SUBMIT_GUARD_DIR, config.MASTER_DIR):
             p.mkdir(parents=True)
         (config.ARCHIVE_DIR / stem).mkdir()
         (config.OUTPUT_AIR_DIR / f"{stem}.json").write_text(
             json.dumps(air, ensure_ascii=False), encoding="utf-8")
         store.save_qc(stem, {"source_name": stem + ".pdf", "channel": "vlm",
                              "processed_at": "2026-10-10T09:00:00", "flags": [], "error": ""})
+        store.mark_master_submitted(air.get("MAWB_NO") or "235-96146363", "admin", {"mode": "mock"})
         auth.ensure_seed()
         client = TestClient(server.app)
         r = client.post("/login", json={"name": "admin", "password": "admin123"})
@@ -335,7 +341,8 @@ def _desk(tmp: Path, air: dict):
     finally:
         (config.SUBMIT_LEDGER, config.ARCHIVE_DIR, config.STAGED_DIR, config.OUTPUT_AIR_DIR,
          config.OUTPUT_RAW_DIR, config.OUTPUT_QC_DIR, config.TRANSCRIPT_DIR,
-         config.SUBMIT_GUARD_DIR, auth.USERS_FILE) = old
+         config.SUBMIT_GUARD_DIR, config.MASTER_DIR, config.MASTER_LEDGER,
+         auth.USERS_FILE) = old
         shutil.rmtree(tmp, ignore_errors=True)
 
 
