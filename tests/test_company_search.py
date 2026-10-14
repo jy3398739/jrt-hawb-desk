@@ -434,7 +434,7 @@ def test_send_status_wording_keeps_our_submit_and_company_send_apart():
     assert "已提交发送" in html and "等外围" in html, "1 还没发出去，别写成「公司已发送」"
     assert "已发送成功" in html and "锁定" in html, "2 才是发出去了，而且改不动"
     assert "已改·待公司重发" not in html and "待公司重发" not in html, "旧措辞会让人以为 2 还能改"
-    assert "o.submitted_here" in tab, "本台没提交过的分单要写明白，不能只留一个「—」让人猜"
+    assert "r.submitted_here" in tab, "本台没提交过的分单要写明白，不能只留一个「—」让人猜"
 
 
 def test_party_id_hint_says_tax_numbers_share_the_eori_cell():
@@ -456,3 +456,26 @@ def test_mock_rows_also_carry_submitted_here():
         assert o["submitted_here"] is True, f"mock 行该标成本台已提交: {o}"
     finally:
         _restore(old, tmp)
+
+
+def test_pending_rows_carry_when_they_were_parsed():
+    """本机同一个分单号可能有几份未提交的副本（传了两次），表上要合成一行并点开最新那份，
+    而 `pending` 从前不带解析时刻，前端就没有「最新」可判。"""
+    cols = set(company_api._PENDING_COLS)
+    assert "processed_at" in cols, "未提交副本要带解析时刻，否则分不出新旧"
+    assert "source_name" in cols, "点开的是哪一份，得能报出原始文件名"
+
+
+def test_house_table_draws_one_line_per_hawb_number():
+    """名下分单那张表从前是「公司的行一段 + 本机的行一段」拼起来的：同一张票传过两次就三行
+    （2026-10-13 用户截图：BJS7080646 三行，一行来自公司、两行是本机两份未提交）。
+    合并算式交 L.hawbRows，渲染只认它吐出的那一份行。"""
+    tab = _fn(web_src.desk(), "mstTable")
+    assert "pend.map" not in tab and "list.map" not in tab, \
+        "不许再各画一遍两段：行由 L.hawbRows 合并好才交给它"
+    assert "r.copies" in tab, "本机同一号有几份要在行上说清，不能悄悄丢掉一份"
+    assert "r.via" in tab, "「点开的是哪一份」的主语只能由合并那一处给：公司行没带原件时" \
+                           "链接落的是本机副本，拿 r.company 说事就会指错（浏览器复验抓到的）"
+    render = _fn(web_src.desk(), "mstRender")
+    assert "L.hawbRows" in render, "合并只在这一处算"
+    assert "mstTable(rows" in render, "表与卡头上的张数吃同一份合并结果"

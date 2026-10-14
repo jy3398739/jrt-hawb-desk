@@ -201,7 +201,7 @@ def test_submit_records_acked_flags_in_ledger():
     old_users = auth.USERS_FILE
     try:
         client = _logged_client(tmp)
-        acked = ['CONSIGNEE 电话区号 +39(IT) 与国家 IS 不一致，疑似电话串边']
+        acked = ['CONSIGNEE_INFO_TEL 的电话区号 +39(IT) 与 CONSIGNEE_INFO_COUNTRY IS 不一致，疑似电话串边']
         r = client.post("/submit", json={"tickets": [dict(_clean_ticket(), acked_flags=acked)]})
         assert r.status_code == 200, r.text
         led = store.ledger()["CLA26090022"]
@@ -486,7 +486,7 @@ def test_desk_master_search_reads_pending_from_the_server():
     i = html.index("function mstRender(")
     body = html[i:i + 900]
     assert "j.pending" in body, "检索响应里的 pending 没用上"
-    assert "mstTable(list, pend)" in body
+    assert "mstTable(rows)" in body, "表吃的是按号合并好的那一份行（见 L.hawbRows）"
     assert "drafts()" not in body, "待提交名单不许再读浏览器暂存"
     assert "提交回公司" in html, "空表要说明白：先提交，公司才有这条分单"
     assert "暂存" in html, "空表还要指出中间那一档：同事暂存过的票也在这张表里"

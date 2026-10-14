@@ -1301,3 +1301,68 @@ def test_a_window_that_scrolls_itself_keeps_its_header_pinned_to_its_own_top():
         assert m, sel + "：没有把表头重新钉住的规则"
         assert re.search(r"(^|[;{\s])top:0\s*(;|$)", m.group(1)), \
             sel + "：表头的 sticky top 还挂着整页那个偏移，会浮在列表中间"
+
+
+# ── 主单只有解析缓存、没有原件目录时的删除权（2026-10-13 线上撞出来的）────────
+
+
+def _master_only(mkey, touched=OLD):
+    """只摆一份主单解析缓存，**不摆** `output/mawb_source/<号>/`。
+    这才是线上的真实形状：那个原件目录到今天没有任何一处生产代码会写它
+    （`/mawb/source` 的 404 文案自己写着"公司主单原件接口待 IT"）。"""
+    f = config.MASTER_DIR / (mkey + ".json")
+    f.write_text(json.dumps({"mawb": mkey, "state": "done"}), encoding="utf-8")
+    _backdate([f], touched)
+    return f
+
+
+def test_a_master_with_no_original_directory_is_still_deletable():
+    """从前 `plan()` 与 `refuse()` 拿 `store.mawb_source_dir()` 当"这个主单号合不合法"用，
+    可它同时要求**原件目录存在**——而线上根本没有那个目录，于是名册里每一张主单都删不掉，
+    面板还回一句"这个单号/票名不合法（带路径分隔符或太长）"（2026-10-13 用户撞见 99994781525）。
+    合法性判据换成 `mawb_source_key()`：只看字符集与长度，不问目录在不在。"""
+    with _world() as t:
+        m = "99994781525"
+        _master_only(m)
+        assert not (config.MAWB_SOURCE_DIR / m).exists(), "夹具别把要验的那一格顺手补上"
+        assert m in {i["key"].split("|")[-1] for i in purge.candidates(30, now=NOW, only_aged=False)}, \
+            "名册是按 master/ 缓存扫的，这张主单得先出现在面板上"
+        p = purge.plan("mawb", m, 30, now=NOW)
+        assert p is not None, "只有解析缓存的主单也该能删"
+        assert str(config.MASTER_DIR / (m + ".json")) in _paths(p)
+        assert p["dirs"] == [], "没有原件目录就别凭空造一条要删的路径"
+        r = purge.purge([{"kind": "mawb", "key": "mawb|" + m}], by="admin", days=0, now=NOW)
+        assert r[0]["ok"] and not (config.MASTER_DIR / (m + ".json")).exists(), r
+        assert "不合法" not in purge.refuse("mawb", m, 30, now=NOW), purge.refuse("mawb", m, 30, now=NOW)
+
+
+def test_a_master_that_is_not_on_this_machine_says_so_rather_than_calling_the_number_illegal():
+    """号合法、但这台机器没经手过它——那句要照实说。混成"不合法"会让人去核自己抄没抄错号，
+    而真正的问题是这台机器上根本没有这张主单的任何痕迹。"""
+    with _world() as t:
+        msg = purge.refuse("mawb", "99994781525", 30, now=NOW)
+        assert "查无" in msg and "不合法" not in msg, msg
+        assert purge.plan("mawb", "99994781525", 30, now=NOW) is None, "没有可删的东西不许出计划"
+
+
+def test_an_early_delete_still_refuses_a_master_with_no_trace_here():
+    """"提前删"那一档把安静期当成 0 天，但它不许把"这台机器上没有这张主单"也一起绕过：
+    绕过就会写一行凭据、报"已删"，而实际一个字节都没动——比不删更糟。
+    挡它的是 `_mawb_plan` 里"读不出安静时间就不删"那一条（盘上没痕迹 ⇒ 时间读不出来）。"""
+    with _world() as t:
+        r = purge.purge([{"kind": "mawb", "key": "mawb|99994781525", "early": True}],
+                        by="admin", now=NOW)
+        assert not r[0]["ok"], "没经手过的主单即使勾了提前删也不许报已删"
+        assert "查无" in r[0]["error"], r[0]["error"]
+        assert not config.PURGED_LEDGER.exists() or "99994781525" not in \
+            config.PURGED_LEDGER.read_text(encoding="utf-8"), "凭据里不许出现这张没删成的主单"
+
+
+def test_an_illegal_master_number_is_still_named_illegal():
+    """反向也得成立：真不合法的号不许被归进"查无此单"那一档——那等于把穿越口子说成"没这张票"，
+    而下一次有人拿它当"再试一次就行"。"""
+    with _world() as t:
+        _master_only("99994781525")
+        for bad in ("", "small", "99../1", "x" * 300):
+            assert "不合法" in purge.refuse("mawb", bad, 30, now=NOW), repr(bad)
+            assert purge.plan("mawb", bad, 30, now=NOW) is None, repr(bad)

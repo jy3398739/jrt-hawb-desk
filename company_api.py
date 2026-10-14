@@ -158,7 +158,8 @@ def _unrepr(v):
 
 
 _PENDING_COLS = ("stem", "mawb", "hawb", "state", "stager", "stager_role", "staged_at",
-                 "edited", "reviewed_by_inputter", "has_original")
+                 "edited", "reviewed_by_inputter", "has_original",
+                 "processed_at", "source_name")
 
 
 def local_pending(mawb: str) -> list:
@@ -167,7 +168,9 @@ def local_pending(mawb: str) -> list:
     名下分单表读的是公司接口，公司只认提交过的票：只上传/只暂存的票要是不出现在这里，
     录入员查同一张主单就还是"没有分单"（2026-09-29 用户实测过这个，当时的补丁只在浏览器里
     数自己这台机器的票，换个人照样看不见）。名单从 `store.ticket_rows` 现算，
-    已经在台账里的不重复列。"""
+    已经在台账里的不重复列。
+    带上 `processed_at` 与 `source_name`：同一个分单号在这台机器上传过两次就是两条，
+    前端要把它们并成一行并说清点开的是哪一份（最新那一份）——没有解析时刻就分不出新旧。"""
     return [{k: r.get(k) for k in _PENDING_COLS}
             for r in store.ticket_rows(mawb=mawb) if r["state"] in ("parsed", "staged")]
 

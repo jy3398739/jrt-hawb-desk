@@ -492,19 +492,25 @@ const L = {
     order.forEach(g => { by[g].cleared = by[g].tot - by[g].todo; });
     return order.map(g => by[g]);
   },
-  /* 一条红旗挂到哪一列，只有这一处判据。从前 desk.js 里 `flagsByField` 与 `chipOne` 各抄了
+  /* 一条红旗挂到哪几列，只有这一处判据。从前 desk.js 里 `flagsByField` 与 `chipOne` 各抄了
      一份那五种模式，两份走偏过一次：旗在顶部 chip 上能确认、在列上却永远不显红。
-     先剥掉 `L3 `/`保真 ` 这类来源前缀——主语位那一列才是这条旗说的列；主语认不出再退一步：
-     全文里恰好出现一个列名就挂它，0 个或多个一律空串。空串不是失败：那条旗仍然在 chip 那一排、
-     照样能逐条确认；只是不许猜一列挂上去——猜错的旗会让人去核一个本来没问题的列。 */
-  flagKey(f, keys){
-    const ks = keys || [];
+     先剥掉 `L3 `/`保真 ` 这类来源前缀，再看句子里点了哪几列：**点了几列就挂几列**。
+     一条同时牵着两格的旗（"MAWB_NO 与 HAWB_NO 均为空"、电话区号对不上国家）从前只许挂一列，
+     另一格看着像没问题；顶部那排 chip 撤掉之后没有那一格了，所以两行都得亮。
+     一条列名都不点的旗（空表）不进这里：它说的是整张票，落在列表末尾那一格「整张票」上，
+     照样能确认——挂到猜出来的一列上，人会去核一个本来没问题的列。 */
+  flagKeys(f, keys){
     const body = String(f || "").replace(/^(?:L3|保真)\s+/, "");
-    for (const k of ks) if (body.startsWith(k + " ")) return k;
-    const hit = ks.filter(k => body.indexOf(k + ":") >= 0 || body.indexOf(k + " 未") >= 0
-                            || body.indexOf(k + " 缺失") >= 0 || body.indexOf("'" + k + "'") >= 0);
-    return hit.length === 1 ? hit[0] : "";
+    const id = ch => /[0-9A-Za-z_]/.test(ch || "");
+    /* 整词才算点名：`OTHER_HAWB_NO`、`GOODS_INFO_TEL` 里都藏着个真列名，
+       前后再接一个标识符字符就不是它说的这一列。 */
+    return (keys || []).filter(k => {
+      for (let i = body.indexOf(k); i >= 0; i = body.indexOf(k, i + 1))
+        if (!id(body[i - 1]) && !id(body[i + k.length])) return true;
+      return false;
+    });
   },
+  flagKey(f, keys){ return L.flagKeys(f, keys)[0] || ""; },
   nextTodo(ks, cur){
     const a = ks || [];
     if (!a.length) return "";
@@ -538,6 +544,82 @@ const L = {
       return t && v && (t.includes(v) || runs.some(r => r.length > 4 && t.includes(r)));
     });
     return hit.length ? {[k]: hit.slice(0, 12)} : {};
+  },
+
+  /* ── 名下分单表：一个分单号只给一行 ──────────────────────────────────────────
+     公司的行（j9 只认提交过的票）与本机的未提交副本（服务器从盘上现算）从前各画一遍，
+     同一张票在这台机器上传过两次就是三行（2026-10-13 用户实测：BJS7080646 三行，
+     一行「已提交发送·等外围」、两行「只解析，没人暂存」）。并起来只按号归一；
+     没号的各算一行——把两张没抄到号的票并成一张，等于替票面说一句它没说的话。 */
+  hawbRows(orders, pend){
+    const rows = [], at = {};
+    const rowFor = k => {
+      let r = at[k];
+      if (!r){
+        r = at[k] = {hawb: "", mawb: "", company: false, local: false,
+                     reviewer: "", submitted_at: "", submitted_here: false, send_status: null,
+                     stem: "", source_name: "", copies: 0, has_original: false, via: "",
+                     stager: "", stager_role: "", staged_at: "", edited: 0,
+                     reviewed_by_inputter: false, files: {}};
+        rows.push(r);
+      }
+      return r;
+    };
+    /* 一份"本机有据可查的票"：公司那格 stem 是 lookup_stem 查实过原件还在盘上的，
+       本机副本带自己的解析时刻与文件名。同一个 stem 两边都提到时只算一份。 */
+    const file = (r, stem, isCompany, p) => {
+      if (!stem) return;
+      const f = r.files[stem] || (r.files[stem] = {company: false, at: "", src: "", orig: false, rec: null});
+      if (isCompany){ f.company = true; f.orig = true; return; }
+      f.at = L.str(p, "processed_at"); f.src = L.str(p, "source_name");
+      f.orig = !!p.has_original; f.rec = p;
+    };
+    (orders || []).forEach((o, i) => {
+      const r = rowFor(L.normNo(o.hawb) || ("#o" + i));
+      if (!r.hawb) r.hawb = L.str(o, "hawb");
+      if (!r.mawb) r.mawb = L.str(o, "mawb");
+      file(r, L.str(o, "stem"), true, null);
+      if (r.company) return;                     // 公司给了同一个号两行：以第一行为准，不重复计数
+      r.company = true;
+      r.reviewer = L.str(o, "reviewer"); r.submitted_at = L.str(o, "submitted_at");
+      r.submitted_here = !!o.submitted_here;
+      r.send_status = (o.send_status === undefined || o.send_status === null) ? null : o.send_status;
+    });
+    (pend || []).forEach(p => {
+      const r = rowFor(L.normNo(p.hawb) || ("~" + L.str(p, "stem")));
+      if (!r.hawb) r.hawb = L.str(p, "hawb");
+      if (!r.mawb) r.mawb = L.str(p, "mawb");
+      r.local = true;
+      file(r, L.str(p, "stem"), false, p);
+    });
+    rows.forEach(r => {
+      const stems = Object.keys(r.files);
+      r.copies = stems.length;
+      /* 链接先指公司认识的那一份：在它上面改值才是改那张已经发出去的票；本机没有已提交的那份
+         时才退回解析得最晚的一份（"重新传过一次"通常就是拿新那份继续核）。 */
+      let link = "", newest = "";
+      stems.forEach(s => {
+        const f = r.files[s];
+        if (f.company && !link) link = s;
+        if (f.rec && (!newest || f.at >= r.files[newest].at)) newest = s;
+      });
+      link = link || newest || "";
+      r.stem = link;
+      const f = r.files[link];
+      /* 这一行点开的是哪一份，得说得出主语：公司那一行自己没带 stem 时，链接落的是本机副本，
+         这时候照着 r.company 说"公司已提交的那一份"就是在骗人（浏览器复验抓到的）。 */
+      r.via = !link ? "" : (f.company ? "company" : "local");
+      r.has_original = !!(f && f.orig);
+      r.source_name = (f && f.src) || "";
+      const rec = (f && f.rec) || null;
+      if (rec){
+        r.stager = L.str(rec, "stager"); r.stager_role = L.str(rec, "stager_role");
+        r.staged_at = L.str(rec, "staged_at"); r.edited = rec.edited || 0;
+        r.reviewed_by_inputter = !!rec.reviewed_by_inputter;
+      }
+      delete r.files;
+    });
+    return rows;
   },
 };
 if (typeof module !== "undefined") module.exports = L;

@@ -3,7 +3,7 @@
 import threading
 import time
 
-from desk_queue import DONE, FAILED, QUEUED, QueueFull, DeskQueue
+from desk_queue import CANCELLED, DONE, FAILED, QUEUED, RUNNING, QueueFull, DeskQueue
 
 
 def test_only_two_parsing_and_the_rest_see_their_place_in_line():
@@ -62,3 +62,66 @@ def test_a_stuffed_queue_refuses_instead_of_piling_up():
     except QueueFull as e:
         assert "排队" in str(e)
     gate.set()
+
+
+def test_a_queued_ticket_can_be_cancelled_and_never_runs():
+    """排队中的那张要能摘掉：人传错了文件名、或者一次塞了十张又想先做别的，
+    不该只能干等它排到。摘掉的是**还没开始**的那一半——cleanup 负责把临时目录交还，
+    否则每掐一张就漏一个目录在盘上。"""
+    q = DeskQueue(slots=1, max_pending=10)
+    gate = threading.Event()
+    first = q.submit(lambda: (gate.wait(2), {"ok": True})[1])
+    ran, cleaned = [], []
+    doomed = q.submit(lambda: ran.append(1), cleanup=lambda: cleaned.append(1))
+    assert q.get(doomed)["state"] == QUEUED, "第二张该还在排队"
+    assert q.cancel(doomed) == "cancelled"
+    gate.set()
+    for _ in range(200):
+        if q.get(first)["state"] == DONE and q.get(doomed)["state"] == CANCELLED:
+            break
+        time.sleep(0.02)
+    assert q.get(doomed)["state"] == CANCELLED
+    assert ran == [], "掐掉的排队作业不许照样跑一遍模型"
+    assert cleaned == [1], "跳过的作业要把自己的临时目录交还"
+    assert q.stats()["waiting"] == 0, f"位次表里不该还挂着它：{q.stats()}"
+
+
+def test_a_running_job_cannot_be_interrupted_and_says_so():
+    """已经在跑的那一张掐不掉：模型调用与 LibreOffice 子进程都在别人手里，
+    硬杀子进程会把解析到一半的票留在盘上。所以只回一句"在跑"，让界面说实话。"""
+    q = DeskQueue(slots=1, max_pending=5)
+    gate = threading.Event()
+    jid = q.submit(lambda: (gate.wait(2), {"ok": True})[1])
+    for _ in range(200):
+        if q.get(jid)["state"] == RUNNING:
+            break
+        time.sleep(0.02)
+    assert q.cancel(jid) == "running"
+    gate.set()
+    for _ in range(200):
+        if q.get(jid)["state"] == DONE:
+            break
+        time.sleep(0.02)
+    assert q.get(jid)["state"] == DONE, "说掐不掉的就得照样跑完，别偷偷丢了结果"
+
+
+def test_cancelling_something_that_is_already_gone_reports_gone():
+    q = DeskQueue(slots=1, max_pending=5)
+    done = q.submit(lambda: {"ok": True})
+    for _ in range(200):
+        if q.get(done)["state"] == DONE:
+            break
+        time.sleep(0.02)
+    assert q.cancel(done) == "gone", "已完结的作业不是「能取消」，也不该假装成功"
+    assert q.cancel("ffffffffffffffff") == "gone", "没这个作业就说没有"
+
+
+def test_a_cancelled_job_is_forgotten_like_any_other_finished_one():
+    """摘掉的那张也是"已完结"：`_prune` 的清单里少一个档，跑一天就攒一堆没人等的作业
+    （每条还带着自己的 cleanup 闭包）。这条与 DONE/FAILED 同一条规则，不该是特例。"""
+    q = DeskQueue(slots=1, max_pending=10)
+    jid = q.submit(lambda: {"ok": True}, who="宛平", name="x.pdf")
+    assert q.cancel(jid) == "cancelled"
+    q._jobs[jid]["at"] = time.time() - 99999          # 假装已经过了 KEEP_SECONDS
+    q.submit(lambda: {"ok": True})                    # prune 只在 submit 里顺带做
+    assert q.get(jid) is None, "已取消的作业要跟着一起清出去"

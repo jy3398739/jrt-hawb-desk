@@ -1422,9 +1422,10 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
     每次提交都要滚到最底）；②字段列自己滚，别带着左边上传/排队列表一起动；
     ③收发货人长文本框按内容自适应高度（原来按 "\n" 数行数，一整段没有换行就只有一行高）。
     ①这一条现在的实现是"操作条吸底常驻"而不是"搬到表上方"：38 列分五段之后表更长，
-    放上面就变成"滚到底看不到提交"，所以钉在栏底、任何时候都在视野里。"""
+    放上面就变成"滚到底看不到提交"，所以钉在栏底、任何时候都在视野里。
+    v1.20.1 起主单那条也并到同一个位置（从前它贴在 36 列表上面，两张表两种地方）。"""
     html = web_src.desk()
-    bar = html[html.index('<div class="ft bottom">'):]
+    bar = html[html.rindex('<div class="ft bottom">'):]     # 分单那条（主单那条在 renderMain 前面）
     bar = bar[:bar.index("</div>")]
     for bid in ('id="expOne"', 'id="expAll"'):
         assert bid in bar, f"常驻操作条少了 {bid}"
@@ -1577,3 +1578,39 @@ def test_the_word_for_stage_means_only_the_server_tier():
     js = web_src.part("js/desk.js")
     assert "条暂存记录" not in js, "清空本机编辑的确认框不许把它说成暂存记录：那一档只在服务器上"
     assert "本机草稿" not in js, "「本机草稿」是第三个名字，只保留「本机未保存的编辑」这一个"
+
+
+def test_a_queued_job_can_be_cancelled_over_http_once_and_only_once():
+    """队列里那张要能删（2026-10-13 用户：列队里排队解析的要能删除掉）。
+    前端自己那份队列删起来是瞬时的，但**已经在服务器上排队的那一张**必须回来说清
+    三种结局：掐掉了 / 在跑掐不掉 / 早就没了——只回 ok 会让界面写一句假话。"""
+    import threading
+    gate = threading.Event()
+    jid = ""
+    try:
+        # 先把 worker 占满，目标作业才会真的停在"排队中"——不然它一进去就跑，测的是另一条分支
+        for i in range(server.DESK_QUEUE.slots):
+            server.DESK_QUEUE.submit(lambda: gate.wait(10), who="admin", name="block%d.pdf" % i)
+        jid = server.DESK_QUEUE.submit(lambda: {"ok": True}, who="admin", name="x.pdf")
+        assert server.DESK_QUEUE.get(jid)["state"] == "queued", "这张该还在排队"
+        client = TestClient(server.app)
+        assert client.post("/job/" + jid + "/cancel").status_code == 401, "取消作业要登录"
+        with _stubbed():
+            _login_admin(client)
+            r = client.post("/job/" + jid + "/cancel")
+            assert r.status_code == 200 and r.json()["state"] == "cancelled", r.text
+            assert server.DESK_QUEUE.get(jid)["state"] == "cancelled", "服务端要说得出这张不跑了"
+            assert client.post("/job/nope12345678/cancel").json()["state"] == "gone", "没这个作业就说没有"
+            done = server.DESK_QUEUE.submit(lambda: {"ok": True}, who="admin", name="y.pdf")
+            gate.set()
+            for _ in range(300):
+                if server.DESK_QUEUE.get(done)["state"] == "done":
+                    break
+                time.sleep(0.02)
+            auth.set_password("宛平", "wp-test-1", "reviewer", create=True)
+            c2 = TestClient(server.app)
+            c2.post("/login", json={"name": "宛平", "password": "wp-test-1"})
+            assert c2.post("/job/" + done + "/cancel").status_code == 200, \
+                "作业号本身就是凭证（GET /job 连票面内容都不设身份门）：这一层不单独装一半"
+    finally:
+        gate.set()

@@ -270,8 +270,13 @@ def plan(kind, key, days, now=None):
             return None
         p = _hawb_plan(stem, days, now, store.ledger(), voided)
     else:
-        mkey = store.norm_no(raw)
-        if not store.mawb_source_dir(mkey):       # 归一化 + 字符集校验都在里面
+        # 合法性只看字符集与长度（mawb_source_key）；**不能拿 mawb_source_dir() 当校验用**——
+        # 那个函数还要求原件目录存在，而线上没有任何一处代码会往 output/mawb_source/ 写
+        # （公司主单原件接口待 IT），于是每张主单都会被它判成"不合法"、永远删不掉。
+        # "这台机器上没这张主单"不在这里判：`_mawb_plan` 里"安静时间读不出来就不删"已经盖住了
+        # （没痕迹 ⇒ 读不出时间），这里再写一遍就是个骗下一人的死分支。那句文案在 refuse 里。
+        mkey = store.mawb_source_key(raw)
+        if not mkey:
             return None
         p = _mawb_plan(mkey, days, now, voided)
     if not p:
@@ -433,9 +438,12 @@ def refuse(kind, key, days, now=None) -> str:
             return "这台机器上查无这张票（连质检记录都没有），没有可删的东西"
         quiet = quiet_at_hawb(stem)
     else:
-        mkey = store.norm_no(raw)
-        if not store.mawb_source_dir(mkey):
+        mkey = store.mawb_source_key(raw)      # 只判字符集与长度，不问原件目录在不在
+        if not mkey:
             return "这个单号/票名不合法（带路径分隔符或太长），不做任何删除"
+        if not (config.MASTER_DIR / (mkey + ".json")).is_file() \
+                and not (config.MAWB_SOURCE_DIR / mkey).is_dir():
+            return "这台机器上查无这张主单（既没有解析缓存也没有原件目录），没有可删的东西"
         if store.submitted_by_mawb(mkey):
             return "这张主单名下还有已提交的分单，先把分单删掉才轮到它"
         quiet = quiet_at_master(mkey)

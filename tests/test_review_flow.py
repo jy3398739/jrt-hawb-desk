@@ -194,7 +194,8 @@ def test_row_actions_per_state_and_both_entry_points_share_one_data():
     for act in ("红旗已核", "本就为空", "撤回", "还原"):
         assert act in js, "行内缺这个动作：" + act
     assert "ackE" in js and "ackF" in js, "空值确认与红旗确认要各一份（同一份集合会互相顶掉）"
-    assert "data-ack" in _fn(js, "renderMain"), "chips 那一行的确认入口要在"
+    assert "data-ack=" in _fn(js, "orphanRows"), "确认入口在：一条旗点了哪几列就挂在哪几行，谁也不点的落在「整张票」那一格"
+    assert "flagLines(" in _fn(js, "fieldRowHtml"), "红旗原文要写在它点名的那一格底下（顶部 chip 那排已撤）"
 
 
 def test_only_todo_keeps_your_own_edits_visible():
@@ -505,46 +506,52 @@ def _keys38():
     return [k for k, _lab, _g in fieldspec.DESK_FIELDS]
 
 
-def test_a_flag_attaches_to_the_column_it_names_and_never_to_a_guess():
-    """挂到哪一列只有 L.flagKey 一处说了算。四类从前挂不上的旗各有来处：
+def test_a_flag_attaches_to_every_column_it_names():
+    """挂到哪几列只有 `L.flagKeys` 一处说了算。四类从前挂不上的旗各有来处：
     `L3 ` 前缀把 startsWith 顶掉、句中出现的列名不认、`SHIPPER 电话区号…` 那句里根本没有列名、
-    `保真 TAX_ID:` 那个列名早在 v1.12.0 就删了。后两类**故意**留在空串上：
-    区号那条同时牵涉电话与国家两格、税号那条说"填两个 EORI 之一"——挑一格挂上去就是猜，
-    猜错的旗会让人去核一个本来没问题的列。"""
+    `保真 TAX_ID:` 那个列名早在 v1.12.0 就删了。
+    2026-10-13 顶部那排 chip 撤了（用户：以后上面都不要了，红圈都放在字段后面），
+    所以"一条旗点了两格"不再是"干脆不挂"，而是**两格都挂**：只挑一格，另一格看着像没问题。
+    区号那条从前只写 `SHIPPER 电话区号`（句里没有列名，谁都挂不上），现在 validator 那句
+    把两格的列名都写进旗面了——一条谁也不点、界面上又没有 chip 的旗就是没人能确认的死旗。"""
     ks = _keys38()
-    got = lambda f: web_src.logic("L.flagKey(f, ks)", f=f, ks=ks)
+    got = lambda f: web_src.logic("L.flagKeys(f, ks)", f=f, ks=ks)
     assert got("L3 SHIPPER_INFO_EORI 混进了标签，只填号码本身（航空口径已自动摘掉）: 'VAT 123'") \
-        == "SHIPPER_INFO_EORI", "L3 前缀不该把这一列顶掉"
-    assert got("L3 CONSIGNEE_INFO_EORI 形态异常(过短): '123'") == "CONSIGNEE_INFO_EORI"
+        == ["SHIPPER_INFO_EORI"], "L3 前缀不该把这一列顶掉"
+    assert got("L3 CONSIGNEE_INFO_EORI 形态异常(过短): '123'") == ["CONSIGNEE_INFO_EORI"]
     assert got("L3 SHIPPER_INFO_EORI 与电话同值，疑似电话栏吞了税号: '00280273000137'") \
-        == "SHIPPER_INFO_EORI"
+        == ["SHIPPER_INFO_EORI"]
     assert got("保真 CONSIGNEE_INFO_TEL: 未在L1逐字转录中找到原文（可能被改写或转录遗漏）（值='0055 11'）") \
-        == "CONSIGNEE_INFO_TEL"
+        == ["CONSIGNEE_INFO_TEL"]
     # 老形状一条都不许退化
-    assert got("TO1 疑似填成承运人码: 'JL'") == "TO1"
-    assert got("L3 DEST_NAME 未转成 IATA 三字码: 'MANAUS'（码表缺项，需补 CITY_IATA）") == "DEST_NAME"
-    assert got("CREATE_TIME 格式非 YYYY-MM-DD: '20/09/26'") == "CREATE_TIME"
-    assert got("HAWB_NO 疑似误填主单号: '999-1234567'") == "HAWB_NO"
-    assert got("PIECES 缺失或为0") == "PIECES"
-    # 主语位优先：两个号都在句里，但说话的主语是 MAWB_NO——不许因为"句里两个"就散成空
-    assert got("MAWB_NO 与 HAWB_NO 均为空") == "MAWB_NO"
-    # 认不出列名的老实返回空串：它只出现在顶部那排 chip 上（那里本来就能逐条确认）
-    assert got("SHIPPER 电话区号 +39(IT) 与国家 US 不一致，疑似电话串边") == ""
-    # 句中出现两个列名：同样不许挑一个挂上（这种文案今天还不存在，规则先立住——
-    # 否则将来谁写一条"两格互换"的旗，它就会随机挂到 KEYS 里排在前面那一列上）
-    assert got("保真 SHIPPER_INFO_TEL: 与 CONSIGNEE_INFO_TEL: 疑似互换") == ""
+    assert got("TO1 疑似填成承运人码: 'JL'") == ["TO1"]
+    assert got("L3 DEST_NAME 未转成 IATA 三字码: 'MANAUS'（码表缺项，需补 CITY_IATA）") == ["DEST_NAME"]
+    assert got("CREATE_TIME 格式非 YYYY-MM-DD: '20/09/26'") == ["CREATE_TIME"]
+    assert got("HAWB_NO 疑似误填主单号: '999-1234567'") == ["HAWB_NO"]
+    assert got("PIECES 缺失或为0") == ["PIECES"]
+    # 两栏都为空：说的是两格，就两格都亮
+    assert got("MAWB_NO 与 HAWB_NO 均为空") == ["MAWB_NO", "HAWB_NO"]
+    assert sorted(got("SHIPPER_INFO_TEL 的电话区号 +39(IT) 与 SHIPPER_INFO_COUNTRY US 不一致，疑似电话串边")) \
+        == ["SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"], "区号那条从前谁也不挂，现在两格都要挂"
+    assert got("保真 SHIPPER_INFO_TEL: 与 CONSIGNEE_INFO_TEL: 疑似互换") \
+        == ["SHIPPER_INFO_TEL", "CONSIGNEE_INFO_TEL"]
     assert got("保真 TAX_ID: USCI 税号漏抄：票面有 91310000MA1FL2XY3Z，需核票填 SHIPPER_INFO_EORI 或 "
                "CONSIGNEE_INFO_EORI（识别号只有 EORI 这一格，已有号就用 / 拼在一起两个都留）"
-               "（值='91310000MA1FL2XY3Z'）") == ""
+               "（值='91310000MA1FL2XY3Z'）") == ["SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI"]
+    # 一个列名都不点的：交给表尾「整张票」那一格，别猜
+    assert got("这条旗不提任何列名") == []
+    # 藏在长名字里的列名不算点名（整词边界）：HAWB_NO 出现在 OTHER_HAWB_NO 里不认
+    assert got("OTHER_HAWB_NO 与 GOODS_INFO_TEL 都不是这一列") == []
 
 
 def test_the_flag_to_column_map_has_exactly_one_source():
-    """`flagsByField` 与 `chipOne` 从前各抄了一份那五种模式——两份必然走偏（这次就是：
-    一处改了另一处没改，旗在 chip 上能确认、在列上永远不显红）。判据只留 logic.js 一份。"""
+    """`flagsByField`、chipOne（已撤）与主单那张表从前各抄了一份那五种模式——几份必然走偏
+    （这次就是：一处改了另一处没改，旗在 chip 上能确认、在列上永远不显红）。判据只留 logic.js 一份。"""
     js, lg = web_src.part("js/desk.js"), web_src.part("js/logic.js")
     assert 'f.includes(kk +' not in js, "desk.js 里还留着一份自己写的匹配：两处判据迟早又分开"
-    assert js.count("L.flagKey(") >= 2, "两处都该改判到同一个 L.flagKey 上"
-    assert "flagKey(f, keys)" in lg, "logic.js 里那份判据本身没了"
+    assert "flags.filter(f => f.includes(" not in js, "主单那张表也有一份手写的匹配，同样该并到 L.flagKeys"
+    assert js.count("L.flagKeys(") >= 3, f"三处（分单挂列 / 主单挂列 / 孤儿旗）都该走同一个算式：{js.count('L.flagKeys(')}"
+    assert "flagKeys(f, keys)" in lg, "logic.js 里那份判据本身没了"
 
 
 def test_a_flag_with_no_column_still_counts_as_a_todo():
@@ -557,17 +564,31 @@ def test_a_flag_with_no_column_still_counts_as_a_todo():
              "raw": "", "air": ""}]
     one = web_src.logic("L.todoOf(r)", r=rows)
     assert one["n"] == 1 and one["keys"] == ["PIECES"], one
-    two = web_src.logic("L.todoOf(r, o)", r=rows,
-                        o=["SHIPPER 电话区号 +39(IT) 与国家 US 不一致，疑似电话串边"])
+    two = web_src.logic("L.todoOf(r, o)", r=rows, o=["资料里有税号 VAT 123，主单表没有税号列：填进同主体的 EORI 列"])
     assert two["n"] == 2, "没有列可挂的旗也要进待办数，否则这一页会说谎"
     assert two["keys"] == ["PIECES"], "不许为它凭空造一个列名：跳转只能跳到真列上"
     assert two["other"] == 1
 
 
-def test_a_chip_with_no_column_to_jump_to_says_so():
-    """顶部那排 chip 本来就把每条旗都列出来、都能确认（我上一轮说"点不到"是错的）；
-    缺的是它没告诉人"为什么这一条点跳转没反应"，以及那份数没进待办。
-    两处都得在：写明「不落在某一列」+ 待办数走同一个入口。"""
+def test_a_flag_with_no_column_still_has_a_place_to_be_acked():
+    """顶部那排 chip 撤了（2026-10-13 用户：以后上面都不要了）。撤掉的代价不能是"这条旗没人能确认"：
+    v1.17.2 与 v1.20.0 各修过一次死旗，症状都是"待办 0、提交却退回来"。
+    所以一条列名都不点的旗仍然要有落点（字段表末尾那格「整张票」）、仍然带一颗确认，
+    并且待办数走同一个入口。"""
     js = web_src.part("js/desk.js")
-    assert "不落在某一列" in js, "挂不到列的 chip 要自己说明为什么不能跳转"
+    assert "不落在某一列" in js, "挂不到列的旗要自己说明为什么没有列"
+    assert "data-ack=" in js and "data-unack=" in js, "它照样要能逐条确认与撤回"
     assert "ticketTodo(" in js, "待办数与提交门要走同一个入口，别在渲染里各算一遍"
+    assert '<div class="chips">${chips}</div>' not in js, "顶部那排红旗 chip 已经撤了，两张表都不许再画"
+
+
+def test_the_phone_country_flag_names_both_columns_it_is_about():
+    """旗面不写列名，审核台就挂不上任何一行——顶部那排 chip 撤了之后，连"挂在最上面"这条退路也没了。
+    这一条从前写「SHIPPER 电话区号 +39(IT) 与国家 US 不一致」：句里一个列名都没有。
+    撤 chip 与改这句是同一个动作的两半，少一半就是一条没人能确认的死旗。"""
+    import validator
+    warns = validator.validate_raw({"SHIPPER_INFO_TEL": "0039 02 1234", "SHIPPER_INFO_COUNTRY": "US"})
+    hit = [w for w in warns if "电话串边" in w]
+    assert hit, f"这条该报：{warns}"
+    assert "SHIPPER_INFO_TEL" in hit[0] and "SHIPPER_INFO_COUNTRY" in hit[0], hit[0]
+    assert web_src.logic("L.flagKeys(f, ks).length", f=hit[0], ks=_keys38()) == 2, "两格都要亮"

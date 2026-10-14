@@ -138,7 +138,7 @@ function toNum(k, v){
 
 /* ── 即时规则提示：与后端 validator 同口径，只提示不阻断 ─────────────────
    只提示航空口径这一列：原文口径已不展示，提示它等于让人去改看不见的东西。
-   原文侧的毛病由后端 validator / 保真回查出红旗，走 chips 那条路。 */
+   原文侧的毛病由后端 validator / 保真回查出红旗，挂在它点名的那一行上。 */
 function checks(k, l2, l3){
   const out = [], g = v => (v === undefined || v === null ? "" : String(v).trim()), a = g(l3);
   if (k === "MAWB_NO"){
@@ -182,12 +182,12 @@ function checks(k, l2, l3){
   return out;
 }
 
-/* ── 质检红旗 → 落到哪个字段 ─────────────────────────────────────────── */
+/* ── 质检红旗 → 落到哪几列 ───────────────────────────────────────────── */
 function flagsByField(qc){
   const map = {}, rest = [];
   for (const f of (qc && qc.flags) || []){
-    const k = L.flagKey(f, KEYS);
-    if (k) (map[k] = map[k] || []).push(f); else rest.push(f);
+    const ks = L.flagKeys(f, KEYS);
+    if (ks.length) for (const k of ks) (map[k] = map[k] || []).push(f); else rest.push(f);
   }
   return {map, rest};
 }
@@ -924,6 +924,11 @@ async function extract(t){
   if (r.status === 429) throw new Error((j.detail || j.error || "后端排队已满") + "，稍后再传");
   if (!r.ok && r.status !== 202) throw new Error(j.error || j.detail || ("HTTP " + r.status));
   if (!j.queued) return j;                      // 同步返回的老后端：照旧直接用
+  t.job = j.job;                                // 行上那颗 × 要删的是这一张的作业
+  /* 浏览器这一侧一进 runQueue 就把票标成"解析中"，可作业号要到这个 202 回来才有。
+     有人正好落在那几十毫秒里点了 ×：票已经从列表上没了，上传却已经发出去——
+     不补这一发取消，服务器上就多一张没人等的孤儿解析。 */
+  if (t.dropped){ await cancelJob(j.job); throw new Error("已从列表里移除"); }
   return await waitJob(j.job, t);
 }
 /* 解析改成就绪取：入队后轮询 /job。位次变了就刷一行状态，人才知道不是卡住了。
@@ -931,6 +936,7 @@ async function extract(t){
 async function waitJob(job, t){
   return await new Promise((res, rej) => {
     poller(async () => {
+      if (t.dropped){ rej(new Error("已从列表里移除")); return true; }   // 人把这张删了就别再敲服务器
       const r = await fetch(BASE + "/job/" + encodeURIComponent(job));
       if (r.status === 401){                        // 一直 401 的轮询只会让人以为票丢了：停下并把遮罩亮出来
         $("#gate").hidden = false; rej(new Error("登录已过期，请重新登录后再传")); return true;
@@ -967,6 +973,7 @@ async function runQueue(){
       saveDraft(t);
       hintLocate();          // 第一次解析成功时提一次「点字段名能定位」，之后不再啰嗦
     }catch(e){
+      if (t.dropped) continue;        // 删掉的这张不再写状态：它已经不在列表里，写成"失败"只会让人以为解析坏了
       t.state = "failed"; t.error = String(e.message || e);
     }
     render();
@@ -1106,6 +1113,42 @@ function statusOf(t){
   return ["ok", "干净"];
 }
 function current(){ return S.tickets.find(t => t.stem === S.sel) || S.tickets.find(t => t.filename === S.sel); }
+/* 行上那颗 × 说的是三种不同的事，标题就得说三种：排队中的还没传出去（本机队列是一张一张发的），
+   在跑的那一张服务器掐不掉（模型调用与 LibreOffice 子进程都在 worker 手里，硬杀会把解析到一半
+   的票留在盘上），失败的那一张只是别再碍眼。写成一句"已删除"就是三句里两句假话。 */
+function dropTitle(t){
+  if (t.state === "queued") return "还没开始解析：从列表里拿掉，也不会传去服务器";
+  if (t.state === "busy") return "这张已经在解析了：删掉只是不再取它的结果（解析掐不掉，钱已经花了）";
+  return "从列表里拿掉（服务器上的解析结果不动，要彻底删除走「数据清理」）";
+}
+/* 取消一张作业：三种结局（cancelled / running / gone）由服务器说，请求本身失败算第四种。
+   这里不写界面话术——调用方有两处，要说的话不一样：行上那颗 × 要报给本人，
+   而"删在上传与作业号之间"那一发是补锅，人不该再看到一条消息。 */
+async function cancelJob(job){
+  try{
+    const r = await fetch(BASE + "/job/" + encodeURIComponent(job) + "/cancel", {method: "POST"});
+    const j = await r.json().catch(() => ({}));
+    return {state: r.ok ? (j.state || "gone") : "error"};
+  }catch(e){ return {state: "error"}; }
+}
+async function dropRow(i){
+  const t = S.tickets[i];
+  if (!t) return;
+  const job = t.job;
+  t.dropped = true;                       // 轮询靠它收手：不然这张的 poller 会一直敲到 30 分钟上限
+  S.tickets.splice(i, 1);
+  if (S.sel === (t.stem || t.filename))
+    S.sel = S.tickets.length ? (S.tickets[Math.max(0, i - 1)].stem || S.tickets[Math.max(0, i - 1)].filename) : null;
+  render();
+  if (!job) return;                       // 还没传出去的（本机队列一张一张发）：删了就是删了
+  const j = await cancelJob(job);
+  /* 三句话三张皮（类别只认 .toast.bad/.toast.ok）：掐掉了是好消息；
+     "在跑、掐不掉"要停留得够久——它纠正的是人刚刚形成的误解。 */
+  if (j.state === "cancelled") toast("已取消那张排队中的解析", "ok");
+  else if (j.state === "running") toast("这张正在解析，掐不掉——已从列表里拿掉，结果不再取", "bad");
+  else if (j.state === "error") toast("已从列表里拿掉，但没能通知服务器取消这一张的解析", "bad");
+  else toast("已从列表里拿掉（服务器上早就没有这一张作业）");
+}
 function render(){
   const done = S.tickets.filter(t => t.state === "done").length;
   const rev = S.tickets.filter(t => effectiveFlags(t).length).length;
@@ -1114,10 +1157,16 @@ function render(){
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
     const [c, label] = statusOf(t), n = editedList(t).length;
     const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
-    return `<button type="button" class="row${isCur ? " sel" : ""}" data-i="${i}"${isCur ? ' aria-current="true"' : ""}>
+    /* 还没成票的那三档（排队 / 在跑 / 失败）在行上直接给一颗删除：列队里点错了、
+       或者一次塞了十张想先做别的，不该只能干等它排到。已经解析好的走操作条那颗
+       「从列表移除」——那一格改过值，随手 × 掉太容易丢东西。
+       button 不能套 button，所以删除是行的兄弟节点，不是它的孩子。 */
+    const x = ["queued", "busy", "failed"].includes(t.state)
+      ? `<button type="button" class="rowx" data-drop="${i}" title="${dropTitle(t)}">×</button>` : "";
+    return `<span class="rowline"><button type="button" class="row${isCur ? " sel" : ""}" data-i="${i}"${isCur ? ' aria-current="true"' : ""}>
       <span class="dot ${c}" aria-hidden="true"></span>
       <span class="nm">${esc(t.filename)}<br><span class="m">${esc(t.stem || "等待解析")}</span></span>
-      <span class="st">${label}${n ? `<br><span class="st-edited">改 ${n} 项</span>` : ""}</span></button>`;
+      <span class="st">${label}${n ? `<br><span class="st-edited">改 ${n} 项</span>` : ""}</span></button>${x}</span>`;
   }).join("") : `<div class="empty">尚无票据。</div>`;
   renderRail();
   renderMain(); renderDrafts(); renderPreview();
@@ -1303,12 +1352,15 @@ function fieldRows(t, ef){
   const all = flagsByField(t.qc).map, left = flagsByField({flags: ef || effectiveFlags(t)}).map;
   const ackF = t.ackF || [];
   return FIELDS.map(([k, lab, g]) => {
-    const list = all[k] || [], remain = (left[k] || []).length;
+    const list = all[k] || [], out = left[k] || [];
+    const remain = out.length;
     const manual = list.filter(f => ackF.includes(f)).length;
     const hasFlag = remain + manual;
     /* 输入原样留在行上（flags/acked/raw/air）：logic.js 那套 todoOf/progress 是拿同一批输入重算的，
-       只带一个算完的 st 进去，它会把这些行统统当成"空值待办"——进度分母当场变成 38（浏览器里量出来的）。 */
+       只带一个算完的 st 进去，它会把这些行统统当成"空值待办"——进度分母当场变成 38（浏览器里量出来的）。
+       fl/fa 是旗面原文：顶部那排 chip 撤了之后，"这条旗到底说了什么"只剩行上这一格会说。 */
     const o = {k, lab, g, flags: hasFlag,
+               fl: out.filter(f => !ackF.includes(f)), fa: list.filter(f => ackF.includes(f)),
                acked: hasFlag ? remain === 0 && manual > 0 : (t.ackE || []).includes(k),
                raw: txt(t.raw, k), air: airVal(t, k)};
     o.st = L.fieldStatus(o);
@@ -1349,7 +1401,7 @@ function statusCell(t, r){
   const k = r.k, s = r.st.s;
   const ck = checks(k, r.raw, r.air);
   const acts = [];
-  if (s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与上方逐条确认同一个留痕）">红旗已核</button>`);
+  if (s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与「整张票」那一格逐条确认同一个留痕）">红旗已核</button>`);
   else if (s === "confirmed") acts.push(`<button class="btn sm gh" type="button" data-unackf="${esc(k)}" title="撤回：这一列的红旗回到待办">撤回</button>`);
   if (s === "empty") acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
   else if (s === "emptyok") acts.push(`<button class="btn sm gh" type="button" data-une="${esc(k)}" title="撤回：这一格回到待办">撤回</button>`);
@@ -1359,10 +1411,47 @@ function statusCell(t, r){
   return `<span class="badge ${BADGE_CLS[s]}">${esc(r.st.label)}</span>`
     + (acts.length ? `<div class="acts">${acts.join("")}</div>` : "") + edits + notes;
 }
+/* 红旗原文就写在它指的那一格底下（2026-10-13 用户：以后上面都不要了，要改的红圈都放在字段后面）。
+   确认过的也留着、灰一档：人确认过什么，界面上就该看得见什么。 */
+function flagLines(r){
+  const now = (r.fl || []).map(f => `<div class="flagline">${esc(f)}</div>`).join("");
+  const done = (r.fa || []).map(f => `<div class="flagline ack">已确认：${esc(f)}</div>`).join("");
+  return `<div class="flags">${now}${done}</div>`;
+}
+/* 一条列名都不点的红旗（说的是整张票）没有哪一行挂得上去，但它**必须有落点**：
+   看不见又点不到的旗就是死旗，提交门照样会因为它退回来（v1.17.2 为这个修过一次，
+   v1.20.0 又修过一次）。所以在字段表末尾给它留一段「整张票」，确认/撤回与原来那颗一模一样。
+   顶部那排 chip 撤掉之后，这里是它唯一的家。 */
+function orphanRows(t, rest, ackF){
+  return rest.map(f => {
+    const done = ackF.includes(f);
+    return `<tr class="${done ? "acked" : "flag"}" data-hov="orphan">
+      <td class="k"><span class="kk">整张票</span><span class="ky">不落在某一列</span></td>
+      <td class="c"><div class="flagline${done ? " ack" : ""}">${done ? "已确认：" : ""}${esc(f)}</div></td>
+      <td class="s"><div class="acts">` + (done
+        ? `<button class="btn sm gh" type="button" data-unack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
+        : `<button class="btn sm danger" type="button" data-ack="${esc(f)}"`
+          + ` title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) + `</div></td></tr>`;
+  }).join("");
+}
+function orphanTable(t, ef){
+  const ackF = t.ackF || [];
+  const out = flagsByField({flags: ef}).rest;
+  const done = ((((t.qc || {}).flags) || []).filter(f => ackF.includes(f)))
+    .filter(f => !L.flagKeys(f, KEYS).length && out.indexOf(f) < 0);
+  if (!out.length && !done.length) return "";
+  return `<table class="gt" id="gt-orphan">`
+    + `<colgroup><col class="kcol"><col class="vcol"><col class="scol"></colgroup>`
+    + `<thead><tr class="grp ${out.length ? "hasflag" : ""}"><th class="kcol"><span class="in">`
+    + `<span class="gn">整张票</span></span></th><th><span class="in">`
+    + `<span class="${out.length ? "sflag" : "sok"}">${out.length ? "⚑ " + out.length + " 条不落在某一列" : "✓ 都确认过了"}</span>`
+    + `</span></th><th class="scol"></th></tr></thead>`
+    + `<tbody>${orphanRows(t, out, ackF)}${orphanRows(t, done, ackF)}</tbody></table>`;
+}
 function fieldRowHtml(t, r, hide){
   return `<tr id="f-${r.k}" class="${rowCls(r, t)}" data-hov="${r.k}" data-todo="${r.st.todo ? 1 : 0}"${hide ? " hidden" : ""}>
       <td class="k loc"><button type="button" class="kbtn" data-jump-field="${r.k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(r.lab)}</span><span class="ky">${esc(r.k)}</span></button></td>
-      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air">${control(t, r.k)}${edgeGripHtml()}</td>
+      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air">${control(t, r.k)}${flagLines(r)}${edgeGripHtml()}</td>
       <td class="s" data-st="${r.k}">${statusCell(t, r)}</td></tr>`;
 }
 /* 三态提交按钮。红旗那一档与"跳过空栏"是两件事，界面上不许混成一颗按钮：
@@ -1423,14 +1512,22 @@ function renderMain(){
     const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
     const vals = mvValues(), left = flags.filter(f => !MV.acked.includes(f));
     const missed = (qc.missed_cols) || [];
-    const chips = flags.map(f => {
-      const done = MV.acked.includes(f);
-      const hard = f.includes("缺失") || f.startsWith("保真") || f.includes("失败");
-      return `<span class="chip ${done ? "" : (hard ? "bad" : "warn")}">${esc(f)}` +
-        (done ? `<button class="ackb" data-munack="${esc(f)}">撤回</button>`
-              : `<button class="ackb" data-mack="${esc(f)}">确认无误</button>`) + `</span>`;
-    }).join("");
     const MVG = rec.groups || {};
+    /* 主单侧同样"旗挂在它点名的那一格上"（顶部那排 chip 已经撤了）。一条旗点了两格就两格都亮；
+       一格都不点的（"资料里有税号，填进同主体的 EORI 列"就是这种）落在表尾「整张票」那一格里，
+       照样能确认——看不见又点不到的旗会卡住提交门，v1.17.2 为这类死旗修过一次。 */
+    const MKEYS = (rec.fields || []).map(f => f[0]);
+    const byKey = {}, orphan = [];
+    for (const f of flags){
+      const ks = L.flagKeys(f, MKEYS);
+      if (ks.length) for (const k of ks) (byKey[k] = byKey[k] || []).push(f); else orphan.push(f);
+    }
+    const mvLine = f => {
+      const done = MV.acked.includes(f);
+      return `<div class="flagline${done ? " ack" : ""}">${done ? "已确认：" : ""}${esc(f)}` +
+        (done ? `<button class="ackb" type="button" data-munack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
+              : `<button class="ackb" type="button" data-mack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) + `</div>`;
+    };
     const metaBy = {};
     (rec.meta || []).forEach(m => { (metaBy[m.group] = metaBy[m.group] || []).push(m); });
     let rows = "", last = "";
@@ -1446,15 +1543,20 @@ function renderMain(){
     for (const [k, lab, g] of (rec.fields || [])){
       openGroup(g);
       const v = vals[k] == null ? "" : String(vals[k]);
-      const hit = flags.filter(f => f.includes(k)).length;
+      const fl = byKey[k] || [], hit = fl.length;
       const miss = missed.includes(k);
       rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
-        <td class="c v${k in MV.edit ? " edited" : ""}"><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea>${edgeGripHtml()}</td>
+        <td class="c v${k in MV.edit ? " edited" : ""}"><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
           : (v ? `<span class="badge same">有值</span>` : `<span class="badge">资料没提</span>`)}</td></tr>`;
     }
+    if (orphan.length)
+      rows += `<tr class="grp"><td colspan="3">整张票（不落在某一列）</td></tr>` + orphan.map(f =>
+        `<tr class="flag"><td class="k"><div class="kk">整张票</div><div class="ky">不落在某一列</div></td>`
+        + `<td class="c"><div class="flags">${mvLine(f)}</div></td>`
+        + `<td class="s"><span class="badge warn">红旗 1</span></td></tr>`).join("");
     const st = rec.state === "done" ? (left.length ? "解析完成，有红旗待处理" : "解析完成，无红旗")
              : rec.state === "parsing" ? "解析中（约 7-20 秒）…" : "解析失败";
     const fid = qc.fidelity;
@@ -1471,25 +1573,24 @@ function renderMain(){
         <button class="btn sm" id="mvReparse">重新解析</button>
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
-      ${chips ? `<div class="chips">${chips}</div>` : ""}
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机未保存的编辑与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
       ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
       ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机未保存的编辑里</span></div>` : ""}
       ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
-      <div class="ft top">
-        <button class="btn" id="mvStage" type="button" title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
-        <button class="btn pri" id="mvSubmit">提交主单回公司</button>
-        <span class="sp"></span>
-        <span class="fhslot">${fhResetHtml()}</span>
-        <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
-      </div>
       <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
         主单表没有件重/航路/税号列，<b>税号按公司口径统一填同主体的 EORI 列</b>；
         同一主体有多个号（EORI 与 VAT 并存那种）就用 <b>/</b> 拼在同一格，两个都留。</span></div>
       <table><thead><tr>
         <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num scol">状态</th>
-      </tr></thead><tbody>${rows}</tbody></table>`;
+      </tr></thead><tbody>${rows}</tbody></table>
+      <div class="ft bottom">
+        <button class="btn" id="mvStage" type="button" title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
+        <button class="btn pri" id="mvSubmit">提交主单回公司</button>
+        <span class="sp"></span>
+        <span class="fhslot">${fhResetHtml()}</span>
+        <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
+      </div>`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
       inp.addEventListener("keydown", blockEnter);
@@ -1538,25 +1639,7 @@ function renderMain(){
   const segs = L.segState(rows, hard, soft);
   const pr = L.progress(t.todoBase, todo.n);
   const nSoft = rows.filter(r => r.st.s === "empty").length;
-  const ackF = t.ackF || [];
   const fid = t.qc && t.qc.fidelity;
-  /* chip 里两个动作各一个按钮：跳转（对字段）与确认（对这条提示）。
-     从前是 span 套 button，点哪儿都算跳转，确认要 stopPropagation 才不被带着走。
-     确认过的也留在这一排（灰底 + 一颗撤回）：人确认过什么，界面上就该看得见什么。 */
-  const chipOne = f => {
-    const k = L.flagKey(f, KEYS);
-    const done = ackF.includes(f), isHard = f.startsWith("保真") || f.includes("缺失");
-    return `<span class="chip ${done ? "done" : isHard ? "bad" : "warn"}">` +
-      (k ? `<button type="button" class="chipb" data-jump="${k}" title="点击：跳到并高亮这个字段">${esc(f)}</button>`
-         /* 没有列可挂的旗也要写明"为什么这条点不动"：它说的是整张票（区号与国家串边、
-            票面有税号而两格 EORI 都没接住），挑一列挂上去就是猜。不写这一句，人只会以为按钮坏了。 */
-             : `<span class="chipx"><i class="chipn">不落在某一列</i>${esc(f)}</span>`) +
-      (done ? `<button class="ackb" type="button" data-unack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
-            : `<button class="ackb" type="button" data-ack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) +
-      "</span>";
-  };
-  const chips = ef.map(chipOne).join("") +
-    ((((t.qc || {}).flags) || []).filter(f => ackF.includes(f))).map(chipOne).join("");
   const byG = {};
   for (const r of rows) (byG[r.g] = byG[r.g] || []).push(r);
   const segHtml = segs.map(seg => {
@@ -1591,8 +1674,7 @@ function renderMain(){
       <span class="sp"></span>
       <span class="hint" title="中列就是航空口径 L3（可直接改）；指针停在一行上，左边票面会框出它的转录出处；点字段名定位并放大；回车跳下一个待办（Shift+Enter 才是换行）">点字段名＝定位 · 回车＝下一个</span>
     </div>
-    ${chips ? `<div class="chips">${chips}</div>` : ""}
-    ${segHtml}
+    ${segHtml}${orphanTable(t, ef)}
     <div class="ft bottom">
       <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
       ${drawSubmitBtn(t, ef, todo.n)}
@@ -1647,6 +1729,8 @@ function refreshRow(t, k){
     tr.className = rowCls(r, t);
     tr.dataset.todo = r.st.todo ? "1" : "0";
     tr.querySelector("[data-st]").innerHTML = statusCell(t, r);
+    const fx = tr.querySelector('[data-cell="air"] .flags');
+    if (fx) fx.outerHTML = flagLines(r);       // 旗面原文跟着改：确认掉的那条要当场从红转灰
     tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
   }
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
@@ -1709,9 +1793,6 @@ function wireMain(t){
   });
   $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
-  }));
-  $("#main").querySelectorAll("[data-jump]").forEach(ch => ch.addEventListener("click", () => {
-    const t2 = current(); if (t2) jumpToField(t2, ch.dataset.jump);
   }));
   $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
     const f = b.dataset.ack;
@@ -1839,6 +1920,8 @@ $("#pvNew").addEventListener("click", () => {
   window.open(u, "_blank");       // blob URL 直接开新标签：图片能看，PDF 走阅读器
 });
 $("#list").addEventListener("click", e => {
+  const x = e.target.closest("[data-drop]");
+  if (x){ dropRow(+x.dataset.drop); return; }      // 那颗 × 是行的兄弟节点：先认它，再认整行
   const row = e.target.closest(".row"); if (!row) return;
   const t = S.tickets[+row.dataset.i]; if (!t) return;
   mvOff();                       // 选中分单就退出"主单资料"视图，回到该票自己的核对与提交
@@ -2042,60 +2125,67 @@ function mstCard(j, mawb){
    1 与 2 都锁死不能再改——从前把 1 写成"已发送"、2 写成"已改·待重发"，
    人会以为发出去了（其实没有），还会去覆盖一条已经发成功的记录。 */
 const SEND_TXT = {0:"公司暂存（未发送）", 1:"已提交发送·等外围", 2:"公司已发送成功（锁定）"};
-/* 名下分单表里"公司还不认识"的那几行，来源是检索响应里的 pending（服务器从盘上现算）。
+/* 名下分单表里"公司还不认识"的那些行，来源是检索响应里的 pending（服务器从盘上现算）。
    从前这里是自己数浏览器状态（pendingUnder 读 S.tickets + localStorage），那份名单只对
-   当前这个人、这台机器成立——制单员上午传的票，录入员下午查同一张主单仍是"没有分单"。 */
-function mstTable(list, pend){
-  pend = pend || [];
-  if (!list.length && !pend.length)
+   当前这个人、这台机器成立——制单员上午传的票，录入员下午查同一张主单仍是"没有分单"。
+   行由 L.hawbRows 按分单号合并好再交进来：公司的行与本机的副本说的是同一张票时，
+   这里只有一行（2026-10-13 用户实测：BJS7080646 三行）。 */
+function mstTable(rows){
+  rows = rows || [];
+  if (!rows.length)
     return '<p class="hint hintp">这条主单下公司还没有分单记录。' +
            '<b>解析不等于提交</b>：有人点「暂存」，核对结果就存在服务器上给同事看；' +
            '点「提交」才会回传公司，这里才会出现公司的行。</p>';
-  const rows = list.map(o => {
-    const ss = o.send_status === undefined || o.send_status === null ? "—"
-             : (SEND_TXT[o.send_status] || o.send_status);
-    const no = o.stem ? '<button type="button" class="lk" data-open="' + esc(o.stem) + '" title="点开这张分单的核对页">' + esc(o.hawb) + '</button>'
-                      : esc(o.hawb);
-    return "<tr><td>" + no + "</td><td>" + esc(o.mawb) +
-      "</td><td>" + esc(o.reviewer || "—") + "</td><td>" +
-      (o.submitted_here ? esc(o.submitted_at || "—")
-                        : '<span class="hint">不在本台提交</span>') +
-      "</td><td>" + esc(ss) + "</td><td>" +
-      (o.stem ? '<a href="' + BASE + '/source/' + encodeURIComponent(o.stem) + '" target="_blank">查看原件</a>'
-              : '<span class="hint">本机无归档</span>') + "</td></tr>";
-  }).join("") + pend.map(p => {
-    const no = p.stem
-      ? '<button type="button" class="lk" data-open="' + esc(p.stem) + '" title="点开这张分单的核对页">' + esc(p.hawb) + '</button>'
-      : esc(p.hawb);
-    const who = p.stager
-      ? esc(p.stager) + (p.edited ? ' <span class="st-edited">改 ' + p.edited + ' 列</span>' : '')
-      : '<span class="hint">只解析，没人暂存</span>';
-    return '<tr><td>' + no + "</td><td>" + esc(p.mawb) + "</td><td>" + who + "</td><td>" +
-      (p.staged_at ? esc(p.staged_at) : '<span class="hint">—</span>') + '</td>' +
-      '<td><span class="hint">公司侧还没有</span></td><td>' +
-      (p.has_original ? '<a href="' + BASE + '/source/' + encodeURIComponent(p.stem) + '" target="_blank">查看原件</a>'
+  const tr = rows.map(r => {
+    const many = r.copies > 1
+      ? '；这个号在本机有 ' + r.copies + ' 份，点开的是'
+        + (r.via === "company" ? "公司已提交的那一份" : "最新解析的那一份")
+        + (r.source_name ? "（" + esc(r.source_name) + "）" : "") : "";
+    const no = (r.stem ? '<button type="button" class="lk" data-open="' + esc(r.stem) +
+                         '" title="点开这张分单的核对页' + many + '">' + esc(r.hawb) + '</button>'
+                       : esc(r.hawb))
+      + (many ? ' <span class="hint">本机 ' + r.copies + ' 份</span>' : '');
+    const who = r.company ? esc(r.reviewer || "—")
+      : (r.stager ? esc(r.stager) + (r.edited ? ' <span class="st-edited">改 ' + r.edited + ' 列</span>' : '')
+                  : '<span class="hint">只解析，没人暂存</span>');
+    return "<tr><td>" + no + "</td><td>" + esc(r.mawb) +
+      "</td><td>" + who + "</td><td>" +
+      (r.company
+        ? (r.submitted_here ? esc(r.submitted_at || "—") : '<span class="hint">不在本台提交</span>')
+        : (r.staged_at ? esc(r.staged_at) : '<span class="hint">—</span>')) +
+      "</td><td>" + (r.company
+        ? esc(r.send_status === null ? "—" : (SEND_TXT[r.send_status] || r.send_status))
+        : '<span class="hint">公司侧还没有</span>') + "</td><td>" +
+      (r.has_original ? '<a href="' + BASE + '/source/' + encodeURIComponent(r.stem) +
+                        '" target="_blank">查看原件</a>'
                       : '<span class="hint">本机无归档</span>') + "</td></tr>";
   }).join("");
+  const mine = rows.filter(r => !r.company).length;
   return '<table><colgroup><col style="width:19%"><col style="width:15%"><col style="width:12%">' +
     '<col style="width:18%"><col style="width:16%"><col></colgroup><thead><tr>' +
     '<th>分单号</th><th>主单号</th><th>提交人</th><th>提交时间</th><th>公司发送状态</th><th>票面原件</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>' +
+    '</tr></thead><tbody>' + tr + '</tbody></table>' +
     '<p class="hint hintp">「提交人/提交时间」是本审核台提交回公司的留痕；' +
     '「公司发送状态」是公司有没有把这条分单发给航司。' +
     '待公司发送 = 公司已收到、还没往航司发，不是说本台没提交。' +
-    (pend.length ? '另有 ' + pend.length + ' 张公司还不认识：它们是这台机器上解析/暂存过的，' +
-     '「改 N 列」是暂存时相对模型输出改了多少。' : '') + '</p>';
+    (mine ? '另有 ' + mine + ' 张公司还不认识：它们是这台机器上解析/暂存过的，' +
+     '「改 N 列」是暂存时相对模型输出改了多少。' : '') +
+    '同一个分单号在本机传过几次，这里只给一行：号上标「本机 N 份」，点开的是哪一份看停在号上的提示。</p>';
 }
 /* 一份结果两处落位：左栏只留入口那一行，名下分单表进页面底部整宽卡（264px 里放不下五列） */
 function mstRender(j, mawb){
   $("#mstResult").innerHTML = mstCard(j, mawb);
-  const list = j.hawb_orders || [], pend = j.pending || [];
-  MST_CARD_ON = !!(list.length || pend.length);
+  const rows = L.hawbRows(j.hawb_orders || [], j.pending || []);
+  MST_CARD_ON = !!rows.length;
   syncCards();
-  $("#mstHawbCnt").textContent = (list.length || pend.length)
-    ? ("主单 " + mawb + " · 公司 " + list.length + " 张" + (pend.length ? " · 本台待提交 " + pend.length + " 张" : ""))
+  /* 卡头上的张数与表里的行数必须是同一套算术：从前写「公司 1 张 · 本台待提交 2 张」，
+     数的是两份名单的长度，而那是同一张票（用户：这里重复出现一个分单就该只有一条信息）。 */
+  $("#mstHawbCnt").textContent = rows.length
+    ? ("主单 " + mawb + " · 分单 " + rows.length + " 张 · 公司 " +
+       rows.filter(r => r.company).length +
+       (rows.some(r => !r.company) ? " · 本台未提交 " + rows.filter(r => !r.company).length : ""))
     : "";
-  $("#mstHawbBox").innerHTML = mstTable(list, pend);
+  $("#mstHawbBox").innerHTML = mstTable(rows);
 }
 /* 点分单号 = 从主单侧回到那张分单自己的核对页：服务器上落盘的 L2/L3/质检直接装回票据列表，
    不需要制单员重新上传原件。改完还是走 /submit，红旗由服务端按当前值重算。 */

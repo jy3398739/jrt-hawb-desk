@@ -133,8 +133,16 @@ tr.voided .lk{text-decoration:line-through}
 /* 票行 / 还原 / 字段名 / 分单号 / 红旗跳转从前是带 cursor:pointer 的 div、span、a：
    键盘 Tab 到不了、回车不触发、读屏器念不出"这里可以点"。换成 <button> 后把 UA 默认外观抹掉，
    版面照旧（reset 必须在下面这些规则之前，border 才不会被覆盖）。 */
-.row,.rs,.kbtn,.chipb,.lk{appearance:none;-webkit-appearance:none;background:transparent;border:0;
+.row,.rs,.kbtn,.lk,.rowx{appearance:none;-webkit-appearance:none;background:transparent;border:0;
   font:inherit;color:inherit;text-align:left}
+/* 一行 = 整行按钮 + 那颗 ×。button 不能套 button，所以外面这一层只是把它们排在一起；
+   min-width:0 是必须的：不写的话长票名会把 flex:1 顶破，整行跟着溢出。 */
+.rowline{display:flex;align-items:stretch}
+.rowline .row{flex:1;min-width:0}
+.rowx{cursor:pointer;padding:0 10px;color:var(--c-text-3);font-size:var(--f-lg);line-height:1;
+  align-self:center;min-height:28px;border-radius:var(--r-sm)}
+.rowline:hover .rowx,.rowx:hover,.rowx:focus-visible{color:var(--c-bad-text);background:var(--c-bad-bg)}
+.rowx:focus-visible{outline:2px solid var(--c-focus);outline-offset:-2px}
 .row{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-bottom:1px solid var(--c-line-soft);cursor:pointer;
   width:100%;text-align:left;transition:background var(--dur-fast)}
 .row:hover{background:var(--c-accent-glow)}
@@ -153,18 +161,22 @@ tr.voided .lk{text-decoration:line-through}
 .hd .nm{font-weight:var(--w-bold);font-size:var(--f-lg);word-break:break-all}
 .hd .meta{color:var(--c-text-3);font-size:var(--f-sm);margin-top:2px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px;background:var(--c-warn-strip);border-bottom:1px solid var(--c-warn-line)}
+/* 红旗原文：写在它点名的那一格底下（顶部那排 chip 撤了之后，这是它唯一的落点）。
+   字用 --c-bad-text、底用 --c-bad-bg、描边同族——浅底压深字才过得了本站那条 WCAG 表。 */
+.flags{margin-top:4px}
+.flags:empty{display:none}
+.flagline{font-size:var(--f-xs);line-height:1.45;padding:2px 6px;border-radius:var(--r-sm);
+  border:1px solid var(--c-bad-line);background:var(--c-bad-bg);color:var(--c-bad-text);
+  word-break:break-word;display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.flagline + .flagline{margin-top:3px}
+.flagline.ack{border-color:var(--c-ok);background:var(--c-ok-bg);color:var(--c-ok-text)}
+.flagline .ackb{cursor:pointer;margin-left:auto;padding:0 7px;font-size:var(--f-xs);
+  border:1px solid currentColor;border-radius:var(--r-pill);background:transparent;color:inherit;
+  opacity:.75;min-height:24px}
+.flagline .ackb:hover{opacity:1;background:var(--c-surface)}
 .chip{font-size:var(--f-sm);background:var(--c-neutral);border:1px solid var(--c-line);border-radius:var(--r-pill);padding:2px 9px;
   color:var(--c-text-2);max-width:100%;display:inline-flex;align-items:center;gap:2px;min-height:28px}
-/* chip 里两个动作各一个按钮：跳到字段（chipb）与确认这条提示（ackb）。没有对应字段的（chipx）就只有文字。 */
-.chip .chipb{padding:0;text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}
-/* 「不落在某一列」那枚小标：没有跳转目标的旗要自己说清为什么点不动，
-   但不能比旗面本身抢眼——它解释的是这条旗的形状，不是又一个待办。 */
-.chip .chipn{font-style:normal;font-size:var(--f-xs);color:var(--c-text-3);margin-right:6px}
-.chip .ackb{cursor:pointer;margin-left:6px;padding:0 7px;font-size:var(--f-xs);border:1px solid currentColor;
-  border-radius:var(--r-pill);background:transparent;color:inherit;opacity:.7;min-height:24px}
-.chip .ackb:hover{opacity:1;background:var(--c-surface)}
 .chip:hover{border-color:var(--c-line-hover)}
-.chip.warn{background:var(--c-warn-bg);border-color:var(--c-warn-line);color:var(--c-warn-text)}
 .chip.bad{background:var(--c-bad-bg);border-color:var(--c-bad-line);color:var(--c-bad-text)}
 .tools{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--c-line);
   background:var(--c-surface-2);flex-wrap:wrap;font-size:var(--f-sm);color:var(--c-text-2)}
@@ -301,7 +313,6 @@ tr.emptyrow td.v textarea{background:var(--c-warn-bg)}
 #mstHawbBox th{top:0}
 #mstHawbBox td{padding:7px 8px}
 .ft{padding:10px 12px;border-top:1px solid var(--c-line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.ft.top{border-top:0;border-bottom:1px solid var(--c-line);background:var(--c-surface-2)}
 .hint{font-size:var(--f-sm);color:var(--c-text-2)}
 /* 表格/结果底下那段说明：段落的 UA 边距归零，换成一道内边距（从前四处各写各的 padding，
    6px/8px/10px/12px 都有，同一个"下面补一句话"长四种样子）。父容器自己有内边距的用 .flush。 */

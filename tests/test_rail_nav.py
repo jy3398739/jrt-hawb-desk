@@ -42,3 +42,37 @@ def test_prev_next_and_a_sticky_action_bar():
     assert 'class="ft bottom"' in js and "position:sticky" in css, "操作条要常驻底部"
     assert 'class="todo"' in js, "待办条（红旗/空值/已改）要置顶常驻，核到一半也看得见还剩什么"
     assert 'setProperty("--todoH"' in js, "表头吸顶的让位高度要量出来：写死数字在文字换行那天会压住第一行字段"
+
+
+def test_both_views_put_their_action_bar_in_the_same_place():
+    """主单与分单的按钮要在同一个地方（2026-10-13 用户：不要分单的在下面、主单的在上面）。
+
+    统一到**底部常驻**那一条：分单的操作条本来就是 `position:sticky;bottom:0`（核到最后一格
+    也够得着提交），主单那条从前贴在 36 列表的**上面**——一进页看得见，滚下去改完就找不着了。
+    反过来把分单挪到上面要再叠一层 sticky，与待办条抢同一道让位高度（`--todoH` 已经为表头
+    踩过三次），所以不那么做。"""
+    js, css = web_src.part("js/desk.js"), web_src.css()
+    assert 'class="ft top"' not in js, "两张表两种位置，正是这次要修掉的毛病"
+    assert ".ft.top{" not in css, "上面那条的样式没人用了就该跟着删掉"
+    rm = web_src.fn(js, "function renderMain(")
+    assert rm.count('class="ft bottom"') == 2, f"两张表各一条底部操作条：{rm.count('class=\"ft bottom\"')}"
+    mv = rm[:rm.index("  if (!t){")]
+    assert mv.index('<table>') < mv.index('class="ft bottom"'), \
+        "主单那条要在 36 列表之后：sticky bottom 靠的是「它在滚动内容末尾」才钉得住"
+
+
+def test_a_queue_row_can_be_removed_and_stops_its_job():
+    """列队里那张不想等的要能当场删掉（2026-10-13 用户）。"删"是两件事：从这一页的列表里
+    拿掉，**并且**告诉服务器别再为它花一次模型调用。已经在跑的那一张服务器掐不掉，
+    所以那一句要如实说"结果会丢掉"，不能写成"已取消"。"""
+    js = web_src.part("js/desk.js")
+    fn = web_src.fn(js, "async function dropRow(")
+    assert "cancelJob(" in fn, "删掉在跑的那张要通知服务端取消，不然模型白烧一次"
+    assert "/cancel" in web_src.fn(js, "async function cancelJob("), "取消走的是那一发 POST /job/{id}/cancel"
+    assert "t.job" in fn, "删的是这一张的作业：轮询要能停，结果不许再落回列表"
+    assert "dropped" in web_src.fn(js, "async function waitJob("), \
+        "移除后要退出轮询，否则那张票的 poller 会一直敲到 30 分钟上限"
+    assert "data-drop=" in web_src.fn(js, "function render("), "行上要有那颗删除"
+    ex = web_src.fn(js, "async function extract(")
+    assert "t.dropped" in ex and "cancelJob(" in ex, \
+        "删在「上传已发出、作业号还没回来」那几十毫秒里要补一发取消，别留一张没人等的孤儿解析"

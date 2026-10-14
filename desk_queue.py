@@ -11,7 +11,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
+QUEUED, RUNNING, DONE, FAILED, CANCELLED = "queued", "running", "done", "failed", "cancelled"
 KEEP_SECONDS = 1800          # 完成的作业留 30 分钟供前端回看，之后就地清理
 
 
@@ -27,7 +27,9 @@ class DeskQueue:
         self._waiting: list[str] = []
         self.slots, self.max_pending = slots, max_pending
 
-    def submit(self, fn, who: str = "", name: str = "") -> str:
+    def submit(self, fn, who: str = "", name: str = "", cleanup=None) -> str:
+        """cleanup 是给"排队中途被摘掉"那张留的后路：fn 不跑，它答应过的临时目录
+        就没人删（上传落的是 `hawb_upload_*`，删不掉就是每掐一张漏一个目录）。"""
         with self._lock:
             self._prune(time.time())
             live = [j for j in self._jobs.values() if j["state"] in (QUEUED, RUNNING)]
@@ -35,15 +37,40 @@ class DeskQueue:
                 raise QueueFull(f"排队中已有 {len(live)} 张，请等一会儿再传")
             jid = uuid.uuid4().hex[:12]
             self._jobs[jid] = {"id": jid, "state": QUEUED, "who": who, "name": name,
-                               "result": None, "error": "", "at": time.time()}
+                               "result": None, "error": "", "at": time.time(),
+                               "cleanup": cleanup}
             self._waiting.append(jid)
         self._pool.submit(self._run, jid, fn)
         return jid
+
+    def cancel(self, jid: str) -> str:
+        """摘掉一张还没开始跑的作业。三种结局都得说得出，前端要照着写不同的话：
+        `cancelled` 不跑了；`running` 掐不掉（模型调用与 LibreOffice 子进程都在别人手里，
+        硬杀会把解析到一半的票留在盘上），跑完照样有结果；`gone` 这里根本没有这一张。"""
+        with self._lock:
+            job = self._jobs.get(jid)
+            if not job:
+                return "gone"
+            if job["state"] != QUEUED:
+                return "running" if job["state"] == RUNNING else "gone"
+            job["state"] = CANCELLED
+            job["at"] = time.time()
+            if jid in self._waiting:
+                self._waiting.remove(jid)
+            cleanup = job.get("cleanup")
+        if cleanup:
+            try:
+                cleanup()
+            except Exception:
+                pass                       # 清临时目录失败不该把取消这件事报成失败：作业确实没跑
+        return "cancelled"
 
     def _run(self, jid: str, fn):
         with self._lock:
             if jid in self._waiting:
                 self._waiting.remove(jid)
+            if self._jobs[jid]["state"] == CANCELLED:
+                return                     # 排队时被摘掉：一个模型调用都不该为它花
             self._jobs[jid]["state"] = RUNNING
         try:
             result = fn()
@@ -77,5 +104,5 @@ class DeskQueue:
     def _prune(self, now: float):
         """调用方已持锁：清掉超时的已完结作业，否则跑一天内存只涨不落。"""
         for jid in [k for k, j in self._jobs.items()
-                    if j["state"] in (DONE, FAILED) and now - j["at"] > KEEP_SECONDS]:
+                    if j["state"] in (DONE, FAILED, CANCELLED) and now - j["at"] > KEEP_SECONDS]:
             self._jobs.pop(jid, None)

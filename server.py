@@ -749,7 +749,8 @@ async def extract(file: UploadFile = File(...), user: dict = Depends(current_use
         await _save_upload(file, path)
         jid = DESK_QUEUE.submit(lambda: _parse_ticket(tmp_dir, path, file.filename,
                                                       user_name, user_role),
-                                who=user_name, name=file.filename or "")
+                                who=user_name, name=file.filename or "",
+                                cleanup=lambda: shutil.rmtree(tmp_dir, ignore_errors=True))
         handed_off = True            # 临时目录从这一刻归 worker 清
     except desk_queue.QueueFull as e:
         raise HTTPException(429, str(e))
@@ -778,6 +779,20 @@ def job_result(job_id: str, user: dict = Depends(current_user)):
     elif j["state"] == desk_queue.FAILED:
         out["error"] = j["error"]
     return out
+
+
+@app.post("/job/{job_id}/cancel")
+def job_cancel(job_id: str, user: dict = Depends(current_user)):
+    """摘掉一张还没开始的解析（列队里那张不想等了）。
+
+    三种结局原样回给前端，别替它圆场：`cancelled` 真的不跑了；`running` 掐不掉——模型调用
+    和 LibreOffice 子进程都在 worker 手里，硬杀会把解析到一半的票留在盘上；`gone` 没这一张
+    （多半是服务重启过）。作业号本身就是凭证：`GET /job/{id}` 连票面内容都回，也没设身份门，
+    只在取消这一半单独装一道，只会让人以为"别人的票我删不掉"而实际防的是另一回事。"""
+    jid = re.sub(r"[^0-9a-zA-Z]", "", job_id or "")
+    state = DESK_QUEUE.cancel(jid)
+    LOG.info("取消解析作业 who=%s job=%s → %s", user.get("name"), jid, state)
+    return {"ok": state == "cancelled", "state": state}
 
 
 @app.get("/results")

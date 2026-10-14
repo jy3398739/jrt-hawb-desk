@@ -373,3 +373,81 @@ def test_stagedMerge_yields_strings_and_only_the_columns_the_server_flagged():
     assert all(isinstance(v, str) for v in r["airE"].values()), f"airE 必须全是字符串：{r['airE']}"
     assert r["airE"] == {"PIECES": "77", "GOODS_INFO": "STEEL PARTS 99"}, r["airE"]
     assert "WEIGHT" not in r["airE"], "服务端没算作改动的列，前端不许复活成改动"
+
+
+# ── 名下分单：一个分单号只给一行（2026-10-13 用户实测：BJS7080646 在表里出现三行）────
+_PEND2 = [{"stem": "BJS7080646", "hawb": "BJS7080646", "mawb": "232-19509416", "state": "parsed",
+           "stager": "", "staged_at": "", "edited": 0, "has_original": True,
+           "processed_at": "2026-10-13T09:00:00"},
+          {"stem": "BJS7080646 (1)", "hawb": "BJS7080646", "mawb": "232-19509416", "state": "staged",
+           "stager": "马殿齐", "staged_at": "2026-10-13T11:30:00", "edited": 3, "has_original": True,
+           "processed_at": "2026-10-13T11:00:00"}]
+_ORDER1 = [{"hawb": "BJS7080646", "mawb": "232-19509416", "stem": "", "reviewer": "—",
+            "submitted_at": "—", "submitted_here": False, "send_status": 1}]
+
+
+def test_house_rows_collapse_one_hawb_number_to_one_line():
+    """公司那一行 + 本机两份未提交，说的是同一张分单：表上就该只有一行。
+
+    从前两张表各画一遍（list 一段、pend 一段），同一个号传过两次就是三行，
+    人得自己心算「这三行是不是同一张」。"""
+    rows = web_src.logic("L.hawbRows(o, p)", o=_ORDER1, p=_PEND2)
+    assert len(rows) == 1, f"一个分单号一行：{rows}"
+    r = rows[0]
+    assert r["company"] is True and r["local"] is True, "这一行既来自公司也来自本机，两边都得说"
+    assert r["send_status"] == 1 and r["reviewer"] == "—", "公司侧的发送状态与提交人要留住"
+    assert r["copies"] == 2, f"本机这个号有几份要说得出来：{r}"
+    assert r["stem"] == "BJS7080646 (1)", "本机多份时点开最新那一份"
+    assert r["via"] == "local", "公司那行自己没带原件：链接落的是本机副本，主语要说对"
+    assert r["stager"] == "马殿齐" and r["edited"] == 3, "暂存痕迹跟着被点开的那一份"
+
+
+def test_house_rows_prefer_the_original_the_company_row_points_at():
+    """公司行自己带着 stem（那张票就是本机提交的）时，链接必须指它，不能指较新的副本——
+    点开一张没提交过的旧副本再改值，等于绕过了已经发出去的那一条。"""
+    o = [dict(_ORDER1[0], stem="BJS7080646", submitted_here=True)]
+    r = web_src.logic("L.hawbRows(o, p)[0]", o=o, p=_PEND2)
+    assert r["stem"] == "BJS7080646"
+    assert r["via"] == "company", "这一行点开就是公司已提交的那一份，主语要能说出来"
+    assert r["copies"] == 2, "两份不同的文件算两份，公司那一行指的就是其中一份，不另计"
+
+
+def test_house_rows_keep_numbers_that_do_not_overlap_apart():
+    """公司有一张、本机另有两张没交上去的：三个号三行，谁也别并谁。"""
+    p = [dict(_PEND2[0], hawb="BJX1111111", stem="BJX1111111"),
+         dict(_PEND2[1], hawb="BJX2222222", stem="BJX2222222")]
+    rows = web_src.logic("L.hawbRows(o, p)", o=_ORDER1, p=p)
+    assert [r["hawb"] for r in rows] == ["BJS7080646", "BJX1111111", "BJX2222222"]
+    assert [r["company"] for r in rows] == [True, False, False], "本机独有的行要标出「公司侧还没有」"
+    assert rows[0]["copies"] == 0, "公司行没有 stem、本机这个号也没有副本"
+
+
+def test_house_rows_do_not_merge_two_tickets_that_both_lack_a_number():
+    """分单号还没取到的两张票不能并成一行：那等于替票面说一句它没说的话。
+    与 dayKey 同一条规矩——没号就自己一组，键落在 stem 上。"""
+    p = [dict(_PEND2[0], hawb="", stem="A"), dict(_PEND2[1], hawb="", stem="B")]
+    rows = web_src.logic("L.hawbRows(o, p)", o=[], p=p)
+    assert len(rows) == 2, f"两张没号的票是两行：{rows}"
+    assert all(r["local"] and not r["company"] for r in rows)
+
+
+def test_house_rows_tolerate_missing_columns_and_empty_inputs():
+    """公司接口少给一格、或某台机器一张票都没有，都不该让这张表整块画不出来。"""
+    assert web_src.logic("L.hawbRows(o, p)", o=[], p=[]) == []
+    assert web_src.logic("L.hawbRows(o, p)", o=None, p=None) == []
+    rows = web_src.logic("L.hawbRows(o, p)", o=[{"hawb": "X1"}], p=None)
+    assert rows[0]["stem"] == "" and rows[0]["copies"] == 0, "缺格一律补空，别吐 undefined"
+
+
+def test_house_rows_take_the_first_company_row_when_the_company_sends_two():
+    """公司接口对同一个分单号回两行（j9 那边重录过一次）时，行仍然只有一行，
+    说的是**第一行**那份状态——不钉这一条，后一行的发送状态会悄悄盖掉前一行，
+    而两行谁新谁旧我们并不知道。"""
+    o = [{"hawb": "VCE4373", "mawb": "999-95764373", "stem": "", "reviewer": "宛平",
+          "submitted_at": "2026-10-11T09:00:00", "submitted_here": True, "send_status": 1},
+         {"hawb": "VCE4373", "mawb": "999-95764373", "stem": "", "reviewer": "刘明",
+          "submitted_at": "2026-10-12T09:00:00", "submitted_here": True, "send_status": 2}]
+    rows = web_src.logic("L.hawbRows(o, [])", o=o)
+    assert len(rows) == 1, f"同一个号两行也只给一行：{rows}"
+    assert rows[0]["send_status"] == 1 and rows[0]["reviewer"] == "宛平", \
+        f"以第一行为准：{rows[0]}"

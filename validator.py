@@ -96,10 +96,11 @@ def validate_raw(d: dict, sent: dict | None = None) -> list:
     elif not re.fullmatch(r"\d{4}-\d{2}-\d{2}", ct):
         warns.append(f"CREATE_TIME 格式非 YYYY-MM-DD: {ct!r}")
 
-    # 5) 电话国家码与收发货人国家一致性
-    for pfx, cfield, tfield in (
-        ("SHIPPER", "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
-        ("CONSIGNEE", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_TEL"),
+    # 5) 电话国家码与收发货人国家一致性（两个列名都写进旗面：审核台按列名挂旗，
+    #    只写"SHIPPER 电话区号…"那条就谁也不挂，撤掉顶部那排 chip 之后会成了没人能确认的死旗）
+    for cfield, tfield in (
+        ("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
+        ("CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_TEL"),
     ):
         tel = re.sub(r"\D", "", str(d.get(tfield, "")))
         country = str(d.get(cfield, "")).strip().upper()
@@ -109,7 +110,8 @@ def validate_raw(d: dict, sent: dict | None = None) -> list:
             for cc, iso in sorted(TEL_COUNTRY_CODES.items(), key=lambda x: -len(x[0])):
                 if tel.startswith(cc):
                     if iso != country:
-                        warns.append(f"{pfx} 电话区号 +{cc}({iso}) 与国家 {country} 不一致，疑似电话串边")
+                        warns.append(f"{tfield} 的电话区号 +{cc}({iso}) 与 {cfield} {country} 不一致，"
+                                     f"疑似电话串边")
                     break
 
     # 6) 识别号格（EORI，税号也在这一格里）形态粗检
