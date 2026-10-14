@@ -211,14 +211,15 @@ def test_failed_master_is_a_row_too():
         assert m["failed"] is True and m["state"] == "failed" and "超时" in m["error"]
 
 
-def test_void_route_is_open_to_any_logged_in_role_and_validates():
-    """作废是软闸门：登录就能点（弹二次确认、留痕），不做成"仅管理员"——
-    掐掉制单员手边的清理入口，他们会改成不删、把测试数据一直留在台账里。"""
+def test_void_is_admin_only_and_validates():
+    """作废与恢复**只对管理员开放**（2026-10-14 用户改口径："把今日归档里面的作废权只给管理员"）。
+    v1.11.0 当初做成"登录就能点"是为了让制单员手边能清自己的测试数据，现在收到管理员一处：
+    软闸门那套（二次确认 + 戳上记谁作废）照旧留着，只是点的人换了。"""
     with _sandbox():
         _ticket("E1"); _master("999-90273120")
         anon = TestClient(server.app)
         assert anon.post("/void", json={"kind": "hawb", "key": "E1"}).status_code == 401, \
-            "作废没要登录"
+            "没登录连门都进不来"
         admin = TestClient(server.app)
         admin.post("/login", json={"name": "admin", "password": "admin123"})
         r = admin.post("/void", json={"kind": "hawb", "key": "E1"})
@@ -230,17 +231,36 @@ def test_void_route_is_open_to_any_logged_in_role_and_validates():
         back = admin.post("/void", json={"kind": "hawb", "key": "E1", "void": False})
         assert back.status_code == 200 and back.json()["voided"] is None
         assert "hawb|E1" not in store.voided_map()
-        auth.set_password("马殿齐", "pw-12345", "reviewer")
-        rev = TestClient(server.app)
-        assert rev.post("/login", json={"name": "马殿齐", "password": "pw-12345"}).status_code == 200
-        assert rev.post("/void", json={"kind": "mawb", "key": "999-90273120"}).status_code == 200, \
-            "制单员也能作废（留痕记的是他）"
-        assert store.voided_map()["mawb|99990273120"]["by"] == "马殿齐"
+        for name, role in (("马殿齐", "reviewer"), ("刘明", "inputter")):
+            auth.set_password(name, "pw-12345", role)
+            c = TestClient(server.app)
+            assert c.post("/login", json={"name": name, "password": "pw-12345"}).status_code == 200
+            for body in ({"kind": "hawb", "key": "E1"}, {"kind": "mawb", "key": "999-90273120"},
+                         {"kind": "hawb", "key": "E1", "void": False}):
+                assert c.post("/void", json=body).status_code == 403, \
+                    f"{name}({role}) 不该能{'恢复' if body.get('void') is False else '作废'}：{body}"
+        assert store.voided_map() == {}, "被 403 挡下的那几次一个字都不该落进作废本"
 
 
-def test_desk_day_table_shows_the_type_and_lets_anyone_void_a_row():
+def test_only_admins_get_a_void_button_in_the_day_view():
+    """界面上也不许留入口：非管理员那一格什么都不画，但**已作废的行要能看懂为什么没按钮**——
+    那句话写在「只看作废」那颗勾选的说明里，不在每一行上重复。"""
+    js = web_src.part("js/desk.js")
+    cell = web_src.fn(js, "function voidCell(r){")
+    assert 'ME.role === "admin"' in cell, "作废按钮没认角色"
+    assert 'if (!admin) return "";' in cell, "认了角色却没真的提前返回：判断成了摆设"
+    gate = cell.index('ME.role === "admin"')
+    for attr in ("data-void", "data-undo"):
+        assert cell.index(attr) > gate, f"{attr} 排在角色判断前面，等于没挡"
+    html = web_src.part("index.html")
+    lab = html[html.index('id="dayOnlyVoid"') - 400: html.index('id="dayOnlyVoid"')]
+    assert "只对管理员" in lab, "非管理员看不出这功能为什么不在了"
+
+
+def test_desk_day_table_shows_the_type_and_has_a_void_button():
     """接线：类型列、作废与恢复按钮、「只看作废」开关，一个都不能少——
-    只加后端不加显示，用户看到的还是那张删不掉的表。"""
+    只加后端不加显示，用户看到的还是那张删不掉的表。（谁能看见那颗按钮归
+    `test_only_admins_get_a_void_button_in_the_day_view` 管。）"""
     page, js = web_src.part("index.html"), web_src.part("js/desk.js")
     assert 'id="dayOnlyVoid"' in page, "缺「只看作废」开关"
     assert 'data-void="' in js and 'data-undo="' in js, "作废/恢复按钮没接上"

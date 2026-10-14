@@ -926,13 +926,15 @@ class VoidBody(BaseModel):
 
 
 @app.post("/void")
-def void_row(body: VoidBody, user: dict = Depends(current_user)):
+def void_row(body: VoidBody, user: dict = Depends(current_user),
+             _: None = Depends(require_admin)):
     """台账那一行的「作废 / 恢复」：只往 voided.json 写一个戳（谁、何时），
     **提交台账、暂存记录、归档原件、复合键索引一律不动**——"这张票回传过公司"的凭据
     不能从表里点一下就没了，否则以后出了争议连查都没处查。
 
-    登录即可点，不做成仅管理员：掐掉制单员手边的清理入口，结果只会是他们不删、
-    让测试数据一直留在台账与统计里。代价是前端必须二次确认，且戳上记着是谁作废的。"""
+    2026-10-14 用户改口径：这一颗只给管理员（v1.11.0 起是"登录就能点"，为的是让制单员
+    手边能清自己的测试数据）。软闸门那两样一样没丢——二次确认照旧、戳上照旧记是谁作废的，
+    变的只是点它的人；恢复与作废同一条门，不然留一个"谁都能翻回来"的后门。"""
     if not str(body.key or "").strip():
         raise HTTPException(400, "要带单号：分单给 stem，主单给主单号")
     try:

@@ -2684,7 +2684,11 @@ function dvStatHtml(b){
 }
 function voidCell(r){
   /* 操作列只有 96px，两步确认竖着排（desk.css 里 td.c-op 那道 flex-wrap）：
-     横着排会被裁掉一半，装不下的确认按钮等于没有确认。 */
+     横着排会被裁掉一半，装不下的确认按钮等于没有确认。
+     作废与恢复只对管理员开放（2026-10-14 用户改口径）：非管理员这一格什么都不画。
+     "为什么这行没有按钮"写在「只看作废」那颗勾选的说明里，不在每一行上重复。 */
+  const admin = !!ME && ME.role === "admin";
+  if (!admin) return "";
   const k = r.kind + "|" + (r.kind === "mawb" ? r.mawb : r.stem);
   if (r.voided)
     return '<button class="btn sm" type="button" data-undo="' + esc(k) + '" title="当初作废：' +

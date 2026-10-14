@@ -269,7 +269,7 @@
     <label class="f" id="dayDateWrap" title="这一天里读出来（解析）或发回公司（提交）过的票都算：一张票会出现在它动过的每一天">日期<input id="dayDate" type="date" aria-label="台账日期（按解析或提交日）"></label>
     <label class="f" title="手里只有一个号的时候不必先猜它是哪天经手的：带不带连字符都算同一个号">号<input id="dayQ" type="search" placeholder="分单号 / 主单号 · 跨所有日子" aria-label="按单号检索，跨所有日子"></label>
     <button class="btn sm" id="dayGo" type="button">刷新</button>
-    <label class="f" title="作废只是把这一行从台账与统计里收起来：票面原件、暂存记录、提交台账与主单检索全都不动，随时能恢复。要清的是测试数据对正确率的污染，不是历史。"><input type="checkbox" id="dayOnlyVoid" aria-label="只看作废的票"> 只看作废</label>
+    <label class="f" title="作废只是把这一行从台账与统计里收起来：票面原件、暂存记录、提交台账与主单检索全都不动，随时能恢复。要清的是测试数据对正确率的污染，不是历史。作废与恢复只对管理员开放，所以非管理员这一格没有按钮。"><input type="checkbox" id="dayOnlyVoid" aria-label="只看作废的票"> 只看作废</label>
   </div>
   <div class="dvbar" id="dayBar">
     <!-- 这一档决定"这些数字是谁的"，所以排在统计最前面。默认 hidden：非管理员永远看不到
