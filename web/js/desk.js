@@ -2236,9 +2236,15 @@ function mstTable(rows){
       ? '；这个号在本机有 ' + r.copies + ' 份，点开的是'
         + (r.via === "company" ? "公司已提交的那一份" : "最新解析的那一份")
         + (r.source_name ? "（" + esc(r.source_name) + "）" : "") : "";
+    /* 号没解析出来的那一格不许是空白：空白看着像"这行没内容"，可它其实是个能点开的按钮
+       （2026-10-15 用户问"分单号是空的为什么会是空的"——那几张就是模型没读出号的票，
+       点开就能在号那一格里补上）。话要写在格子里，别做成人看不见的热点。 */
+    const nm = r.hawb || "没解析出分单号";
     const no = (r.stem ? '<button type="button" class="lk" data-open="' + esc(r.stem) +
-                         '" title="点开这张分单的核对页' + many + '">' + esc(r.hawb) + '</button>'
-                       : esc(r.hawb))
+                         '" title="' + (r.hawb ? "点开这张分单的核对页"
+                                               : "点开这张票：分单号没解析出来，在号那一格里补上")
+                         + many + '">' + esc(nm) + '</button>'
+                       : esc(nm))
       + (many ? ' <span class="hint">本机 ' + r.copies + ' 份</span>' : '');
     const who = r.company ? esc(r.reviewer || "—")
       : (r.stager ? esc(r.stager) + (r.edited ? ' <span class="st-edited">改 ' + r.edited + ' 列</span>' : '')

@@ -132,3 +132,12 @@ def test_reopening_a_ticket_takes_values_and_acks_from_the_server():
     assert "L.serverState" in op, "要走「服务器那份赢」那一条算式，不是只翻 /staged"
     assert "skipE:sf.skippedEmpty" in op, "提交时跳过的空栏单独带回去：它不算待办，也不算已确认"
     assert "airE:mg.airE" in op and "ackF:uni(dr.ackF, sf.acked)" in op, "改动与确认都要合并回来"
+
+
+def test_a_row_without_a_number_says_so_instead_of_showing_nothing():
+    """号没解析出来的那一行不许画成一片空白（2026-10-15 用户："分单号是空的为什么会是空的"）。
+    空白看着像"这行没内容"，可它其实是一个能点开的按钮——人该看见的是"这张票缺号、点进去补"，
+    不是一块看不见的热点。有 stem 给可点的那句，没 stem 给同一句话但不做链接。"""
+    tab = _html_fn(web_src.desk(), "mstTable")
+    assert 'r.hawb || "没解析出分单号"' in tab, "空号那一格要有字，且可点与不可点两处都用它"
+    assert "点开这张票" in tab, "没号的按钮上那句提示要说清点进去干什么（补号），别只写核对页"
