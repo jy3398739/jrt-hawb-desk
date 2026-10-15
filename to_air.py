@@ -226,7 +226,10 @@ def to_air(d: dict) -> dict:
         fax = _clean_phone(_first_phone(fax0) or pp["fax"])
 
         out[pfx + "_INFO_COUNTRY"] = country2
-        out[city_key] = city_code
+        # 收货人城市留票面全称（2026-10-15 业主定案「收货人城市要全称，不要三字码」）：
+        # 公司那一格要的是城市名，转成机场码等于让人在核对区把 CHENNAI 手动改回去。
+        # 起运港/目的港/航路那几列仍是三字码，别跟着改；发货人城市这次没动，等业主表态。
+        out[city_key] = city0 if pfx == "CONSIGNEE" else city_code
         out[pfx + "_INFO_COMP_ADDRESS"] = street
         out[pfx + "_INFO_TEL"] = tel
         out[pfx + "_INFO_FAX"] = fax

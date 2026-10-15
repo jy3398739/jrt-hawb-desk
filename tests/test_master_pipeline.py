@@ -77,14 +77,16 @@ def test_run_master_produces_clean_editable_record():
 
 def test_public_exposes_group_labels_and_readonly_meta():
     """分组名由后端给（前端抄一份迟早漂移）；JOB_ID 这类"主单多出来但不参与提交"的列
-    以只读 meta 形式进基础信息，让人看得见、也不会被当成可提交列发出去。"""
+    以只读 meta 形式进基础信息，让人看得见、也不会被当成可提交列发出去。
+    通知人 2026-10-15 起自成一档排在最后（业主定案 发货人 → 收货人 → 通知人）。"""
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
     old = _use_tmp(tmp)
     box, undo = _stub_extract()
     try:
         rec = mp.public(mp.run_master("176-62400004", dict(ORDER, JOB_ID=40366281)))
-        assert rec["groups"]["base"] == "基础信息" and "notify" not in rec["groups"]
+        assert rec["groups"]["base"] == "基础信息" and rec["groups"]["notify"] == "通知人 NOTIFY"
+        assert list(rec["groups"]) == ["base", "shipper", "consignee", "notify"], rec["groups"]
         assert rec["meta"] == [{"col": "JOB_ID", "label": "公司任务号（只读，不提交）",
                                 "value": 40366281, "group": "base"}]
         assert "JOB_ID" not in rec["ams"], "只读列绝不进可提交面"

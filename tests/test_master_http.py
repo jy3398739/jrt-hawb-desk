@@ -378,6 +378,33 @@ def test_desk_has_a_master_stage_button_next_to_the_submit_one():
         "直接把 mvSubmit 当监听器会把 MouseEvent 当成参数传进去"
 
 
+def test_searching_a_different_master_clears_the_open_one():
+    """换一张主单检索时，右边不能还挂着上一张的原文与核对表（2026-10-15 现场：
+    左卡写着「解析中…」，右边还是上一张的 36 列与 L1，看上去就像新票已经解析完了）。
+    旧票的改动 mvSave 逐键落了盘，这里只换视图不丢工作；重新解析（force）走的是
+    同一张票自己的那路，不在此列。"""
+    js = web_src.desk()
+    search = web_src.fn(js, "async function mstSearch(force)")
+    assert "!force" in search and "L.normNo(m)" in search and "mvShell(" in search, \
+        "检索开头要把打开着的另一张主单换成空壳"
+    shell = web_src.fn(js, "function mvShell(mawb)")
+    assert 'state: "parsing"' in shell, "空壳要停在解析中那一档，别让它看起来像已解析"
+    prev = web_src.fn(js, "function mvPreview()")
+    assert "解析完成后这里显示" in prev, "解析中那栏不能说「没有资料文本」——那是解析完之后才成立的话"
+    # 票面栏的键要带上解析状态：空壳（解析中）被检索结果填成 done 时，同一张主单的
+    # L1 栏必须跟着重画，不然"正在取公司资料"会一直配着一张解析完的核对表。
+    assert "MV.rec.state" in web_src.fn(js, "function renderPreview()"), \
+        "主单票面栏的缓存键要认解析状态"
+    main = web_src.fn(js, "function renderMain")
+    assert "mvParsingEmpty" in main, "解析中要出空态，而不是一张空的 36 列表"
+    assert main.index("mvParsingEmpty") < main.index('id="mvStage"'), \
+        "暂存/提交那排按钮不许出现在解析中那一档里"
+    # 解析中那一档没有底部按钮：接线必须先认存在再挂。裸挂在 null 上会把整场 render
+    # 炸掉，票面栏就停在上一张票的画面里——静态全绿、只有浏览器点得出来（2026-10-15）。
+    assert "const mst = $(\"#mvStage\"); if (mst) mst.addEventListener" in main, "mvStage 接线要防解析中那档没有按钮"
+    assert "const msb = $(\"#mvSubmit\"); if (msb) msb.addEventListener" in main, "mvSubmit 接线要防解析中那档没有按钮"
+
+
 def test_a_master_the_inputter_sends_himself_is_not_marked_unreviewed():
     """与分单同一条：录入员本人直发主单，不问确认，台账记的是 inputter_self_submit，
     不是「未经录入员复核」。两条链统一的是机制，不是各自再判一次。"""

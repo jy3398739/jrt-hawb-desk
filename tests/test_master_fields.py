@@ -30,16 +30,22 @@ ORDER = {
 }
 
 
-def test_groups_follow_the_house_layout_with_notify_and_jobid_in_basic():
-    """分组照分单那套走：基础信息（单号/货物/通知人）+ 发货人 + 收货人，不再单列"通知人"段。
-    通知人是主单多出来的块，用户定案放进基础信息；JOB_ID 也是主单多出来的，只读展示同样进这里。"""
+def test_groups_order_shipper_consignee_notify_last():
+    """分组照分单那套走：基础信息（单号/货物）+ 发货人 + 收货人，通知人单列一段放在最后。
+    通知人从前并进基础信息（2026-09-28 定案「不单列」），2026-10-15 业主改成按
+    发货人 → 收货人 → 通知人 的顺序读——推翻旧决定时把旧理由留在 master_fields 的注释里。
+    JOB_ID 也是主单多出来的，仍只读展示在基础信息里。"""
     groups = [g for _c, _l, g in MASTER_FIELDS]
-    assert set(groups) == {"base", "shipper", "consignee"}, set(groups)
-    assert groups[0] == "base" and groups[-1] == "consignee", "基础信息在最前，收货人在最后（与分单同序）"
+    assert set(groups) == {"base", "shipper", "consignee", "notify"}, set(groups)
+    assert groups[0] == "base" and groups[-1] == "notify", "基础信息在最前，通知人在最后"
+    notify_at = [i for i, g in enumerate(groups) if g == "notify"]
+    cons_at = [i for i, g in enumerate(groups) if g == "consignee"]
+    assert max(cons_at) < min(notify_at), "通知人要排在收货人后面（发货人 → 收货人 → 通知人）"
     base = [c for c, _l, g in MASTER_FIELDS if g == "base"]
     assert {"MAWB_NO", "GOODS_INFO_HSCODE", "SLAC"} <= set(base)
-    assert any(c.startswith("NOTIFY") for c in base), "通知人 11 列并进基础信息"
+    assert not any(c.startswith("NOTIFY") for c in base), "通知人不再并进基础信息"
     assert MASTER_GROUP_LABELS["base"] == "基础信息"
+    assert MASTER_GROUP_LABELS["notify"] == "通知人 NOTIFY"
     # JOB_ID 不是可提交列，但要在基础信息里看得见（只读），来源与提交口径都要标清
     assert "JOB_ID" not in MASTER_COLS
     assert [(k, g) for k, _l, g in MASTER_META_COLS] == [("JOB_ID", "base")]
@@ -58,7 +64,7 @@ def test_field_table_is_the_company_master_shape():
         assert absent not in cols, f"{absent} 不是主单可提交列（外层只读参考或服务端维护）"
     assert not any(c.endswith("_TAX_ID") for c in cols), \
         "公司主单表没有税号列（分单表也没有）：票面 USCI/CNPJ 那类号在主单侧没有落点，不能凭空造列"
-    for grp in ("shipper", "consignee"):
+    for grp in ("shipper", "consignee", "notify"):
         sub = [c for c, _l, g in MASTER_FIELDS if g == grp]
         assert len(sub) == 11, f"{grp} 组应为 11 列，实际 {len(sub)}"
         assert any(c.endswith("_COMP_NAME") for c in sub) and any(c.endswith("_EMAIL") for c in sub)

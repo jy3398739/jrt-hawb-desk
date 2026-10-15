@@ -478,14 +478,20 @@ function mvPreview(){
   const lines = tr && tr.lines && tr.lines.length
     ? tr.lines : Object.keys(MV.order || {}).filter(k => k !== "AMS_RECORD" && typeof (MV.order[k]) === "string" && String(MV.order[k]).trim())
       .map(k => ({i: 0, text: k + ": " + MV.order[k]}));
-  if (!lines.length) return '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
+  if (!lines.length)
+    return (MV.rec && MV.rec.state === "parsing")
+      ? '<div class="empty">正在取公司资料并解析：解析完成后这里显示 L1 原文。</div>'
+      : '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
   const rows = lines.map(x => '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) + '</div>').join("");
   return '<div class="mvtxt"><div class="t2">L1 原文 · 公司主单资料（逐字，未加工）</div>' + rows +
     '<p class="hint hintp flush">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。</p></div>';
 }
 function renderPreview(){
   if (MV){
-    const key = "M|" + MV.mawb;
+    /* 键带上解析状态与耗时：检索另一张主单时先出"解析中"空壳、解析完自动填上，
+       同一张主单重解析也是——键里只有号的话，状态变了这一栏不重画，
+       就会挂着"正在取公司资料"去配一张已经解析完的核对表。 */
+    const key = "M|" + MV.mawb + "|" + (MV.rec.state || "") + "|" + (MV.rec.elapsed || 0);
     if (key === PREVIEW.key) return;
     ++_pvSeq;                                   // 作废在飞的票面取回，别让原件盖掉公司资料
     PREVIEW.key = key;
@@ -1590,7 +1596,8 @@ function renderMain(){
       ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
       ${MV.locked ? `<div class="chips"><span class="chip">这条主单在公司已经离开暂存档（状态 ${esc(MV.locked)}），公司不再收改动</span></div>` : ""}
       ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机未保存的编辑里</span></div>` : ""}
-      ${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
+      ${rec.state === "parsing" ? `<div class="empty" id="mvParsingEmpty">主单 ${esc(MV.mawb)} 解析中（约 7-20 秒）：解析完成后这里出 36 列核对表，左栏也先空着等原文。</div>`
+      : `${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
         主单表没有件重/航路/税号列，<b>税号按公司口径统一填同主体的 EORI 列</b>；
@@ -1605,7 +1612,7 @@ function renderMain(){
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
-      </div>`;
+      </div>`}`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
       inp.addEventListener("keydown", blockEnter);
@@ -1619,10 +1626,12 @@ function renderMain(){
     }));
     $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
-    $("#mvStage").addEventListener("click", mvStage);
+    /* 解析中那一档没有底部按钮（mvParsingEmpty），这几颗的接线必须先认存在再挂——
+       裸挂在 null 上会把整场 render 炸掉，票面栏就停在上一张票的画面里（浏览器里才看得见）。 */
+    const mst = $("#mvStage"); if (mst) mst.addEventListener("click", mvStage);
     const mrv = $("#mvReviewed");
     if (mrv) mrv.addEventListener("click", () => markReviewed("mawb", MV.mawb));
-    $("#mvSubmit").addEventListener("click", () => mvSubmit());
+    const msb = $("#mvSubmit"); if (msb) msb.addEventListener("click", () => mvSubmit());
     return;
   }
   if (!t){
@@ -2252,6 +2261,9 @@ async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
   if (!m){ st.textContent = "请先填主单号"; return; }
   st.textContent = "检索中…";
+  /* 打开着的若是另一张主单，先换成空壳：解析中那两栏（L1 原文、36 列核对表）要空着等新票，
+     不能让上一张的内容冒充它。force 是「重新解析」那一路——同一张票自己的重跑，不清。 */
+  if (!force && MV && L.normNo(m) !== L.normNo(MV.mawb)){ mvSave(); MV = mvShell(m); render(); }
   try{
     const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m) + (force ? "&force=1" : ""));
     if (r.status === 401){ $("#gate").hidden = false; throw new Error("登录已过期，请重新登录"); }
@@ -2261,6 +2273,9 @@ async function mstSearch(force){
     MST_LAST = j;
     mstRender(j, m);
     if (j.master && j.master.state === "parsing") mstPoll(m);   // 解析在后台跑，卡片跟着刷新状态
+    else if (MV && MV.mawb === j.mawb && MV.rec && MV.rec.state === "parsing" && j.master){
+      mvSetRec(j.master); render();                             // 检索回来时已是现成的：空壳直接填上
+    }
   }catch(e){ st.textContent = "检索失败：" + (e.message || e); $("#mstResult").innerHTML = ""; }
 }
 /* 解析中每 2 秒取一次结果：入口状态、以及（如果已经打开）主单核对区一起更新 */
@@ -2356,6 +2371,12 @@ function mvPoll(){
 }
 /* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。 */
 function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
+/* 检索另一张主单时的空壳：停在解析中那一档，两栏都先空着——上一张的原文与核对表要是继续
+   挂着，看上去就像新票已经解析完了（2026-10-15 现场）。旧票的改动不受影响：mvSave 逐键落了盘。 */
+function mvShell(mawb){
+  return {mawb: mawb, order: {}, rec: {state: "parsing"}, editBase: {}, edit: {}, acked: [],
+          extraFlags: [], conflicts: [], localDiff: [], staged: null, locked: "", submitted: null};
+}
 /* 主单暂存：把这 36 列存进服务器上的这条主单记录，并在公司那边占个位（状态 0，可反复改）。
    与分单同一个道理——从前 MV.edit 只在浏览器里，换台机器就什么都没交出去。 */
 async function mvStage(){

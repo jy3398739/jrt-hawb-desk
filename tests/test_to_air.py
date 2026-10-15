@@ -102,6 +102,27 @@ def test_l3_invents_no_whole_string_when_the_model_left_it_empty():
     assert l3["CONSIGNEE_INFO_COUNTRY"] == "GB", l3["CONSIGNEE_INFO_COUNTRY"]
 
 
+def test_consignee_city_keeps_the_ticket_name():
+    """收货人城市留票面全称（2026-10-15 业主定案「收货人城市要全称，不要三字码」）：
+    公司那一格要的是城市名，转成机场码等于让人在核对区把 CHENNAI 手动改回去。
+    起运港/目的港/航路那几列仍是三字码，别跟着改；发货人城市这次没动——业主只点了收货人，
+    要不要同样留全称等他表态，所以这里把发货人仍转码这件事一并钉住。"""
+    l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    l2d.update({
+        "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261003",
+        "SHIPPER_INFO_COMP_NAME": "QINGDAO TEXTILE CO LTD",
+        "SHIPPER_INFO_COMP_ADDRESS": "NO.91 XINGANG ROAD, QINGDAO, CHINA",
+        "SHIPPER_INFO_CITY": "QINGDAO", "SHIPPER_INFO_COUNTRY": "CN",
+        "CONSIGNEE_INFO_COMP_NAME": "BIG METAL LTD",
+        "CONSIGNEE_INFO_COMP_ADDRESS": "OCCUPATIONAL ROAD 1, LONDON SE17 3BE GB",
+        "CONSIGNEE_INFO_CITTY": "LONDON", "CONSIGNEE_INFO_COUNTRY": "GB"})
+    l3 = to_air.to_air(l2d)
+    assert l3["CONSIGNEE_INFO_CITTY"] == "LONDON", \
+        f"收货人城市被转成了三字码：{l3['CONSIGNEE_INFO_CITTY']!r}"
+    assert l3["SHIPPER_INFO_CITY"] == "TAO", \
+        f"发货人城市现仍转码（有意的不对称）：{l3['SHIPPER_INFO_CITY']!r}"
+
+
 def test_prompt_asks_for_a_transcribed_party_string():
     """提示词要与 L3 同口径：L3 不再重拼，提示词却还写着「这两个串允许按规定格式拼接」，
     模型就照旧交一份自己拼的串，而这一串会被当成"票面原文"送进公司——比原来更糟。
