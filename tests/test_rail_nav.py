@@ -85,6 +85,8 @@ def test_a_refresh_puts_the_day_back_on_the_table():
     js = web_src.part("js/desk.js")
     rq = web_src.fn(js, "async function restoreQueue(")
     assert '"/day"' in rq, "要问服务器今天本人动过哪些票，不靠浏览器自己记那份名单"
+    assert ".concat(keep)" in rq, \
+        "补桌那几百毫秒里人可能已经点开过草稿或丢上一张：那几张要留着，整张表盖掉就是把人刚做的事擦了"
     assert "kind" in rq, "主单的行不进分单队列：那张表里两种行混在一起"
     assert "restoreQueue()" in web_src.fn(js, "function startDesk("), "开门就补桌"
     assert "localStorage.setItem(LS.open" in js, "离开时停在哪一张要记住，回来还停在那一张"

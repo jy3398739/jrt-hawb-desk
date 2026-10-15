@@ -2352,7 +2352,10 @@ async function restoreQueue(){
     rows = (j.rows || []).filter(x => x.kind !== "master" && x.stem && !x.voided);
   }catch(e){ return; }              // 拿不到就照旧：空列表加一句「尚无票据」，别在开门时弹窗
   if (!rows.length) return;
-  S.tickets = rows.map(seedRow);
+  /* 这几百毫秒里人可能已经点开了本机未保存的编辑、或刚丢上去一张：那几张不能被补桌整个盖掉。
+     同一个 stem 以服务器种的那一行为准（点开就是完整那份），其余原样留着。 */
+  const keep = S.tickets.filter(t => !t.stem || !rows.some(r => r.stem === t.stem));
+  S.tickets = rows.map(seedRow).concat(keep);
   const last = localStorage.getItem(LS.open) || "";
   const pick = S.tickets.some(t => t.stem === last) ? last : S.tickets[0].stem;
   await openHouse(pick);             // 回到离开时那一张：这一张取完整那份，其余点开再取
