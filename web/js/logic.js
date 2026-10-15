@@ -276,6 +276,29 @@ const L = {
     return {airE: airE, conflicts: conflicts, local: kept};
   },
 
+  /* 「这张票在人手里最后定下来的是哪一版」——服务器才知道，浏览器的草稿只是本机那一份。
+     判据按时间取更晚的一次：提交过以提交台账为准（那才是公司真收下的值），
+     交出去之后又暂存过就以暂存为准（那是人后来改的，不能让台账那份旧的盖回来）。
+     空栏两档照台账的档位分开交回：`ackedEmpty` 是逐列确认过「票面本来就没印」的，
+     `skippedEmpty` 是点第二下硬发出去的——合成一档就把「没确认过」说成「确认过」。
+     没提交过时，最后一次暂存点过的红旗确认就是服务器那份（事件里逐次带着）。 */
+  serverState(ledger, staged){
+    const led = ledger || {}, st = staged || {};
+    const sent = Object.keys(led.air_sent || {}).length > 0;
+    const has = Object.keys(st.air_final || {}).length > 0;
+    const useSent = sent && (!has || String(led.submitted_at || "") >= String(st.staged_at || ""));
+    const src = useSent ? led : st;
+    const edits = useSent ? (led.edited_fields || []).map(k => String(k).replace(/^air\./, ""))
+                          : Object.keys(st.edits || {});
+    const ev = (st.events || []).slice(-1)[0] || {};
+    return {from: useSent ? "submit" : (has ? "stage" : ""),
+            values: useSent ? led.air_sent : (st.air_final || {}),
+            edits: edits,
+            acked: ((src.acked_flags || []).length ? src.acked_flags : (ev.acked_flags || [])).slice(),
+            ackedEmpty: (src.acked_empty || []).slice(),
+            skippedEmpty: (src.skipped_empty || []).slice()};
+  },
+
   /* 人改了一列：值与当前解析一致就不算改动；基准挪到当前解析，这一列的打架随之消解
      （他已经对着新值看过了，再报一次只会让人学会忽略提示）。 */
   draftTouch(edit, editBase, conflicts, k, value, orig){
@@ -454,16 +477,19 @@ const L = {
   isEmptyVal(raw, air){
     return !String(raw == null ? "" : raw).trim() && !String(air == null ? "" : air).trim();
   },
+  /* 一列的六态。`skip` 是「提交时按 skipped_empty 硬发出去的空栏」：人做过一次决定
+     （明知空还是发了），所以不再算待办；可他没说过「票面本来就没印」，所以也不许显示成已确认。
+     两档都从服务器那份留痕里来，各归各的标签，混一档就是说假话。 */
   fieldStatus(o){
     const flags = Number(o.flags) || 0, acked = !!o.acked;
     const air = String(o.air == null ? "" : o.air).trim();
     let s;
     if (flags) s = acked ? "confirmed" : "flag";
-    else if (this.isEmptyVal(o.raw, o.air)) s = acked ? "emptyok" : "empty";
+    else if (this.isEmptyVal(o.raw, o.air)) s = acked ? "emptyok" : (o.skip ? "skipped" : "empty");
     else if (!air) s = "miss";                 // L2 有值、L3 空：归一化没跟上，是提示不是待办
     else s = "same";
     const label = {flag: "红旗 " + flags, confirmed: "已确认", empty: "字段为空",
-                   emptyok: "已确认", miss: "航空口径空", same: "已归一"}[s];
+                   emptyok: "已确认", skipped: "提交时跳过", miss: "航空口径空", same: "已归一"}[s];
     return {s, label, todo: s === "flag" || s === "empty"};
   },
   /* 一张票的待办。other 是"这条旗说的是整张票、没有哪一列可挂"那份名单（区号串边、税号漏抄）：

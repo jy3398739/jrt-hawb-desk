@@ -451,3 +451,41 @@ def test_house_rows_take_the_first_company_row_when_the_company_sends_two():
     assert len(rows) == 1, f"同一个号两行也只给一行：{rows}"
     assert rows[0]["send_status"] == 1 and rows[0]["reviewer"] == "宛平", \
         f"以第一行为准：{rows[0]}"
+
+
+def test_field_status_skipped_empty_is_decided_but_says_so():
+    """提交时按 skipped_empty 硬发出去的那一格：人确实做过一次决定（明知是空还是发了），
+    不该再被当成待办催第二遍；可他从来没说过「票面本来就没印」，界面也不许写成已确认。
+    2026-10-15 现场：一张已提交的分单重开，按铮是「仍有 13 项待核对」。"""
+    r = web_src.logic("L.fieldStatus(o)", o={"raw": "", "air": "", "skip": True})
+    assert r["s"] == "skipped" and r["todo"] is False, r
+    assert r["label"] == "提交时跳过", r["label"]
+    ack = web_src.logic("L.fieldStatus(o)", o={"raw": "", "air": "", "acked": True, "skip": True})
+    assert ack["s"] == "emptyok", "逐列确认过「本就为空」那一档赢：留痕更硬"
+    flagged = web_src.logic("L.fieldStatus(o)", o={"raw": "", "air": "", "flags": 2, "skip": True})
+    assert flagged["s"] == "flag" and flagged["todo"] is True, "跳过空栏不许把红旗洗白"
+    n = web_src.logic("L.todoOf(rows, [])",
+                      rows=[{"k": "A", "raw": "", "air": "", "skip": True},
+                            {"k": "B", "raw": "", "air": ""}])
+    assert n["keys"] == ["B"] and n["n"] == 1, f"待办只数没决定过的那一格：{n}"
+
+
+def test_server_state_prefers_the_submit_ledger_and_splits_the_two_empty_kinds():
+    """重开一张交出去的票时，「人定下来的那一版」只有服务器知道：提交过以提交台账为准，
+    只暂存过以暂存为准，两边都有就认更晚那一次。台账把空栏分两档存（人确认过 / 提交时跳过），
+    这里必须照档位交回去——混成一档就是把「没确认过」说成「确认过」。"""
+    led = {"air_sent": {"A": "人工值"}, "edited_fields": ["air.A"],
+           "submitted_at": "2026-10-15T15:00:00", "acked_flags": ["旗一"],
+           "acked_empty": ["B"], "skipped_empty": ["C"]}
+    s = web_src.logic("L.serverState(o, null)", o=led)
+    assert s["from"] == "submit" and s["values"]["A"] == "人工值", s
+    assert s["edits"] == ["A"], f"台账里的改动列带 air. 前缀，合并要的是列名：{s['edits']}"
+    assert s["acked"] == ["旗一"] and s["ackedEmpty"] == ["B"] and s["skippedEmpty"] == ["C"], s
+    st = {"air_final": {"A": "暂存值"}, "edits": {"A": ["模型值", "暂存值"]},
+          "staged_at": "2026-10-15T16:00:00",
+          "events": [{"by": "宛平", "at": "16:00:00", "acked_flags": ["旗二"]}]}
+    later = web_src.logic("L.serverState(o, s)", o=led, s=st)
+    assert later["from"] == "stage" and later["values"]["A"] == "暂存值", \
+        f"交出去之后又暂存过新的一版，现状是那一次：{later}"
+    assert later["acked"] == ["旗二"], "没提交过时，最后一次暂存点过的确认就是服务器那份"
+    assert web_src.logic("L.serverState(null, null)")["from"] == "", "两样都没有就是没有，别造一份空的"

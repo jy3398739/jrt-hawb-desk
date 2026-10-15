@@ -122,3 +122,13 @@ def test_desk_strip_hawb_number_opens_that_ticket():
     assert "mvOff()" in op, "打开分单要退出主单视图，并停掉那张主单的轮询"
     assert "loadPreview" in op or "render()" in op, "落位后要把票面与核对区渲染出来"
     assert '$("#mstHawbBox").addEventListener' in html, "整宽条上要有 openHouse 的点击委托"
+
+
+def test_reopening_a_ticket_takes_values_and_acks_from_the_server():
+    """重开一张交出去的票：值认「人最后定下来的那一版」（提交台账 air_sent / 暂存 air_final），
+    确认也认那一份。只盯模型那一版本机草稿，等于把人改过的值和点过的确认当没发生过——
+    2026-10-15 现场：已提交的分单重开，发货人整串退回模型那一版，按铮写「仍有 13 项待核对」。"""
+    op = web_src.fn(web_src.desk(), "async function openHouse(")
+    assert "L.serverState" in op, "要走「服务器那份赢」那一条算式，不是只翻 /staged"
+    assert "skipE:sf.skippedEmpty" in op, "提交时跳过的空栏单独带回去：它不算待办，也不算已确认"
+    assert "airE:mg.airE" in op and "ackF:uni(dr.ackF, sf.acked)" in op, "改动与确认都要合并回来"

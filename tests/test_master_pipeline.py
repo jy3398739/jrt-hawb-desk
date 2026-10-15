@@ -97,6 +97,53 @@ def test_public_exposes_group_labels_and_readonly_meta():
         _restore(old, tmp)
 
 
+def test_stage_master_keeps_the_confirmed_flags_on_the_record():
+    """人确认过哪些红旗必须落在服务器那条主单记录上：只存在浏览器草稿里的话，刷新一次或
+    换台机器再检索同一张主单，确认过的旗又红一遍——分单侧同一个病（2026-10-15 现场）。
+    再一次暂存没带上那条，说的是他把确认撤回了，那份留痕要跟着收回去，不许留在顶上。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        mp.run_master("176-62400004", ORDER)
+        mp.stage_master("176-62400004", dict(AMS_OUT, SLAC=12), "宛平", "reviewer",
+                        acked_flags=["主单号与公司资料不一致"])
+        rec = mp.read_master("176-62400004")
+        assert rec["acked_flags"] == ["主单号与公司资料不一致"], rec.get("acked_flags")
+        assert mp.public(rec)["acked_flags"] == ["主单号与公司资料不一致"], "前端读的就是 public 那份"
+        mp.stage_master("176-62400004", dict(AMS_OUT, SLAC=12), "宛平", "reviewer", acked_flags=[])
+        assert mp.read_master("176-62400004")["acked_flags"] == [], "撤回的确认不能还挂在顶上"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_submit_master_leaves_the_confirmed_flags_on_the_parsed_record():
+    """提交之后重开这张主单，确认过的红旗不该再红一遍：除了台账，解析记录顶上也要留着这一档
+    （没解析记录时不新建文件，提交的账不该顺手造出一份缓存来）。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    undo_cfg = _live()
+    sent = []
+    restore = _patch_j9(sent, [{"MASTER_NO": "176-62400004", "AMS_RECORD": None}])
+    try:
+        mp.run_master("176-62400004", ORDER)
+        bad = dict(AMS_OUT, SHIPPER_INFO_POSTAL="x" * 60)
+        flags = mp.master_flags(bad)
+        assert flags, "这一版样本没红旗的话，这条断言就是空的"
+        mp.submit_master({"mawb": "176-62400004", "reviewer": "马殿齐", "ams": bad,
+                          "acked_flags": flags})
+        assert mp.read_master("176-62400004")["acked_flags"] == flags
+    finally:
+        restore()
+        config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = undo_cfg
+        undo()
+        _restore(old, tmp)
+
+
 def test_missed_ams_column_is_named_as_a_red_flag():
     """公司 AMS_RECORD 里明明有值、模型却没取 → 报"漏取"并进提交门。
     不区分"资料里没有"和"有但没提出来"，复核人只能对着一堆空格子猜；而整表写回会把

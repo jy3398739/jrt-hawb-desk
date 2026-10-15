@@ -56,7 +56,7 @@ const SUBMIT_URL = BASE + "/submit";
 
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate", dayDensity:"hawb.review.day.density",
             locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
-            split:"hawb.review.split", colK:"hawb.review.colK"};
+            split:"hawb.review.split", colK:"hawb.review.colK", open:"hawb.review.open"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -240,6 +240,7 @@ function saveDraft(t){
      只存 airE 的话，刷新一次确认全丢、进度从"核到一半"退回 0/0——那正是最该留住的两样。 */
   d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
                qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], ackE:t.ackE || [],
+               skipE:t.skipE || [],
                srvFlags:t.srvFlags || [], todoBase:t.todoBase, submitted:t.submitted};
   localStorage.setItem(LS.draft, JSON.stringify(d));
 }
@@ -264,7 +265,7 @@ function loadDraft(stem){
   const d = drafts()[stem]; if (!d) return null;
   return {file:null, filename:d.filename || d.stem, stem:d.stem, state:"done", restored:true,
           channel:d.channel, elapsed:d.elapsed, qc:d.qc, raw:d.raw || {}, air:d.air || {},
-          airE:d.airE || {}, ackF:d.ackF || [], ackE:d.ackE || [], srvFlags:d.srvFlags || [],
+          airE:d.airE || {}, ackF:d.ackF || [], ackE:d.ackE || [], skipE:d.skipE || [], srvFlags:d.srvFlags || [],
           todoBase:typeof d.todoBase === "number" ? d.todoBase : null,
           submitted:d.submitted || null};
 }
@@ -1041,6 +1042,7 @@ async function stageTicket(t){
        锁行那一档气泡走中性色——绿色说"全成了"、红色说"白点了"，两样都不对。 */
     t.locked = c && c.locked ? (c.status || 1) : "";
     render();
+    afterWrite(t, false);
     if (t.locked) toast(stageMsg(n, c), "");
     else toast(stageMsg(n, c), "ok");
   }catch(e){ toast("暂存失败：" + (e.message || e), "bad"); }
@@ -1105,7 +1107,11 @@ async function submitTicket(t){
     return;
   }
   t.state = "done"; t.submitted = {mode:"server", at:nowTxt()};
+  /* 这一发里没确认就发出去的那些空栏，服务器按 skipped_empty 留痕；本机照同一档收起来。
+     刚点完提交还催「仍有 N 项待核对」是最容易被当成"按钮没生效"的一种话。 */
+  t.skipE = [...new Set((t.skipE || []).concat(ticketTodo(t).todo.keys))];
   dropDraft(t.stem); render(); toast("已提交：" + t.stem, "ok");
+  afterWrite(t, true);
   /* 回执里服务端随带的话要露头（比如"没读到这条主单在公司侧的状态，这次按你说的走"）：
      它没让提交失败，但也不等于验过了——不说，人就会以为顺序已经替他把过关。 */
   notes.forEach(n => toast(String(n), ""));
@@ -1126,10 +1132,22 @@ function statusOf(t){
   if (t.state === "busy") return ["busy", t.hint || "解析中…"];
   if (t.state === "failed") return ["bad", "失败"];
   if (t.state === "submitting") return ["busy", "提交中…"];
+  /* 刷新后种回来的那一行：完整那份还没取（取它要读三个 JSON），但号与走到哪一步服务器知道。
+     标签只能用已载入那些行会说的那几个，否则同一张票点前点后换一套词，人以为换了张票。 */
+  if (t.state === "seed") return t.seed.submitted ? ["ok", "已提交"]
+       : (t.seed.flags ? ["warn", "需复核"] : ["ok", "干净"]);
   if (t.submitted && t.submitted.mode === "server") return ["ok", "已提交"];
   if (t.submitted) return ["warn", "待提交"];
   if (effectiveFlags(t).length) return ["warn", "需复核"];
   return ["ok", "干净"];
+}
+/* 「这张还要不要人核」只在这一处判：计数、窄轨、跳下一票用的是同一个答案。
+   已经交出去的一律不再算待办——种子行与已载入的行必须同一个判据，否则同一张票点前点后
+   「需复核 N」会跟着变，人就看到数字莫名其妙跳一下。 */
+function needsReview(t){
+  if (t.state === "seed") return !t.seed.submitted && t.seed.flags > 0;
+  if (t.state !== "done" || (t.submitted && t.submitted.mode === "server")) return false;
+  return ticketTodo(t).todo.n > 0;
 }
 function current(){ return S.tickets.find(t => t.stem === S.sel) || S.tickets.find(t => t.filename === S.sel); }
 /* 行上那颗 × 说的是三种不同的事，标题就得说三种：排队中的还没传出去（本机队列是一张一张发的），
@@ -1169,8 +1187,8 @@ async function dropRow(i){
   else toast("已从列表里拿掉（服务器上早就没有这一张作业）");
 }
 function render(){
-  const done = S.tickets.filter(t => t.state === "done").length;
-  const rev = S.tickets.filter(t => effectiveFlags(t).length).length;
+  const done = S.tickets.filter(t => t.state === "done" || t.state === "seed").length;
+  const rev = S.tickets.filter(needsReview).length;
   $("#cnt").textContent = S.tickets.length + " 票 · 已解析 " + done + (rev ? " · 需复核 " + rev : "");
   const nq = $("#tabQueueN"); if (nq) nq.textContent = rev ? " " + rev : "";   // 页签上的数字＝还要复核几票
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
@@ -1188,6 +1206,10 @@ function render(){
       <span class="st">${label}${n ? `<br><span class="st-edited">改 ${n} 项</span>` : ""}</span></button>${x}</span>`;
   }).join("") : `<div class="empty">尚无票据。</div>`;
   renderRail();
+  /* 停在一张有 stem 的票上才记：刚上传还没解析完的那一行是按文件名选中的，
+     记下它等于下次刷新去问服务器要一个不存在的 stem。 */
+  const cur = current();
+  if (cur && cur.stem) localStorage.setItem(LS.open, cur.stem);
   renderMain(); renderDrafts(); renderPreview();
 }
 /* ── 状态窄轨（§3.3）：一票一个点 + 本机"已提交/经手"进度 ─────────────────────
@@ -1234,6 +1256,39 @@ function stepTicket(d){
   S.sel = S.tickets[j].stem || S.tickets[j].filename;
   render();
   $("#main").scrollIntoView({block: "nearest"});
+}
+/* 交出去一张，下一张**票**在哪儿不该让人自己在列表里找（2026-10-15 用户：点完暂存或提交，
+   这里一定得更新，不然都不知道下一票处理哪个了）。顺着队列找第一张还要核的——解析中/排队中
+   的那张不算"要核"（它还没好），一张都没有就明说一句，别让人以为按钮没反应。
+   名字与 gotoNextTodo（一张票里跳到下一个待办**字段**）是两件事，别混成一个。 */
+function gotoNextTicket(){
+  const i = S.tickets.indexOf(current());
+  for (let k = 1; k <= S.tickets.length; k++){
+    const t = S.tickets[(i + k + S.tickets.length) % S.tickets.length];
+    if (!needsReview(t)) continue;
+    mvOff();
+    S.sel = t.stem || t.filename;
+    render();
+    toast("下一票：" + (t.hawb || t.stem || t.filename) + "（" + statusOf(t)[1] + "）", "");
+    return;
+  }
+  toast("队列里没有还要核的票了", "ok");
+}
+/* 名下分单那张表读的是服务器：公司的行 + 盘上的暂存与提交。本机的状态改不动它，
+   所以交出去一张之后要按那个主单号再检索一次，人才看得见这一条从「公司暂存（未发送）」
+   变成「已提交发送·等外围」。检索一次 = 一次只读查询，解析那边命中缓存不再花钱。 */
+function mstRefresh(){
+  if (!MST_LAST || !MST_LAST.mawb) return;
+  $("#mstNo").value = MST_LAST.mawb;
+  mstSearch();
+}
+/* 暂存/提交之后要回账的两处：台账（在这一屏时才重画）与打开着的那张名下分单表。
+   判据是「这张票的主单号就是表上那个号」——不对得上就别替人敲公司接口。 */
+function afterWrite(t, sent){
+  if (VIEW.cur === "day") loadDay(false);
+  const mawb = String((t && ((t.air || {}).MAWB_NO || t.mawb)) || "");
+  if (MST_CARD_ON && MST_LAST && L.normNo(MST_LAST.mawb) === L.normNo(mawb)) mstRefresh();
+  if (sent) gotoNextTicket();
 }
 function renderDrafts(){
   const d = drafts();
@@ -1369,7 +1424,7 @@ function resetFieldHeights(){
    补好的缺号那类自己消掉的旗不算 acked——没人确认过它，不该显示成「已确认」，更不该配一颗撤回。 */
 function fieldRows(t, ef){
   const all = flagsByField(t.qc).map, left = flagsByField({flags: ef || effectiveFlags(t)}).map;
-  const ackF = t.ackF || [];
+  const ackF = t.ackF || [], ackE = t.ackE || [], skipE = t.skipE || [];
   return FIELDS.map(([k, lab, g]) => {
     const list = all[k] || [], out = left[k] || [];
     const remain = out.length;
@@ -1377,10 +1432,12 @@ function fieldRows(t, ef){
     const hasFlag = remain + manual;
     /* 输入原样留在行上（flags/acked/raw/air）：logic.js 那套 todoOf/progress 是拿同一批输入重算的，
        只带一个算完的 st 进去，它会把这些行统统当成"空值待办"——进度分母当场变成 38（浏览器里量出来的）。
-       fl/fa 是旗面原文：顶部那排 chip 撤了之后，"这条旗到底说了什么"只剩行上这一格会说。 */
+       fl/fa 是旗面原文：顶部那排 chip 撤了之后，"这条旗到底说了什么"只剩行上这一格会说。
+       skip 是重开一张提交过的票时才有的那一档：这一列当时空着、人点第二下硬发了出去。 */
     const o = {k, lab, g, flags: hasFlag,
                fl: out.filter(f => !ackF.includes(f)), fa: list.filter(f => ackF.includes(f)),
-               acked: hasFlag ? remain === 0 && manual > 0 : (t.ackE || []).includes(k),
+               acked: hasFlag ? remain === 0 && manual > 0 : ackE.includes(k),
+               skip: !hasFlag && !ackE.includes(k) && skipE.includes(k),
                raw: txt(t.raw, k), air: airVal(t, k)};
     o.st = L.fieldStatus(o);
     return o;
@@ -1393,7 +1450,8 @@ function ticketTodo(t){
   const ef = effectiveFlags(t), rows = fieldRows(t, ef);
   return {ef, rows, todo: L.todoOf(rows, flagsByField({flags: ef}).rest)};
 }
-const BADGE_CLS = {flag: "warn", confirmed: "conf", empty: "emptyb", emptyok: "conf", miss: "miss", same: "same"};
+const BADGE_CLS = {flag: "warn", confirmed: "conf", empty: "emptyb", emptyok: "conf",
+                   skipped: "same", miss: "miss", same: "same"};
 function rowCls(r, t){
   const s = r.st.s;
   return s === "flag" ? "flag" : s === "empty" ? "emptyrow"
@@ -1422,7 +1480,7 @@ function statusCell(t, r){
   const acts = [];
   if (s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与「整张票」那一格逐条确认同一个留痕）">红旗已核</button>`);
   else if (s === "confirmed") acts.push(`<button class="btn sm gh" type="button" data-unackf="${esc(k)}" title="撤回：这一列的红旗回到待办">撤回</button>`);
-  if (s === "empty") acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
+  if (s === "empty" || s === "skipped") acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
   else if (s === "emptyok") acts.push(`<button class="btn sm gh" type="button" data-une="${esc(k)}" title="撤回：这一格回到待办">撤回</button>`);
   const edits = (k in t.airE) ? `<div class="note"><span class="e">已改</span>
       <button type="button" class="rs" data-restore="${esc(k)}">还原</button></div>` : "";
@@ -1525,6 +1583,13 @@ function firstFlagKey(t, ef){
 function renderMain(){
   const el = $("#main"), t = current();
   el.classList.remove("has-todo");     // 只有分单核对区有置顶待办条
+  /* 刷新后种回来的那一行身上只有号与状态：选中它就先去取完整那份，取回来再画这张表。
+     不挡这一道，核对区会拿着一份空 air 画出 38 行空格子——看着像解析坏了。 */
+  if (t && t.state === "seed"){
+    el.innerHTML = '<div class="empty">正在取这张票的完整结果…</div>';
+    openHouse(t.stem);
+    return;
+  }
   /* 主单视图：36 列可编辑 + 红旗逐条确认 → 提交发送回公司（mawb3）。列名/中文名/分组由后端
      fields 表给（单一真源），红旗在提交时由服务端按当前值重算——前端只负责让人看清并确认。 */
   if (MV){
@@ -2010,6 +2075,7 @@ function startDesk(){
   startDesk._on = true;
   pruneSubmittedDrafts();   // 老版本留下的已提交副本先清掉，再画那一栏（不然数字还是骗人）
   probe(); loadModels(); render();
+  restoreQueue();           // 服务器那份「今天你动过的票」补回桌面，刷新不等于从零开始
 }
 async function checkAuth(){
   try{
@@ -2220,7 +2286,8 @@ function mstRender(j, mawb){
    不需要制单员重新上传原件。改完还是走 /submit，红旗由服务端按当前值重算。 */
 async function openHouse(stem){
   const hit = S.tickets.find(t => t.stem === stem);
-  if (hit){ mvOff(); S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  /* 种子行（刷新后从服务器种回来的那批）身上只有号与状态，点开它才去取完整那份。 */
+  if (hit && hit.state !== "seed"){ mvOff(); S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
   try{
     const r = await fetch(BASE + "/ticket/" + encodeURIComponent(stem));
     if (!r.ok){
@@ -2228,34 +2295,67 @@ async function openHouse(stem){
       throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     }
     const d = await r.json(), dr = drafts()[stem] || {};
-    /* `/ticket` 只有模型口径；别人核对过的值在 `/staged` 那份里。没暂存过就是没有（404），
-       不影响打开——所以这里不能 throw，安静地按"没有"处理。 */
+    /* `/ticket` 给的是模型口径（air/raw/qc），人最后定下的那一版在两台机器之外：提交台账的
+       air_sent 或暂存的 air_final。只认模型那一版会把人改过的值当没改过（2026-10-15 现场：
+       提交过的票重开，发货人整串退回模型那一版，「变形了」），而确认过的红旗与空栏也会整片
+       回潮（同一张票按铮写「仍有 13 项待核对」）。谁新用谁，算式在 L.serverState 一处。 */
     let st = null;
     try{
       const sr = await fetch(BASE + "/staged/" + encodeURIComponent(stem));
       if (sr.ok) st = await sr.json();
     }catch(e){ st = null; }
-    const mg = L.stagedMerge(st && st.air_final, dr.airE || {}, st && st.edits);
+    const sf = L.serverState(d.submitted, st);
+    const srvEdits = {}; sf.edits.forEach(k => { srvEdits[k] = 1; });
+    const mg = L.stagedMerge(sf.values, dr.airE || {}, srvEdits);
+    const uni = (a, b) => [...new Set((a || []).concat(b || []))];
     const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:"server",
                channel:d.channel, elapsed:d.elapsed,
                qc: Object.keys(d.qc || {}).length ? d.qc : null,
-               raw:d.raw || {}, air:d.air || {}, airE:mg.airE, ackF:dr.ackF || [], ackE:dr.ackE || [],
+               raw:d.raw || {}, air:d.air || {}, airE:mg.airE,
+               ackF:uni(dr.ackF, sf.acked), ackE:uni(dr.ackE, sf.ackedEmpty),
+               skipE:sf.skippedEmpty,
                todoBase:null, ll:null,
                staged: st && !st.submitted_at ? {by:st.stager, role:st.stager_role,
                                                  at:st.staged_at, edited:Object.keys(st.edits || {}).length} : null,
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
                                          reviewer:d.submitted.reviewer} : null};
-    S.tickets.push(t); mvOff(); S.sel = stem; render();
+    if (hit) S.tickets[S.tickets.indexOf(hit)] = t; else S.tickets.push(t);
+    mvOff(); S.sel = stem; render();
     $("#view").scrollIntoView({behavior:"smooth", block:"start"});
-    const from = t.submitted ? "已提交过，改动需再点提交"
+    const from = sf.from === "submit" ? "已提交过，载入发出去的那一版（改 " + sf.edits.length + " 列），改动需再点提交"
       : (st ? "载入 " + L.roleCn(st.stager_role) + " " + st.stager + " 暂存的核对结果（改 "
-                 + Object.keys(st.edits || {}).length + " 列）" : "本机模型结果，改完点提交");
+                 + sf.edits.length + " 列）" : "本机模型结果，改完点提交");
     toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + from + "）", "ok");
     if (mg.conflicts.length){
       toast("注意：" + mg.conflicts.join("、") + " 你这台机器上的改动和服务器上的暂存不一致，" +
             "已按服务器版本显示；你那份没删，还在下面的「本机未保存的编辑」里", "bad");
     }
   }catch(e){ toast("打开这张分单失败：" + (e.message || e), "bad"); }
+}
+/* 刷新不该把一桌子的票变没（2026-10-15 用户：刷新页面啥都没了）。这一屏本来就是
+   「本人今天在服务器上动过的票」，服务器算得出来，那就问它要回来：行先按号与状态种上，
+   点开哪一张才去 /ticket 取完整那份。一开页面就把每张票的三个 JSON 全读一遍是白重的活。 */
+function seedRow(r){
+  return {file:null, filename:r.source_name || r.stem, stem:r.stem, hawb:r.hawb || "",
+          mawb:r.mawb || "", state:"seed", raw:{}, air:{}, airE:{}, qc:null,
+          ackF:[], ackE:[], skipE:[], srvFlags:[],
+          seed:{flags:Number(r.flags) || 0,
+                submitted:r.submitted ? {mode:"server", at:r.submitted.at,
+                                         reviewer:r.submitted.reviewer} : null}};
+}
+async function restoreQueue(){
+  let rows = [];
+  try{
+    const r = await fetch(BASE + "/day");
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return;
+    rows = (j.rows || []).filter(x => x.kind !== "master" && x.stem && !x.voided);
+  }catch(e){ return; }              // 拿不到就照旧：空列表加一句「尚无票据」，别在开门时弹窗
+  if (!rows.length) return;
+  S.tickets = rows.map(seedRow);
+  const last = localStorage.getItem(LS.open) || "";
+  const pick = S.tickets.some(t => t.stem === last) ? last : S.tickets[0].stem;
+  await openHouse(pick);             // 回到离开时那一张：这一张取完整那份，其余点开再取
 }
 async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
@@ -2326,7 +2426,11 @@ function mvRestore(rec){
   /* 服务器上有别人（或自己上次）暂存的核对结果时，那份赢；本机未存的改动不删，冲突列点名。
      和分单侧同一条规则：静悄悄盖掉任何一边，人都会拿着错的版本往下核。 */
   const mg = L.stagedMerge(rec && rec.ams_final, m.edit, rec && rec.edits);
-  MV.edit = mg.airE; MV.acked = m.acked; MV.extraFlags = m.extraFlags;
+  MV.edit = mg.airE;
+  /* 确认过哪些红旗也认服务器那份（顶上那一档）：只靠这台浏览器的草稿，刷新一次或换台机器
+     再检索同一张主单，昨天逐条点过的确认今天又红一遍（2026-10-15 与分单侧同一个病）。 */
+  MV.acked = [...new Set((rec && rec.acked_flags || []).concat(m.acked))];
+  MV.extraFlags = m.extraFlags;
   MV.editBase = m.editBase; MV.conflicts = m.conflicts; MV.localDiff = mg.conflicts;
   MV.staged = (rec && rec.ams_final && !rec.submitted_at)
     ? {by: rec.stager || "?", role: rec.stager_role || "", at: rec.staged_at || ""} : null;
@@ -2396,6 +2500,7 @@ async function mvStage(){
     if (MV.locked) toast(stageMsg(j.edited, j.company), "");
     else toast(stageMsg(j.edited, j.company), "ok");
     render();
+    afterWrite({mawb: MV.mawb}, false);
   }catch(e){ toast("主单暂存失败：" + (e.message || e), "bad"); }
 }
 async function mvSubmit(){
@@ -2427,6 +2532,9 @@ async function mvSubmit(){
       mstDraftClear(MV.mawb);                  // 已回传公司：草稿再留着，下次打开同一主单会把交过的改动重新盖上来
       mvSetRec(Object.assign({}, MV.rec, {ams: mvValues()}));
       MV.msg = ""; toast("主单 " + MV.mawb + " 已回传公司（" + (j.action || "ok") + "）", "ok");
+      /* 主单交了，名下那些分单就从「被主单挡着」变成「可以提交了」：那张表必须按服务器重取一次，
+         不然它还写着公司还没有这条分单记录。人接着做分单，所以这里不替他跳票。 */
+      afterWrite({mawb: MV.mawb}, false);
     }
   }catch(e){ toast("提交失败：" + (e.message || e), "bad"); MV.msg = "提交失败：" + (e.message || e); }
   finally{ if (btn) btn.disabled = false; render(); }

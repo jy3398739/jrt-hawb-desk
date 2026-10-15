@@ -76,3 +76,53 @@ def test_a_queue_row_can_be_removed_and_stops_its_job():
     ex = web_src.fn(js, "async function extract(")
     assert "t.dropped" in ex and "cancelJob(" in ex, \
         "删在「上传已发出、作业号还没回来」那几十毫秒里要补一发取消，别留一张没人等的孤儿解析"
+
+
+def test_a_refresh_puts_the_day_back_on_the_table():
+    """刷新页面不该把一桌子的票变没（2026-10-15 用户：刷新页面啥都没了，能保持住当前信息吗）。
+    这一屏本来就是「本人今天在服务器上动过的票」，服务器知道，那就问服务器要回来；
+    完整那份数据只在点开时取——一开页面就把每张票的三个 JSON 都读一遍是没必要的重活。"""
+    js = web_src.part("js/desk.js")
+    rq = web_src.fn(js, "async function restoreQueue(")
+    assert '"/day"' in rq, "要问服务器今天本人动过哪些票，不靠浏览器自己记那份名单"
+    assert "kind" in rq, "主单的行不进分单队列：那张表里两种行混在一起"
+    assert "restoreQueue()" in web_src.fn(js, "function startDesk("), "开门就补桌"
+    assert "localStorage.setItem(LS.open" in js, "离开时停在哪一张要记住，回来还停在那一张"
+    assert "seed" in web_src.fn(js, "function statusOf("), "只种了号与状态的那一行也要说得出它到哪一步了"
+    nr = web_src.fn(js, "function needsReview(")
+    assert "seed.submitted" in nr and "submitted.mode" in nr, \
+        "种子行与已载入的行要同一个判据：同一张票点前点后「需复核 N」不许跟着变"
+    assert "filter(needsReview)" in web_src.fn(js, "function render("), \
+        "顶上那个计数与「跳下一票」必须同一个判据，两处各数一遍迟早给两个数"
+    assert 't.state === "seed"' in web_src.fn(js, "function renderMain("), \
+        "选中种子行要先取完整那份：拿一份空 air 去画 38 行，看着就像解析坏了"
+    op = web_src.fn(js, "async function openHouse(")
+    assert "S.tickets.indexOf(hit)" in op, "种子行点开要就地换成完整那份，不能多出一行重复的票"
+
+
+def test_staging_or_submitting_refreshes_what_the_server_counts():
+    """点完暂存或提交，台账与那张「名下分单」表必须跟着回账（2026-10-15 用户：这里一定得更新，
+    不然都不知道下一票处理哪个了）。那两处读的都是服务器，所以只能再问一次服务器，
+    拿浏览器里那份状态糊上去只会糊出一屏假账。"""
+    js = web_src.part("js/desk.js")
+    aw = web_src.fn(js, "function afterWrite(")
+    assert 'if (VIEW.cur === "day") loadDay(false);' in aw, \
+        "台账那一屏要按服务器重画：判据整行钉住（只认 loadDay 那几个字，把条件改成永不成立也算过）"
+    assert "mstRefresh()" in aw and "if (sent) gotoNextTicket();" in aw, \
+        "名下分单那张表按号重取；只有真交出去的那一次才把人带去下一票"
+    assert "afterWrite(" in web_src.fn(js, "async function stageTicket("), "暂存完要回账"
+    sub = web_src.fn(js, "async function submitTicket(")
+    assert "afterWrite(t, true)" in sub, "提交完要回账，第二参 true 说的就是「这一张交出去了，带人去下一票」"
+    g = web_src.fn(js, "function gotoNextTicket(")
+    assert "needsReview" in g and 'toast("' in g, "没有下一票时要说一句，不能默默停在原地"
+    assert "afterWrite(" in web_src.fn(js, "async function mvSubmit("), "主单那条链同样要回账"
+
+
+def test_no_top_level_function_is_declared_twice():
+    """desk.js 里两个同名 function，后写的静默盖掉前一个：调用方拿到的是另一个函数、
+    参数还不一样，浏览器里才炸（2026-10-15 新加的「跳下一票」就撞在 gotoNextTodo 上）。
+    回归全绿也照样是坏的，所以这条只认一件事：顶格名字不许出现两次。"""
+    js = web_src.part("js/desk.js")
+    names = re.findall(r"^(?:async )?function ([A-Za-z0-9_]+)", js, re.M)
+    dup = sorted({n for n in names if names.count(n) > 1})
+    assert not dup, f"顶格重名，后一份会盖掉前一份：{dup}"

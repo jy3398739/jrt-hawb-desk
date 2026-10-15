@@ -104,6 +104,9 @@ def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = N
                    "acked_flags": [str(x) for x in (acked_flags or [])]})
     rec.update({"ams_model": base, "ams_final": ams, "events": events,
                 "edits": store.field_diff(base, ams),
+                # 顶上这一格是"此刻还确认着哪些红旗"：每暂存一次照这次的清单覆盖，
+                # 撤回的那条就跟着收回去。事件里逐次那份是历史，重开时还原现状读的是这一格。
+                "acked_flags": [str(x) for x in (acked_flags or [])],
                 "staged_at": now, "stager": str(by or ""), "stager_role": str(role or ""),
                 "updated_at": now})
     return _write(rec)
@@ -307,5 +310,9 @@ def submit_master(payload: dict) -> dict:
                                 staged_at=cached.get("staged_at") or "",
                                 no_inputter_review=not reviewed and not self_submit,
                                 inputter_self_submit=self_submit)
+    if cached:
+        # 提交时人确认着的红旗也留在解析记录顶上：重开这张主单时前端拿它还原，不然确认过的
+        # 旗第二天又红一遍。只在本来就有记录时写——提交不该顺手造出一份解析缓存来。
+        _write(dict(cached, acked_flags=acked))
     mark_master_sent(mawb, reviewer)
     return res
