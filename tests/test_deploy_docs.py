@@ -112,6 +112,27 @@ def test_unit_has_a_start_limit_that_can_actually_trip():
         f"窗口 {window}s 装不下 {burst} 次 {interval}s 一轮的重启，崩环照样跑满"
 
 
+def test_sync_reminds_about_the_unit_file_without_touching_systemd():
+    """systemd 只认 /etc/systemd/system/ 里那一份，而 sync.sh 推的是程序目录 ⇒ 改了
+    `hawb-desk.service`（比如 v1.29.0 那条启动熔断）不装上去就永远不生效，可 `/health` 看着一切正常
+    ——这是"改了等于没改"那一类，最坑。但脚本自己不装：这台是共用机（ccsp / license /
+    jrt-api / dsv-mail 都在上面），/etc 是总电闸房，脚本判断错的后果不是"我们网站慢一点"，
+    而是服务起不来。所以这条**只许比对 + 打印提示**，装的那两条命令交给人手工执行。
+
+    它跑在成功路径的最末尾：失败/干跑那几条分支早就 exit 了，别在没推东西的时候吓人。"""
+    s = (ROOT / "deploy" / "sync.sh").read_text(encoding="utf-8")
+    assert "/etc/systemd/system/" in s, "没跟服务器上那份 unit 比过，改了也不会提醒你装"
+    assert re.search(r"md5sum [^\n]*(\$UNIT|hawb-desk\.service)", s), \
+        "比对要读两边哈希，光 echo 文件名比不出差异"
+    cp_lines = [l for l in s.splitlines() if "sudo cp" in l]
+    assert cp_lines, "提示里得把要手工执行的那条 cp 命令原样写出来，否则等于没提示"
+    assert all(("say " in l) or l.strip().startswith("#") for l in cp_lines), \
+        "sync.sh 不许自己把 unit 装进 /etc：装那一步必须留在人手里（脚本本来就有 sudo systemctl " \
+        "restart——重启我们自己的服务是既有行为，危险的只有覆盖别人的电闸房）"
+    assert "unit_drift_hint" in s[s.index("sudo systemctl restart $UNIT &&"):], \
+        "提示要挂在重启之后的成功路径上（函数只定义不调用等于没有）：没推上去就报「unit 不一样」是噪音"
+
+
 def test_sync_prunes_its_own_deploy_backups():
     """每次发版在 ~ 打一份 `.bak-<时刻>-deploy.tar`，从前只增不减：2026-10-16 数过这台共享机上
     已攒 80 份、114MB（效率审查 D2）。回滚只看最近几版，留 80 版没用，迟早把盘写满。

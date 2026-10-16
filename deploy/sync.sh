@@ -35,6 +35,23 @@ done
 say() { printf '%s\n' "$*"; }
 die() { printf '停：%s\n' "$*" >&2; exit 1; }
 
+# 改了 deploy/hawb-desk.service ≠ systemd 那份变了：systemd 只认 /etc/systemd/system/ 里那一份，
+# 而 /etc 是这台共用机（ccsp / license / jrt-api / dsv-mail 都在上面）的总电闸房——本脚本没有权限、
+# 也不该有权限去动它（判断错的后果不是"我们网站慢一点"，是别人的服务起不来）。
+# 所以这一步只比哈希、只把要手工执行的那两条命令打出来。漏做一次的最坏结果只是"这条改动没生效"，
+# 和现状一样，不会更坏（daemon-reload 不重启服务、不踢在线会话）。
+unit_drift_hint() {
+  local live new
+  live="$(ssh "$HOST" "md5sum /etc/systemd/system/$UNIT.service 2>/dev/null | cut -d' ' -f1" || true)"
+  new="$(md5sum "deploy/$UNIT.service" | cut -d' ' -f1)"
+  if [ -z "$live" ]; then
+    say "! 服务器上没装过 $UNIT.service（/etc/systemd/system/ 里没有）。要装：sudo cp deploy/$UNIT.service /etc/systemd/system/ && sudo systemctl daemon-reload"
+  elif [ "$live" != "$new" ]; then
+    say "! deploy/$UNIT.service 和 /etc/systemd/system/ 那份不一样（启动熔断、内存闸这类改动只有装上去才生效，而 /health 完全看不出来）"
+    say "  手工执行（daemon-reload 不重启服务、不踢在线会话）：ssh $HOST 'sudo cp $REMOTE_DIR/deploy/$UNIT.service /etc/systemd/system/ && sudo systemctl daemon-reload'"
+  fi
+}
+
 git rev-parse --git-dir >/dev/null 2>&1 || die "这里不是 git 仓库，拿不到可信的文件清单"
 if [ -n "$(git status --porcelain)" ] && [ "$DRY" = "0" ] && [ "$DIRTY_OK" = "0" ]; then
   die "工作区有未提交改动（部署的是工作区的文件，不是提交）。先提交再部署，应急可加 --allow-dirty"
@@ -115,6 +132,7 @@ if [ "$NO_RESTART" = "1" ]; then
     *"commit"*) say "== 服务在线，但 /health 报 stale_files 非空（页面骨架 index.html 也归它管）：不介意就多刷一次页面，介意就正常重启一次" ;;
     *) die "服务没在跑或 /health 无响应——文件已推，先别撤：ssh $HOST 'systemctl status $UNIT'，回滚包 ~/$BK" ;;
   esac
+  unit_drift_hint
   say "== 部署完成（回滚包 ~/$BK）"
   exit 0
 fi
@@ -134,4 +152,5 @@ case "$BODY" in
   *"\"version\":\"$WANT\""*) say "== 服务器上报版本 $WANT，与本机 config 一致" ;;
   *) die "服务器版本与本机不一致（本机 $WANT，服务器响应见上）——别把没生效的部署当成功" ;;
 esac
+unit_drift_hint
 say "== 部署完成（回滚包 ~/$BK）"
