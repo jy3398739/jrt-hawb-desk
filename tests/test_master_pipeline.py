@@ -12,6 +12,7 @@ import company_api
 import config
 import j9_fake
 import master_pipeline as mp
+import store
 import vlm_extract
 import vlm_extract
 
@@ -140,6 +141,64 @@ def test_submit_master_leaves_the_confirmed_flags_on_the_parsed_record():
     finally:
         restore()
         config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = undo_cfg
+        undo()
+        _restore(old, tmp)
+
+
+def test_second_parse_marks_the_columns_we_sent_back():
+    """暂存或提交之后再检索同一张主单，L1 会长出我们写回公司的那些列——解析记录要带着
+    「哪几行是回填的」下发到前端，不然人看到的"公司资料"里混着自己的输出（2026-10-15 现场：
+    074-51188292 第一次 4 行、暂存后第二次 15 行）。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        first = {"MASTER_NO": "074-51188292",
+                 "AMS_RECORD": {"MASTER_NO": "074-51188292", "SHIPPER_INFO": "DSV AIR & SEA CO., LTD.",
+                                "GOODS_NAME": "QUARTZ GLASS"}}
+        mp.run_master("074-51188292", first)
+        assert mp.read_master("074-51188292")["self_filled"] == [], "第一次没有可比对象，一格都不该标"
+        # 我们把核对结果写回公司（提交台账里那份 ams_sent 就是发出去的值）
+        sent = {"MASTER_NO": "074-51188292", "MAWB_NO": "074-51188292", "GOODS_INFO_HSCODE": "702000",
+                "SHIPPER_INFO": "DSV AIR & SEA CO., LTD.", "GOODS_NAME": "QUARTZ GLASS",
+                "SHIPPER_INFO_COMP_NAME": "DSV AIR & SEA CO., LTD."}
+        store.mark_master_submitted("074-51188292", "宛平", {"mode": "live"}, ams_sent=sent)
+        second = {"MASTER_NO": "074-51188292",
+                  "AMS_RECORD": dict(sent, SHIPPER_INFO_COMP_ADDRESS="25A,HISENSE TOWER")}
+        rec = mp.run_master("074-51188292", second)
+        assert sorted(rec["self_filled"]) == ["GOODS_INFO_HSCODE", "MAWB_NO", "SHIPPER_INFO_COMP_NAME"], \
+            rec["self_filled"]
+        assert "SHIPPER_INFO_COMP_ADDRESS" not in rec["self_filled"], \
+            "这一格本机从没发过（公司自己新录的），不该被说成回填"
+        assert "SHIPPER_INFO" not in rec["self_filled"] and "GOODS_NAME" not in rec["self_filled"], \
+            "上次 L1 里就有这两行 = 公司原本录的，值相同也不该改口说是回填"
+        assert mp.public(rec)["self_filled"] == rec["self_filled"], "前端读的是 public 那份"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_a_staged_only_master_is_also_compared_against_what_we_sent():
+    """用户撞上的正是这一路：只点了「暂存到公司」，没提交。暂存走 `mawb2` **不写提交台账**，
+    那份发出去的值只在这条主单缓存的 `ams_final` 里——只看台账就会把这一整路漏掉。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        first = {"MASTER_NO": "074-51188292",
+                 "AMS_RECORD": {"MASTER_NO": "074-51188292", "GOODS_NAME": "QUARTZ GLASS"}}
+        mp.run_master("074-51188292", first)
+        mp.stage_master("074-51188292", {"MAWB_NO": "074-51188292", "SLAC": 12,
+                                         "GOODS_INFO_HSCODE": "841290901"}, "宛平", "reviewer")
+        second = {"MASTER_NO": "074-51188292",
+                  "AMS_RECORD": {"MASTER_NO": "074-51188292", "GOODS_NAME": "QUARTZ GLASS",
+                                 "MAWB_NO": "074-51188292", "SLAC": 12, "GOODS_INFO_HSCODE": "841290901"}}
+        rec = mp.run_master("074-51188292", second)
+        assert sorted(rec["self_filled"]) == ["GOODS_INFO_HSCODE", "MAWB_NO", "SLAC"], rec["self_filled"]
+        assert not (tmp / "master_submitted.json").exists(), "这条路径压根没提交，判据不该依赖台账"
+    finally:
         undo()
         _restore(old, tmp)
 

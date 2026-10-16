@@ -483,9 +483,23 @@ function mvPreview(){
     return (MV.rec && MV.rec.state === "parsing")
       ? '<div class="empty">正在取公司资料并解析：解析完成后这里显示 L1 原文。</div>'
       : '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
-  const rows = lines.map(x => '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) + '</div>').join("");
+  const rows = lines.map(x => {
+    /* 「本机回填」：这一行上次检索时还没有，值又与这台机器发给公司的那一版相同——
+       也就是我们自己上次写回去的，不是公司录的。主单没有票面原件，资料就是唯一的凭据，
+       让它冒充原始资料等于让模型抄自己的答案、还让"漏取/保真"两道核查假绿（后端判据
+       在 master_fields.self_filled，认不准的一律不标）。 */
+    const lab = String(x.text).split(":")[0].trim();
+    const back = ((MV.rec && MV.rec.self_filled) || []).indexOf(lab) >= 0;
+    return '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) +
+      (back ? '<span class="badge same" title="这一格上次检索时资料里还没有，值与本机发给公司的' +
+              '那一版相同：多半是这台机器上次回填的，不能当独立证据' +
+              '">本机回填</span>' : '');
+  }).join("");
+  const nBack = ((MV.rec && MV.rec.self_filled) || []).length;
   return '<div class="mvtxt"><div class="t2">L1 原文 · 公司主单资料（逐字，未加工）</div>' + rows +
-    '<p class="hint hintp flush">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。</p></div>';
+    '<p class="hint hintp flush">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。' +
+    (nBack ? '其中 <b>' + nBack + ' 行标着「本机回填」：那是这台机器上次写回公司的值，不是公司录的原始资料。' : '') +
+    '</p></div>';
 }
 function renderPreview(){
   if (MV){
@@ -1601,6 +1615,9 @@ function renderMain(){
        一格都不点的（"资料里有税号，填进同主体的 EORI 列"就是这种）落在表尾「整张票」那一格里，
        照样能确认——看不见又点不到的旗会卡住提交门，v1.17.2 为这类死旗修过一次。 */
     const MKEYS = (rec.fields || []).map(f => f[0]);
+    /* 与 L1 那一栏同一份清单（后端算的）：这一列的资料值是本机上次发回去的，
+       那一格的「有值」就不能当证据用——换成「本机回填」，人一看就知道该去问制单员/看原件。 */
+    const BACK = new Set(rec.self_filled || []);
     const byKey = {}, orphan = [];
     for (const f of flags){
       const ks = L.flagKeys(f, MKEYS);
@@ -1634,7 +1651,9 @@ function renderMain(){
         <td class="c v${k in MV.edit ? " edited" : ""}"><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
-          : (v ? `<span class="badge same">有值</span>` : `<span class="badge">资料没提</span>`)}</td></tr>`;
+          : (v ? (BACK.has(k) ? `<span class="badge same" title="资料里这一格与本机上次发给公司的值相同，多半是自己回填的：它不能当独立证据">本机回填</span>`
+                              : `<span class="badge same">有值</span>`)
+               : `<span class="badge">资料没提</span>`)}</td></tr>`;
     }
     if (orphan.length)
       rows += `<tr class="grp"><td colspan="3">整张票（不落在某一列）</td></tr>` + orphan.map(f =>

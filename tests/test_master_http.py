@@ -378,6 +378,21 @@ def test_desk_has_a_master_stage_button_next_to_the_submit_one():
         "直接把 mvSubmit 当监听器会把 MouseEvent 当成参数传进去"
 
 
+def test_the_l1_pane_says_which_lines_we_sent_back_ourselves():
+    """主单没有票面版式原件，L1 那段资料就是唯一的原始凭据。暂存或提交之后再检索同一张主单，
+    资料里会混进我们自己写回去的值——那几行必须标出来（2026-10-15 现场：074-51188292
+    第一次 4 行、第二次 15 行，人以为公司改了资料）。核对区那一格的「有值」也换成同一句：
+    一条资料不该同时既是凭据又是回执。"""
+    js = web_src.part("js/desk.js")
+    pv = web_src.fn(js, "function mvPreview(")
+    assert 'const back = ((MV.rec && MV.rec.self_filled) || []).indexOf(lab) >= 0;' in pv, \
+        "整行判据钉住：只认「本机回填」那几个字的话，把条件改成永不成立照样绿（上一轮 K6 就是这么活的）"
+    assert "nBack ? '其中 <b>'" in pv, "栏底那句要报出有几行是回填的"
+    mv = web_src.fn(js, "function renderMain(")
+    assert "const BACK = new Set(rec.self_filled || []);" in mv and "(BACK.has(k) ?" in mv, \
+        "核对区那一格认同一份清单：一条资料不许同时既是凭据又是回执"
+
+
 def test_searching_a_different_master_clears_the_open_one():
     """换一张主单检索时，右边不能还挂着上一张的原文与核对表（2026-10-15 现场：
     左卡写着「解析中…」，右边还是上一张的 36 列与 L1，看上去就像新票已经解析完了）。

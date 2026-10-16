@@ -202,15 +202,32 @@ def fresh_record(mawb: str, mawb_order: dict, force: bool = False) -> dict | Non
     return None
 
 
+def _sent_back(mawb: str, prev: dict) -> dict:
+    """本机发给过公司的那一版值：提交台账里的 `ams_sent`，加上一次暂存写出去的那份 `ams_final`
+    （暂存走 `mawb2` 不写提交台账，只看台账就会漏掉"点了暂存还没提交"这一大一路）。"""
+    out = {}
+    led = store.master_ledger().get(store.norm_no(mawb)) or {}
+    if isinstance(led.get("ams_sent"), dict):
+        out.update(led["ams_sent"])
+    if isinstance((prev or {}).get("ams_final"), dict):
+        out.update(prev["ams_final"])
+    return out
+
+
 def run_master(mawb: str, mawb_order: dict) -> dict:
     """就地解析一条主单并落盘。失败也落盘（state=failed + 原因），别让它在页面上隐身。"""
     tr = mf.build_transcript(mawb_order)
+    prev = read_master(mawb) or {}
     bundle = config.master_model_bundle()
     t0 = time.time()
     usage.begin()
     rec = {"mawb": str(mawb or "").strip(), "text_md5": _md5(tr["full_text"]),
            "face_md5": _face_md5(), "model": bundle["model"],
            "started_at": _now(), "transcript": tr,
+           # 哪几行是这台机器上次写回公司的值：主单没有票面原件，资料文本就是唯一的原始凭据，
+           # 混进自己的输出时必须让界面说清楚（判据见 mf.self_filled）
+           "self_filled": mf.self_filled(tr["lines"], (prev.get("transcript") or {}).get("lines"),
+                                         _sent_back(mawb, prev)),
            "outer": {k: (mawb_order or {}).get(k) for k in mf.OUTER_REF_COLS},
            "ams": {}, "ams_raw": {}, "qc": None, "error": ""}
     try:

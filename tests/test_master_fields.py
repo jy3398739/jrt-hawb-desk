@@ -8,7 +8,7 @@
 """
 from master_fields import (AMS_SERVER_COLS, MASTER_COLS, MASTER_FIELDS, MASTER_GROUP_LABELS,
                            MASTER_LIMIT50, MASTER_META_COLS, OUTER_REF_COLS,
-                           build_transcript, clean_ams, norm_mawb_hyphen, submit_body)
+                           build_transcript, clean_ams, norm_mawb_hyphen, self_filled, submit_body)
 
 # 公司真返回（176-62400004 精简 + 一条 NOTIFY 块）
 ORDER = {
@@ -150,3 +150,25 @@ def test_submit_body_is_the_only_master_column_surface():
     src = (Path(__file__).resolve().parent.parent / "company_api.py").read_text(encoding="utf-8")
     assert "mf.submit_body(" in src, "主单提交体要经 submit_body 组列面"
     assert "for col in mf.MASTER_COLS}" not in src, "company_api 里又长出一份列面抄本"
+
+
+def test_self_filled_marks_only_lines_that_we_sent_back():
+    """第二次检索同一条主单时，L1 会长出「本机上次写回公司的那些列」——主单没有票面原件，
+    资料文本就是唯一的原始凭据，让它冒充公司录的原始资料，模型就是在抄自己上次的答案，
+    漏取/保真这两道核查当场失去独立性（2026-10-15 用户在 074-51188292 上实测到）。
+    判据要两条同时成立才算回填：这一行上次没有 + 值等于本机发出去的那一格。"""
+    prev = [{"i": 1, "text": "MASTER_NO: 074-51188292"},
+            {"i": 2, "text": "SHIPPER_INFO: DSV AIR & SEA CO., LTD."}]
+    new = prev + [{"i": 3, "text": "MAWB_NO: 074-51188292"},
+                  {"i": 4, "text": "GOODS_INFO_HSCODE: 702000"},
+                  {"i": 5, "text": "CONSIGNEE_INFO_TEL: +49 69 6952060"},
+                  {"i": 6, "text": "SHIPPER_INFO_TEL: 0532-80901573"},
+                  {"i": 7, "text": "CONSIGNEE_INFO_EORI: DE999999999"}]
+    sent = {"MAWB_NO": "074-51188292", "GOODS_INFO_HSCODE": "702000",
+            "CONSIGNEE_INFO_TEL": "+49  69 6952060",     # 空白差一个也算同一格（出行时就是这么归一的）
+            "SHIPPER_INFO_TEL": "0532-00000000"}         # 我们发的是另一个号码：公司改过了，是真资料
+    assert self_filled(new, prev, sent) == ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"]
+    assert self_filled(new, [], sent) == [], "第一次解析没有可比对象，一格都不该标"
+    assert self_filled(new, prev, {}) == [], "本机什么都没发过，就没有回填这回事"
+    assert self_filled(new, prev, {"SHIPPER_INFO": "DSV AIR & SEA CO., LTD."}) == [], \
+        "上次 L1 里就有这一行 = 公司原本录的，即使值与本机发过的相同也不算回填"

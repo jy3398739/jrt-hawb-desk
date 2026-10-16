@@ -92,6 +92,32 @@ def build_transcript(mawb_order: dict) -> dict:
             "full_text": "\n".join(lines)}
 
 
+def self_filled(lines: list, prev_lines: list, sent: dict) -> list:
+    """这一版 L1 里，哪几行是「本机上次写回公司的那些列」长出来的。
+
+    主单没有票面版式原件，资料文本就是唯一的原始凭据。我们把核对结果整表写回之后（暂存 `mawb2`
+    或提交 `mawb3`），下一次检索读回来的"资料"里就混进了我们自己发的值——模型于是是在抄自己
+    上次的答案，而"资料里有值模型没取"和"逐字回查得到"这两道核查都会假绿（2026-10-15 现场：
+    074-51188292 第一次 4 行、暂存后第二次 15 行）。
+
+    判据两条同时成立才算：这一行**上次没有**（上次就有 = 公司原本录的，值相同也不改口），
+    且值与本机发出去的那一格相同（空白按出行同一套归一，公司写回再读回可能差个空格）。
+    认不准的宁可少标：标错一次，人就少信一次这个标记。所以上次那份 L1 是空的（第一次解析、
+    或缓存被清过）就一格都不标——没有可比对象，分不出"公司原本录的"和"我们回填的"。"""
+    if not (prev_lines or []):
+        return []
+    had = {str((x or {}).get("text", "")).split(":", 1)[0].strip() for x in (prev_lines or [])}
+    out = []
+    for x in (lines or []):
+        label, _, value = str((x or {}).get("text", "")).partition(":")
+        label, value = label.strip(), _txt(value)
+        if not label or label in had or not isinstance(sent, dict) or label not in sent:
+            continue
+        if value == _txt(sent[label]):
+            out.append(label)
+    return out
+
+
 def _int_or_none(v):
     try:
         return int(float(str(v).strip()))
