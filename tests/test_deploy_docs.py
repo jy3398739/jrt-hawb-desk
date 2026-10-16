@@ -124,6 +124,9 @@ def test_sync_reminds_about_the_unit_file_without_touching_systemd():
     assert "/etc/systemd/system/" in s, "没跟服务器上那份 unit 比过，改了也不会提醒你装"
     assert re.search(r"md5sum [^\n]*(\$UNIT|hawb-desk\.service)", s), \
         "比对要读两边哈希，光 echo 文件名比不出差异"
+    assert re.search(r"live=\"\$\(ssh [^\n]*md5sum /etc/systemd/system/\$UNIT\.service", s), \
+        "「装没装过」必须从服务器上读回来：把它写死成空值（或读错路径）就永远报同一条提示，" \
+        "而永远对的提示等于没有提示——第一轮变异 U3 就是这么活的"
     cp_lines = [l for l in s.splitlines() if "sudo cp" in l]
     assert cp_lines, "提示里得把要手工执行的那条 cp 命令原样写出来，否则等于没提示"
     assert all(("say " in l) or l.strip().startswith("#") for l in cp_lines), \
