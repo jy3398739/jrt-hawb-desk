@@ -1691,7 +1691,8 @@ function renderMain(){
         <button class="btn pri" id="mvSubmit">提交主单回公司</button>
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
-        <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认" : ""))}</span>
+        <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认"
+          : (Array.isArray(rec.flags_now) ? "红旗按公司现值算，没有（提交于 " + (rec.flags_now_at || "?") + "）" : "")))}</span>
       </div>`}`;
     el.querySelectorAll("[data-mk]").forEach(inp => {
       inp.addEventListener("change", () => mvTouch(inp));
@@ -1765,6 +1766,7 @@ function renderMain(){
       <div><div class="nm">${esc(t.filename)}</div>
         <div class="meta">${esc(t.stem || "")} · ${esc(t.channel || "?")} 通道 · ${t.elapsed || 0}s
           ${t.staged ? " · " + esc(L.roleCn(t.staged.role)) + " " + esc(t.staged.by) + " 已暂存（改 " + t.staged.edited + " 列）" : ""}${t.locked ? " · 公司已离开暂存档（状态 " + esc(t.locked) + "），不再收改动" : ""}${t.restored === "server" ? " · 服务器载入" : (t.restored ? " · 本机未保存的编辑载入" : "")}${label ? " · " + label : ""}
+          ${t.flagsNow ? " · 红旗按公司现值算（提交于 " + esc(t.flagsNow) + "）" : ""}
           · 保真回查 ${fid ? `${fid.passed}/${fid.checked} 字段有票面转录出处` : "本次无记录"}</div></div>
     </div>
     <div class="todo">
@@ -2334,6 +2336,14 @@ async function openHouse(stem){
                                                  at:st.staged_at, edited:Object.keys(st.edits || {}).length} : null,
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
                                          reviewer:d.submitted.reviewer} : null};
+    /* 交出去的票：红旗改用后端按公司那一版终值现算的那份（flags_now），不再回放解析时对着
+       模型值算的旧清单——人都改完发出去了、公司库里没那些问题，重开还催第二遍就是白催
+       （2026-10-16 用户："已经提交的分单和主单为什么我第二次点进去还是提示我有红旗"）。
+       落盘那份 qc 后端照旧原样发回：解析质量分读的是它，两处不许混成一个。 */
+    if (Array.isArray(d.flags_now)){
+      t.qc = Object.assign({}, t.qc || {}, {flags: d.flags_now, needs_review: d.flags_now.length > 0});
+      t.flagsNow = d.flags_now_at || "";
+    }
     if (hit) S.tickets[S.tickets.indexOf(hit)] = t; else S.tickets.push(t);
     mvOff(); S.sel = stem; render();
     $("#view").scrollIntoView({behavior:"smooth", block:"start"});
@@ -2420,7 +2430,11 @@ function mvValues(){
   return Object.assign({}, rec.ams || {}, MV.edit || {});
 }
 function mvFlags(){
-  const base = (MV.rec && MV.rec.qc && MV.rec.qc.flags) || [];
+  /* 交出去的主单读后端按公司终值现算的那份（flags_now），没发出去的照旧读解析时那批——
+     与分单侧 `/ticket` 同一条口径（2026-10-16 用户："已经提交的分单和主单为什么我第二次
+     点进去还是提示我有红旗"）。qc.flags 原样留着给解析质量分用，两处不许混。 */
+  const rec = MV.rec || {};
+  const base = Array.isArray(rec.flags_now) ? rec.flags_now : ((rec.qc && rec.qc.flags) || []);
   return [...new Set(base.concat(MV.extraFlags || []))];
 }
 /* 主单 36 列的改动和红旗确认同样是人的工作，不能刷新就丢：按 mawb 存本地。

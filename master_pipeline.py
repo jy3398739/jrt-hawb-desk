@@ -282,10 +282,18 @@ def run_master(mawb: str, mawb_order: dict, prev: dict | None = None) -> dict:
 
 def public(rec: dict | None) -> dict | None:
     """给前端的形态：附上 36 列的列名/中文名/分组，以及只读 meta 行（JOB_ID 那类主单多出来、
-    不参与提交的列）。这份表只有 master_fields 一个真源，前端抄一份迟早和后端漂移。"""
+    不参与提交的列）。这份表只有 master_fields 一个真源，前端抄一份迟早和后端漂移。
+    另外补一档 `flags_now`：**这条主单已经发回公司过**（主单台账里有 `ams_sent`）时，
+    按公司那一版终值现算一遍红旗——交出去的票第二次点进去不该还催着解析时那批旧旗
+    （2026-10-16 用户问"已经提交的分单和主单为什么我第二次点进去还是提示我有红旗"，
+    分单侧同一条改在 `/ticket`）。判据不另起一处，就是提交门的 `master_flags`。"""
     if rec is None:
         return None
     out = dict(rec)
+    led = store.master_ledger().get(store.norm_no(rec.get("mawb", ""))) or {}
+    sent = led.get("ams_sent")
+    out["flags_now"] = master_flags(sent, rec.get("transcript")) if isinstance(sent, dict) and sent else None
+    out["flags_now_at"] = str(led.get("submitted_at") or "")
     out["fields"] = [list(f) for f in mf.MASTER_FIELDS]
     out["groups"] = dict(mf.MASTER_GROUP_LABELS)
     outer = rec.get("outer") or {}

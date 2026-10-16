@@ -1055,7 +1055,11 @@ def _preview_file(stem: str, d: Path) -> Path:
 @app.get("/ticket/{stem}")
 def ticket_result(stem: str, _: None = Depends(require_web)):
     """按 stem 重开一张已归档的分单：L2 原文口径 + L3 航空口径 + 质检记录 + 本机提交条目。
-    只把落盘的东西原样交回，不在路由里重算——改完仍走 /submit，红旗由服务端按当前值再算一遍。"""
+    落盘的东西原样交回（`qc` 一个字不改——那是"这次解析抄得对不对"的凭据，解析质量分读它）；
+    唯一现算的是 `flags_now`：**已经发出去的票，红旗按台账那份公司终值重算**
+    （2026-10-16 用户："已经提交的分单和主单为什么我第二次点进去还是提示我有红旗"）。
+    判据不另起一处——就是提交门那一个 `jobs.recompute_flags`，只是 `transcript` 传 None：
+    逐字保真查的是模型这次抄得对不对，人改过的值不该拿它回查。"""
     name = _safe_stem(stem)
     if name is None:
         raise HTTPException(400, "stem 不合法（不接受带路径的名字）")
@@ -1064,11 +1068,16 @@ def ticket_result(stem: str, _: None = Depends(require_web)):
         raise HTTPException(404, f"本机没有 {name} 的解析结果（output/raw 或 output/air 缺文件）")
     qc_p = config.OUTPUT_QC_DIR / f"{name}.json"
     qc = json.loads(qc_p.read_text(encoding="utf-8")) if qc_p.exists() else {}
+    raw = json.loads(raw_p.read_text(encoding="utf-8"))
+    led = store.ledger().get(name)
+    sent = (led or {}).get("air_sent")
+    now = jobs.recompute_flags(raw, sent, None) if isinstance(sent, dict) and sent else None
     return {"stem": name, "filename": qc.get("source_name") or name,
             "channel": qc.get("channel"), "elapsed": qc.get("elapsed"),
-            "raw": json.loads(raw_p.read_text(encoding="utf-8")),
+            "raw": raw,
             "air": json.loads(air_p.read_text(encoding="utf-8")),
-            "qc": qc, "submitted": store.ledger().get(name)}
+            "qc": qc, "submitted": led,
+            "flags_now": now, "flags_now_at": (led or {}).get("submitted_at") or ""}
 
 
 @app.get("/staged/{stem}")

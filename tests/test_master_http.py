@@ -397,6 +397,18 @@ def test_the_l1_pane_shows_only_what_the_company_recorded():
         "核对区那一格仍认后端同一份清单：一条资料不许同时既是凭据又是回执"
 
 
+def test_a_submitted_master_shows_the_companys_flags():
+    """主单侧的同一件事（用户 2026-10-16 一句话问的是两张票）：交出去的主单第二次检索，
+    红旗要读后端按公司终值现算的 `flags_now`，不再回放解析时那批；顶栏要说清是哪一版。"""
+    js = web_src.part("js/desk.js")
+    fn = web_src.fn(js, "function mvFlags(")
+    assert "Array.isArray(rec.flags_now) ? rec.flags_now : ((rec.qc && rec.qc.flags) || []);" in fn, \
+        "mvFlags 没接住后端那份现算的旗：交出去的票还要被旧清单催第二遍"
+    mv = web_src.fn(js, "function renderMain(")
+    assert 'Array.isArray(rec.flags_now) ? "红旗按公司现值算，没有（提交于 "' in mv, \
+        "主单底栏要跟着说清这批旗是哪一版算的，没旗时也得说一句"
+
+
 def test_searching_a_different_master_clears_the_open_one():
     """换一张主单检索时，右边不能还挂着上一张的原文与核对表（2026-10-15 现场：
     左卡写着「解析中…」，右边还是上一张的 36 列与 L1，看上去就像新票已经解析完了）。

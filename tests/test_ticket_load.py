@@ -89,6 +89,68 @@ def test_ticket_route_carries_the_submit_record():
         assert d["submitted"]["reviewer"] == "马殿齐"
 
 
+GOOD_RAW = dict(RAW, PIECES=12, WEIGHT=345.5, CREATE_TIME="2026-09-20")
+SENT_OK = {"MAWB_NO": "999-95764373", "HAWB_NO": "VCE4373", "ORIGIN_NAME": "TAO", "DEST_NAME": "MXP",
+           "TO1": "PVG", "PIECES": 12, "WEIGHT": 345.5, "CREATE_TIME": "2026-09-20"}
+
+
+def _put_sent(stem, air_sent, stale):
+    """落一张票：解析时那批旗是 `stale`（对着模型那一版算的），台账里存的是发出去的那一版终值。"""
+    (config.OUTPUT_RAW_DIR / f"{stem}.json").write_text(json.dumps(GOOD_RAW, ensure_ascii=False), encoding="utf-8")
+    (config.OUTPUT_AIR_DIR / f"{stem}.json").write_text(json.dumps(AIR, ensure_ascii=False), encoding="utf-8")
+    qc = dict(QC, flags=stale, needs_review=bool(stale))
+    (config.OUTPUT_QC_DIR / f"{stem}.json").write_text(json.dumps(qc, ensure_ascii=False), encoding="utf-8")
+    store.mark_submitted(stem, "999-95764373", "VCE4373", "马殿齐", {"mode": "live"}, air_sent=air_sent)
+
+
+def test_a_submitted_ticket_gets_flags_recomputed_on_the_company_values():
+    """交出去的票第二次点进去还催红旗，是因为屏上显示的是**解析那一刻**对着模型值算的那批旗
+    （用户 2026-10-16："已经提交的分单和主单为什么我第二次点进去还是提示我有红旗？我的理解是
+    已经提交的票应该从公司里提取内容"）。值早在 v1.26.0 就按台账那份还原了，旗没有——
+    这一条把旗也按公司现值现算，判据仍用提交门那一个函数（不另起一处算法）。"""
+    with _sandbox():
+        stem = "999-95764373分 - 副本"
+        stale = ["L3 TO1 未转成 IATA 三字码: 'MILAN'（码表缺项，需补 CITY_IATA）",
+                 "保真 TO1: 未在L1逐字转录中找到原文（可能被改写或转录遗漏）（值='MILAN'）"]
+        _put_sent(stem, SENT_OK, stale)
+        d = _web().get("/ticket/" + stem).json()
+        assert d["qc"]["flags"] == stale, "落盘那份不改：解析质量分还是按解析时算，两处不许混"
+        assert d["flags_now"] == [], d["flags_now"]
+        assert d["flags_now_at"], f"要说清这批旗是按哪一版算的: {d}"
+
+
+def test_a_company_value_problem_still_raises_its_flag_after_submit():
+    """重算不是「交了就闭嘴」：公司那一版终值里真有形态问题（TO1 还写着城市名）就照旧报红。"""
+    with _sandbox():
+        stem = "999-95764373分 - 副本"
+        _put_sent(stem, dict(SENT_OK, TO1="MANAUS"), ["PIECES 缺失或为0"])
+        d = _web().get("/ticket/" + stem).json()
+        assert any("TO1" in f for f in d["flags_now"]), d["flags_now"]
+        assert not any(str(f).startswith("保真") for f in d["flags_now"]), \
+            "逐字保真查的是「这次解析抄得对不对」，人改过的值不该拿它回查——它只对解析负责"
+
+
+def test_an_unsubmitted_ticket_has_no_recomputed_flags():
+    """没提交过的票不许有这份：那时"公司现值"还不存在，屏上就该看解析时那批旗。"""
+    with _sandbox():
+        stem = "999-95764373分 - 副本"
+        _put(stem)
+        d = _web().get("/ticket/" + stem).json()
+        assert d["submitted"] is None and d["flags_now"] is None, d
+
+
+def test_reopening_a_submitted_ticket_shows_the_companys_flags():
+    """后端算好了不算数——前端必须真的用它。这条钉的是"重开一张交出去的票，屏上那批旗
+    来自公司现值那份"，以及顶栏要写清是按哪一版算的（同一条改动的浏览器半边）。"""
+    html = web_src.desk()
+    op = _html_fn(html, "openHouse")
+    assert "if (Array.isArray(d.flags_now)){" in op, "openHouse 没接住后端现算的那份旗"
+    assert "t.qc = Object.assign({}, t.qc || {}, {flags: d.flags_now, needs_review: d.flags_now.length > 0});" in op
+    assert 't.flagsNow = d.flags_now_at || "";' in op
+    head = _html_fn(html, "renderMain")
+    assert "红旗按公司现值算（提交于 " in head, "顶栏要说清这批旗是按哪一版算的，别让人以为还是解析时那份"
+
+
 def test_ticket_route_rejects_unknown_and_bad_names():
     with _sandbox():
         c = _web()

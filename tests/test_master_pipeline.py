@@ -373,6 +373,36 @@ def test_the_parsing_placeholder_still_carries_the_baseline():
         _restore(old, tmp)
 
 
+def test_a_submitted_master_gets_flags_recomputed_on_the_company_values():
+    """与分单同一条（用户 2026-10-16 问的是同一件事，两条链都得改）：交出去的主单第二次检索，
+    红旗按**公司那一版终值**现算，不再回放解析时那批对着模型值算出来的旗。
+    判据仍走 `master_flags` 那一处，只是喂给它台账里那份 `ams_sent`。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    bad = {c: None for c in mp.MASTER_COLS}
+    bad.update({"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "841290901", "SLAC": 10,
+                "SHIPPER_INFO_COMP_NAME": "METSO (TIANJIN) INVESTMENT CO., LTD.",
+                "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_EORI": "NOTANID"})
+    box, undo = _stub_extract(reply=bad)
+    try:
+        rec = mp.run_master("176-62400004", ORDER)
+        assert any("SHIPPER_INFO_EORI" in f for f in rec["qc"]["flags"]), rec["qc"]["flags"]
+        assert mp.public(rec)["flags_now"] is None, "还没发出去的票没有「公司现值」，不许凭空造一份"
+        fixed = {c: None for c in mp.MASTER_COLS}
+        fixed.update({"MAWB_NO": "176-62400004", "GOODS_INFO_HSCODE": "841290901", "SLAC": 10,
+                      "SHIPPER_INFO_COMP_NAME": "METSO (TIANJIN) INVESTMENT CO., LTD.",
+                      "SHIPPER_INFO_COUNTRY": "CN"})
+        store.mark_master_submitted("176-62400004", "宛平", {"mode": "live"}, ams_sent=fixed)
+        out = mp.public(mp.read_master("176-62400004"))
+        assert out["flags_now"] == [], out["flags_now"]
+        assert out["flags_now_at"], out
+        assert out["qc"]["flags"] == rec["qc"]["flags"], "落盘那份不改：解析质量分还是按解析时算"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
 def test_missed_ams_column_is_named_as_a_red_flag():
     """公司 AMS_RECORD 里明明有值、模型却没取 → 报"漏取"并进提交门。
     不区分"资料里没有"和"有但没提出来"，复核人只能对着一堆空格子猜；而整表写回会把
