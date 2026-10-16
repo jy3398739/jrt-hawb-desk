@@ -1351,6 +1351,34 @@ def test_render_serves_image_tickets_and_degrades_honestly():
         assert bad.status_code == 415 and "下载原件" in bad.json()["detail"], bad.text
 
 
+def test_acked_buttons_survive_a_partial_row_repaint():
+    """改过一个值的行，refreshRow 只换那一格的 innerHTML（状态徽标与旗面原文都跟着换），
+    新节点身上没有监听——制单员点「红旗已核」就是"无任何反应"，得先勾一下「只看待核对」
+    触发整页 render 才点得动（2026-10-16 用户实测）。所以这一排按钮一律走 #main 委托：
+    整页重画、局部重画都不影响它，也不许再回到逐节点挂监听那种写法。"""
+    html = web_src.desk()
+    wire = re.search(r'if \(!\$\("#main"\)\._locWired\)\{(.*?)\n  \}', html, re.S)
+    assert wire, "委托块没了：五段是五张表，逐个 tr 挂监听既容易漏又要每次重画都补一遍"
+    block = wire.group(1)
+    for a in ("data-ack", "data-unack", "data-ackf", "data-unackf", "data-acke", "data-une",
+              "data-restore", "data-fold", "data-gack"):
+        assert a in block, f"「{a}」没进委托块：refreshRow 换掉那一格后它就是点不动的死按钮"
+    for a in ('querySelectorAll("[data-ackf]")', 'querySelectorAll("[data-acke]")',
+              'querySelectorAll("[data-restore]")', 'querySelectorAll("[data-une]")',
+              'querySelectorAll("[data-fold]")', 'querySelectorAll("[data-gack]")'):
+        assert a not in html, f"{a} 还在逐节点挂监听：局部重画之后就失效"
+    # 委托只是"点得到"，点下去做的三件事同样要钉住整行（v1.26.0 那轮 K5/K6 就是只查了
+    # 函数名在不在、把 loadDay(false) 那半句改掉照样绿）：
+    assert "const t = current(); if (!t) return;" in block, \
+        "委托认的不是当前打开的那张票：改了隔壁票的留痕，界面上还看不出来"
+    assert "saveDraft(t); render();" in block, \
+        "点完不重画：徽标停在上一档，人看到的还是「无任何反应」"
+    for line in ("const list = flagsByField({flags: effectiveFlags(t)}).map[d.ackf] || [];",
+                 "const map = flagsByField({flags: effectiveFlags(t)}).map;",
+                 "const g = d.gack, rows = fieldRows(t, effectiveFlags(t)).filter(r => r.g === g);"):
+        assert line in block, f"「{line}」变了：确认收到的是旧旗面，改过值之后的新旗点不进去"
+
+
 def test_desk_field_click_locates_value_on_the_ticket():
     """制单员定的用法：点右边字段名 → 左边票面切按页渲染的页图，按 L1 bbox 叠高亮并自动放大。
     Chrome 内嵌 PDF 阅读器做不了按区域高亮，这条链一断，功能整块失联。"""

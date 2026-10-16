@@ -1891,6 +1891,51 @@ function wireMain(t){
       if (k !== HOVER.k) hoverField(k);
     });
     $("#main").addEventListener("mouseleave", () => hoverField(""));
+    /* 确认 / 撤回 / 还原 / 折叠 / 整段核对这一排走 #main 委托，不逐节点挂。
+       为什么：改一个值只重画那一格（refreshRow 换 [data-st] 与旗面原文）和那一段的段头
+       （refreshChrome 换 thead），新节点身上没有监听——从前"点「红旗已核」没反应，
+       先勾一下「只看待核对」再点才生效"就是这么来的（2026-10-16 用户实测）。
+       委托只挂一次，整页重画、局部重画都不影响它。 */
+    $("#main").addEventListener("click", e => {
+      const b = e.target.closest("[data-ack],[data-unack],[data-ackf],[data-unackf]," +
+                                "[data-acke],[data-une],[data-restore],[data-fold],[data-gack]");
+      if (!b) return;
+      const t = current(); if (!t) return;
+      const d = b.dataset;
+      let msg = "";
+      if (d.restore !== undefined){ delete t.airE[d.restore]; }
+      else if (d.fold !== undefined){ if (FOLD.has(d.fold)) FOLD.delete(d.fold); else FOLD.add(d.fold); }
+      else{
+        t.ackF = t.ackF || []; t.ackE = t.ackE || [];
+        if (d.ack !== undefined){
+          if (!t.ackF.includes(d.ack)) t.ackF.push(d.ack);
+          msg = "已确认：" + d.ack.slice(0, 40) + (d.ack.length > 40 ? "…" : "") + "（提交时留痕进台账）";
+        } else if (d.unack !== undefined){
+          t.ackF = t.ackF.filter(f => f !== d.unack);
+        } else if (d.ackf !== undefined){
+          const list = flagsByField({flags: effectiveFlags(t)}).map[d.ackf] || [];
+          list.forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); });
+          msg = "已确认「" + d.ackf + "」这一列的 " + list.length + " 条红旗（逐条留痕进台账，可撤回）";
+        } else if (d.unackf !== undefined){
+          const list = flagsByField(t.qc).map[d.unackf] || [];
+          t.ackF = t.ackF.filter(f => !list.includes(f));
+        } else if (d.acke !== undefined){
+          if (!t.ackE.includes(d.acke)) t.ackE.push(d.acke);
+          msg = "已确认「" + d.acke + "」票面本来就没印（提交时按 acked_empty 留痕）";
+        } else if (d.une !== undefined){
+          t.ackE = t.ackE.filter(x => x !== d.une);
+        } else if (d.gack !== undefined){
+          /* 整段核对：与逐条点完全同一套留痕（一列一列记进 ackF/ackE），不是"一键放行整段" */
+          const g = d.gack, rows = fieldRows(t, effectiveFlags(t)).filter(r => r.g === g);
+          const map = flagsByField({flags: effectiveFlags(t)}).map;
+          rows.forEach(r => (map[r.k] || []).forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); }));
+          rows.forEach(r => { if (r.st.s === "empty" && !t.ackE.includes(r.k)) t.ackE.push(r.k); });
+          msg = "本段「" + (GROUPS[g] || g) + "」" + rows.length + " 列已整段核对（留痕逐列记，可撤回）";
+        }
+      }
+      saveDraft(t); render();
+      if (msg) toast(msg, "ok");
+    });
   }
   $("#main").querySelectorAll("[data-k]").forEach(inp => {
     const apply = () => {
@@ -1902,62 +1947,11 @@ function wireMain(t){
     inp.addEventListener("blur", apply);
     inp.addEventListener("keydown", blockEnter);
   });
-  $("#main").querySelectorAll("[data-restore]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.restore; delete t.airE[k]; saveDraft(t); render();
-  }));
   const mrv = $("#markReviewed");
   if (mrv) mrv.addEventListener("click", () => markReviewed("hawb", t.stem));
-  $("#main").querySelectorAll("[data-ack]").forEach(b => b.addEventListener("click", () => {
-    const f = b.dataset.ack;
-    t.ackF = t.ackF || [];
-    if (!t.ackF.includes(f)) t.ackF.push(f);
-    saveDraft(t); render();
-    toast("已确认：" + f.slice(0, 40) + (f.length > 40 ? "…" : "") + "（提交时留痕进台账）", "ok");
-  }));
-  /* 撤回确认：红旗回到待办、那一格重新变红。留痕能撤，人才敢点——
-     但不能"顺手全撤"：那等于把别人核对过的东西抹掉，所以只撤这一条。 */
-  $("#main").querySelectorAll("[data-unack]").forEach(b => b.addEventListener("click", () => {
-    t.ackF = (t.ackF || []).filter(f => f !== b.dataset.unack);
-    saveDraft(t); render();
-  }));
-  $("#main").querySelectorAll("[data-ackf]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.ackf, list = (flagsByField({flags: effectiveFlags(t)}).map[k] || []);
-    t.ackF = t.ackF || [];
-    list.forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); });
-    saveDraft(t); render();
-    toast("已确认「" + k + "」这一列的 " + list.length + " 条红旗（逐条留痕进台账，可撤回）", "ok");
-  }));
-  $("#main").querySelectorAll("[data-unackf]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.unackf, list = ((flagsByField(t.qc).map[k] || []));
-    t.ackF = (t.ackF || []).filter(f => !list.includes(f));
-    saveDraft(t); render();
-  }));
-  $("#main").querySelectorAll("[data-acke]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.acke;
-    t.ackE = t.ackE || [];
-    if (!t.ackE.includes(k)) t.ackE.push(k);
-    saveDraft(t); render();
-    toast("已确认「" + k + "」票面本来就没印（提交时按 acked_empty 留痕）", "ok");
-  }));
-  $("#main").querySelectorAll("[data-une]").forEach(b => b.addEventListener("click", () => {
-    t.ackE = (t.ackE || []).filter(x => x !== b.dataset.une);
-    saveDraft(t); render();
-  }));
-  $("#main").querySelectorAll("[data-fold]").forEach(b => b.addEventListener("click", () => {
-    const g = b.dataset.fold;
-    if (FOLD.has(g)) FOLD.delete(g); else FOLD.add(g);
-    render();
-  }));
-  $("#main").querySelectorAll("[data-gack]").forEach(b => b.addEventListener("click", () => {
-    const g = b.dataset.gack, rows = fieldRows(t, effectiveFlags(t)).filter(r => r.g === g);
-    const map = flagsByField({flags: effectiveFlags(t)}).map;
-    t.ackF = t.ackF || [];
-    rows.forEach(r => (map[r.k] || []).forEach(f => { if (!t.ackF.includes(f)) t.ackF.push(f); }));
-    t.ackE = t.ackE || [];
-    rows.forEach(r => { if (r.st.s === "empty" && !t.ackE.includes(r.k)) t.ackE.push(r.k); });
-    saveDraft(t); render();
-    toast("本段「" + (GROUPS[g] || g) + "」" + rows.length + " 列已整段核对（留痕逐列记，可撤回）", "ok");
-  }));
+  /* 确认 / 撤回 / 还原这一排不再在这里逐节点挂：见上面 #main 的委托块。
+     从前它们挂在这里，而改一个值只重画那一格（refreshRow），新按钮没监听——
+     制单员就撞上"点「红旗已核」毫无反应，勾一下「只看待核对」再点才生效"。 */
   $("#jumpFirst").addEventListener("click", () => {
     const ks = ticketTodo(t).todo.keys;
     if (!ks.length){ toast("这一票没有待办了：可以提交", "ok"); return; }
