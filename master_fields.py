@@ -92,30 +92,39 @@ def build_transcript(mawb_order: dict) -> dict:
             "full_text": "\n".join(lines)}
 
 
-def self_filled(lines: list, prev_lines: list, sent: dict) -> list:
-    """这一版 L1 里，哪几行是「本机上次写回公司的那些列」长出来的。
+def original_lines(lines: list, baseline: list, sent: dict) -> tuple:
+    """把「本机上次写回公司的那些列」长出来的行从资料里剔出去，返回 (留下的行, 被剔的行, 分不清的行)。
 
     主单没有票面版式原件，资料文本就是唯一的原始凭据。我们把核对结果整表写回之后（暂存 `mawb2`
     或提交 `mawb3`），下一次检索读回来的"资料"里就混进了我们自己发的值——模型于是是在抄自己
     上次的答案，而"资料里有值模型没取"和"逐字回查得到"这两道核查都会假绿（2026-10-15 现场：
-    074-51188292 第一次 4 行、暂存后第二次 15 行）。
+    074-51188292 第一次 4 行、暂存后第二次 15 行）。v1.27.0 只是把那几行标出来，
+    IT 2026-10-16 不认："还是要原始数据，不管主单解析几次" ⇒ 这一版起它们**不进资料**：
+    不进模型输入、不进逐字保真回查、不算漏取分母，也不上 L1（这一栏只见"排除了几行"）。
 
-    判据两条同时成立才算：这一行**上次没有**（上次就有 = 公司原本录的，值相同也不改口），
-    且值与本机发出去的那一格相同（空白按出行同一套归一，公司写回再读回可能差个空格）。
-    认不准的宁可少标：标错一次，人就少信一次这个标记。所以上次那份 L1 是空的（第一次解析、
-    或缓存被清过）就一格都不标——没有可比对象，分不出"公司原本录的"和"我们回填的"。"""
-    if not (prev_lines or []):
-        return []
-    had = {str((x or {}).get("text", "")).split(":", 1)[0].strip() for x in (prev_lines or [])}
-    out = []
+    剔的判据两条同时成立（宁可少剔：误剔等于把公司真值从模型眼前藏掉，还会冒一条假漏取）：
+      ① 这一行的标签在**基线**里没有——基线里有 = 公司先录的，值相同也不改口；
+      ② 值与本机发出去的那一格相同（空白按出行同一套归一，写回再读回可能差个空格）。
+    基线本身是空的（连可比对象都没有：第一次解析前缓存就被清了）⇒ 一行都不剔，
+    只把②成立的那些行报成分不清——假装分得清比留着更坏。
+    基线由调用处负责：第一次读到时就钉下，逐次继承；老票没钉过的，退到上一次解析读到的
+    那批行，并由调用处标 `baseline_dirty`（那份证据不是当场钉的，界面上要说明白）。"""
+    had = {str(x or "").strip() for x in (baseline or [])}
+    kept: list = []
+    gone: list = []
+    unknown: list = []
     for x in (lines or []):
-        label, _, value = str((x or {}).get("text", "")).partition(":")
+        text = str((x or {}).get("text", ""))
+        label, _, value = text.partition(":")
         label, value = label.strip(), _txt(value)
-        if not label or label in had or not isinstance(sent, dict) or label not in sent:
-            continue
-        if value == _txt(sent[label]):
-            out.append(label)
-    return out
+        hit = bool(label) and isinstance(sent, dict) and label in sent and value == _txt(sent[label])
+        if hit and label not in had:
+            if had:
+                gone.append({"label": label, "value": value, "text": text})
+                continue
+            unknown.append({"label": label, "value": value, "text": text})
+        kept.append(x)
+    return [{**x, "i": n} for n, x in enumerate(kept, 1)], gone, unknown
 
 
 def _int_or_none(v):

@@ -195,7 +195,7 @@ def fresh_record(mawb: str, mawb_order: dict, force: bool = False) -> dict | Non
     rec = read_master(mawb)
     if not rec or rec.get("state") not in ("done", "failed"):
         return None
-    tr = mf.build_transcript(mawb_order)
+    tr, _ = build_input(mawb, mawb_order, prev=rec)
     if (rec.get("text_md5") == _md5(tr["full_text"]) and rec.get("face_md5") == _face_md5()
             and rec.get("model") == config.master_model_bundle()["model"]):
         return rec
@@ -204,8 +204,11 @@ def fresh_record(mawb: str, mawb_order: dict, force: bool = False) -> dict | Non
 
 def _sent_back(mawb: str, prev: dict) -> dict:
     """本机发给过公司的那一版值：提交台账里的 `ams_sent`，加上一次暂存写出去的那份 `ams_final`
-    （暂存走 `mawb2` 不写提交台账，只看台账就会漏掉"点了暂存还没提交"这一大一路）。"""
+    （暂存走 `mawb2` 不写提交台账，只看台账就会漏掉"点了暂存还没提交"这一大一路），
+    再并上记录里那份 `sent_back`——重解析会把 `ams_final` 盖掉，那笔账得自己活着。"""
     out = {}
+    if isinstance((prev or {}).get("sent_back"), dict):
+        out.update(prev["sent_back"])
     led = store.master_ledger().get(store.norm_no(mawb)) or {}
     if isinstance(led.get("ams_sent"), dict):
         out.update(led["ams_sent"])
@@ -214,20 +217,44 @@ def _sent_back(mawb: str, prev: dict) -> dict:
     return out
 
 
-def run_master(mawb: str, mawb_order: dict) -> dict:
+def build_input(mawb: str, mawb_order: dict, prev: dict | None = None) -> tuple:
+    """喂给模型的资料 = 公司录的那几行（本机写回的按 mf.original_lines 剔掉）。
+
+    这一处必须只有算法的一份调用：`fresh_record`、`ensure`、`run_master` 三处都算指纹，
+    各剔各的就会出现"界面显示的行与缓存认的行不是同一份"。返回 `(资料, 那几份账)`。"""
+    raw = mf.build_transcript(mawb_order)
+    if prev is None:
+        prev = read_master(mawb) or {}
+    if prev.get("state") == "parsing":
+        prev = {}          # ensure 写的占位记录不是"上一次解析"，拿它当基线会把上一份洗掉
+    sent = _sent_back(mawb, prev)
+    had = [str(x or "").strip() for x in (prev.get("baseline") or []) if str(x or "").strip()]
+    # 老票没钉过基线：退到上一次解析读到的那批行当对照，并把这个"证据不是当场钉的"如实带下去
+    dirty = bool(prev.get("baseline_dirty")) or (bool(prev) and not had)
+    if not had:
+        had = [str(x.get("text", "")).split(":", 1)[0].strip()
+               for x in ((prev.get("transcript") or {}).get("lines") or [])]
+        had = [x for x in had if x]
+    kept, gone, unknown = mf.original_lines(raw["lines"], had, sent)
+    tr = {"lines": kept, "full_text": "\n".join(x["text"] for x in kept)}
+    return tr, {"baseline": sorted(set(had)) if had
+                else sorted({str(x["text"]).split(":", 1)[0].strip() for x in raw["lines"]}),
+                "baseline_dirty": dirty,
+                "sent_back": sent, "excluded_self": gone, "unknown_self": unknown,
+                "self_filled": [x["label"] for x in gone] + [x["label"] for x in unknown]}
+
+
+def run_master(mawb: str, mawb_order: dict, prev: dict | None = None) -> dict:
     """就地解析一条主单并落盘。失败也落盘（state=failed + 原因），别让它在页面上隐身。"""
-    tr = mf.build_transcript(mawb_order)
-    prev = read_master(mawb) or {}
+    tr, pin = build_input(mawb, mawb_order, prev)
     bundle = config.master_model_bundle()
     t0 = time.time()
     usage.begin()
     rec = {"mawb": str(mawb or "").strip(), "text_md5": _md5(tr["full_text"]),
            "face_md5": _face_md5(), "model": bundle["model"],
            "started_at": _now(), "transcript": tr,
-           # 哪几行是这台机器上次写回公司的值：主单没有票面原件，资料文本就是唯一的原始凭据，
-           # 混进自己的输出时必须让界面说清楚（判据见 mf.self_filled）
-           "self_filled": mf.self_filled(tr["lines"], (prev.get("transcript") or {}).get("lines"),
-                                         _sent_back(mawb, prev)),
+           # 原件基线 + 本机发过的值 + 被剔/分不清的行：判据见 mf.original_lines
+           **pin,
            "outer": {k: (mawb_order or {}).get(k) for k in mf.OUTER_REF_COLS},
            "ams": {}, "ams_raw": {}, "qc": None, "error": ""}
     try:
@@ -272,8 +299,15 @@ def ensure(mawb: str, mawb_order: dict, force: bool = False) -> dict:
 
     指纹命中直接回缓存（不再花钱）；没资料就地失败（不能让模型凭空编一条主单）；
     要重跑时先把 state=parsing 写下去再干活——并发的第二个请求看到 parsing 就只跟不抢。
-    force=True 越过缓存：换了模型或想把上一次的失败重试一次。"""
-    tr = mf.build_transcript(mawb_order)
+    force=True 越过缓存：换了模型或想把上一次的失败重试一次。
+
+    占位那次 `_write` 是把上一份整个盖掉：原件基线、本机发过的值、那份脏标记必须带过去，
+    不然"解析到一半"就把唯一的可比对象洗没了（v1.27.0 的标注在这条真链路上从来不出，就是这个洞）。"""
+    prev = read_master(mawb) or {}
+    if prev.get("state") == "parsing":
+        prev = {}
+    tr, pin = build_input(mawb, mawb_order, prev)
+    carry = {k: pin[k] for k in ("baseline", "baseline_dirty", "sent_back")}
     md5, face = _md5(tr["full_text"]), _face_md5()
     model = config.master_model_bundle()["model"]
     with _lock:
@@ -286,14 +320,14 @@ def ensure(mawb: str, mawb_order: dict, force: bool = False) -> dict:
         if not tr["lines"]:
             return _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "face_md5": face,
                            "model": model, "state": "failed",
-                           "transcript": tr, "ams": {}, "ams_raw": {},
+                           "transcript": tr, "ams": {}, "ams_raw": {}, **carry,
                            "error": "主单资料文本为空，无从解析：公司接口没返回这条主单的资料",
                            "qc": {"flags": ["主单资料为空"], "needs_review": True, "fidelity": None},
                            "started_at": _now(), "updated_at": _now(), "elapsed": 0.0})
         _write({"mawb": str(mawb or "").strip(), "text_md5": md5, "face_md5": face, "model": model,
-                "state": "parsing", "transcript": tr, "ams": {}, "ams_raw": {},
+                "state": "parsing", "transcript": tr, "ams": {}, "ams_raw": {}, **carry,
                 "error": "", "qc": None, "started_at": _now(), "updated_at": _now()})
-    return run_master(mawb, mawb_order)
+    return run_master(mawb, mawb_order, prev=prev)
 
 
 def submit_master(payload: dict) -> dict:

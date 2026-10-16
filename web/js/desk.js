@@ -483,22 +483,18 @@ function mvPreview(){
     return (MV.rec && MV.rec.state === "parsing")
       ? '<div class="empty">正在取公司资料并解析：解析完成后这里显示 L1 原文。</div>'
       : '<div class="empty">公司侧这条主单没有资料文本：接口没返回，或从未录入。</div>';
-  const rows = lines.map(x => {
-    /* 「本机回填」：这一行上次检索时还没有，值又与这台机器发给公司的那一版相同——
-       也就是我们自己上次写回去的，不是公司录的。主单没有票面原件，资料就是唯一的凭据，
-       让它冒充原始资料等于让模型抄自己的答案、还让"漏取/保真"两道核查假绿（后端判据
-       在 master_fields.self_filled，认不准的一律不标）。 */
-    const lab = String(x.text).split(":")[0].trim();
-    const back = ((MV.rec && MV.rec.self_filled) || []).indexOf(lab) >= 0;
-    return '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text) +
-      (back ? '<span class="badge same" title="这一格上次检索时资料里还没有，值与本机发给公司的' +
-              '那一版相同：多半是这台机器上次回填的，不能当独立证据' +
-              '">本机回填</span>' : '');
-  }).join("");
-  const nBack = ((MV.rec && MV.rec.self_filled) || []).length;
+  /* 本机写回公司的那几行**不进这一栏**（剔在后端一处，判据见 master_fields.original_lines）。
+     主单没有票面版式原件，这段资料文本就是唯一的原始凭据：混进我们自己的输出，模型就是在抄
+     上次的答案，漏取与逐字保真两道核查也一起假绿。v1.27.0 只是标一下，IT 2026-10-16 不认——
+     "还是要原始数据，不管主单解析几次"。值本身没被改动：右边 36 列那一格照旧带着徽标。 */
+  const EX = (MV.rec && MV.rec.excluded_self) || [];
+  const UN = (MV.rec && MV.rec.baseline_dirty) ? (MV.rec.unknown_self || []) : [];
+  const rows = lines.map(x => '<div class="j blk"><b>' + (x.i ? x.i + ':' : '') + '</b> ' + esc(x.text)).join("");
   return '<div class="mvtxt"><div class="t2">L1 原文 · 公司主单资料（逐字，未加工）</div>' + rows +
     '<p class="hint hintp flush">主单没有票面版式原件，所以这里是资料文本而非票面图：点右边字段名不能定位高亮。' +
-    (nBack ? '其中 <b>' + nBack + ' 行标着「本机回填」：那是这台机器上次写回公司的值，不是公司录的原始资料。' : '') +
+    (EX.length ? '已按原始资料排除 <b>' + EX.length + '</b> 行本机写回的值：那一行既不进资料也不进核查，右边 36 列里看得到、也照旧能改。' : '') +
+    (UN.length ? '另有 <b>' + UN.length + '</b> 行分不清来源：这张票连一份可比对的原始资料都没有，要真值请回公司系统看。' : '') +
+    ((MV.rec && MV.rec.baseline_dirty) ? '这一张的原始基线是从上一次解析那份补的（不是当场钉下的），边界可能差一行。' : '') +
     '</p></div>';
 }
 function renderPreview(){

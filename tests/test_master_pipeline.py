@@ -11,6 +11,7 @@ from pathlib import Path
 import company_api
 import config
 import j9_fake
+import master_fields as mf
 import master_pipeline as mp
 import store
 import vlm_extract
@@ -198,6 +199,175 @@ def test_a_staged_only_master_is_also_compared_against_what_we_sent():
         rec = mp.run_master("074-51188292", second)
         assert sorted(rec["self_filled"]) == ["GOODS_INFO_HSCODE", "MAWB_NO", "SLAC"], rec["self_filled"]
         assert not (tmp / "master_submitted.json").exists(), "这条路径压根没提交，判据不该依赖台账"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+SENT_BACK = {"MASTER_NO": "074-51188292", "MAWB_NO": "074-51188292", "GOODS_INFO_HSCODE": "702000",
+             "SHIPPER_INFO": "DSV AIR & SEA CO., LTD.", "GOODS_NAME": "QUARTZ GLASS",
+             "SHIPPER_INFO_COMP_NAME": "DSV AIR & SEA CO., LTD."}
+FIRST_READ = {"MASTER_NO": "074-51188292",
+              "AMS_RECORD": {"MASTER_NO": "074-51188292", "SHIPPER_INFO": "DSV AIR & SEA CO., LTD.",
+                             "GOODS_NAME": "QUARTZ GLASS"}}
+
+
+def _labels(tr: dict) -> list:
+    return [x["text"].split(":", 1)[0] for x in tr["lines"]]
+
+
+def test_the_model_input_is_pinned_to_what_we_first_read():
+    """IT 不接受「混着自己的输出、只是标一下」：主单解析几次都好，喂给模型的必须是公司录的那几行。
+    所以比较对象不能是「上一次读到的那批行」（暂存之后那批本身就是脏的，一行也剔不掉），
+    而是**第一次读到时就钉下的那份基线**，逐次继承（2026-10-16 定案）。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        one = mp.run_master("074-51188292", FIRST_READ)
+        assert sorted(set(_labels(one["transcript"]))) == ["GOODS_NAME", "MASTER_NO", "SHIPPER_INFO"], one["transcript"]
+        assert sorted(one["baseline"]) == ["GOODS_NAME", "MASTER_NO", "SHIPPER_INFO"], "第一次读到的就是原件基线"
+        store.mark_master_submitted("074-51188292", "宛平", {"mode": "live"}, ams_sent=dict(SENT_BACK))
+        two = mp.run_master("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)})
+        assert sorted(set(_labels(two["transcript"]))) == ["GOODS_NAME", "MASTER_NO", "SHIPPER_INFO"], \
+            "写回公司的那几列又读回来了：剔完要和第一次一样，模型不许抄自己"
+        assert two["text_md5"] == one["text_md5"], "指纹按剔后算——写回多少列都不该再把缓存踢一次"
+        assert sorted(x["label"] for x in two["excluded_self"]) == \
+            ["GOODS_INFO_HSCODE", "MAWB_NO", "SHIPPER_INFO_COMP_NAME"], two["excluded_self"]
+        for x in two["excluded_self"]:
+            assert x["value"] == SENT_BACK[x["label"]], "被剔的那几行要原样记账，回头查得着"
+        assert [l["i"] for l in two["transcript"]["lines"]] == list(range(1, len(two["transcript"]["lines"]) + 1)), \
+            "剔完不重排行号，前端说的第几行与点字段名的定位就会指到别的行上"
+        assert sorted(two["baseline"]) == sorted(one["baseline"]), "基线要逐次继承，不能被这次读到的脏行顶掉"
+        assert mp.public(two)["excluded_self"] == two["excluded_self"], "前端读的是 public 那份"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_a_line_the_company_recorded_itself_still_reaches_the_model():
+    """剔的是「本机写回的」，不是「新出现的」。公司 IT 后来自己往那一行录了值（本机从没发过那一格），
+    那仍是原始资料——把它一起剔掉就等于把公司真值藏起来，模型这次取不到、还报一条假漏取。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        one = mp.run_master("074-51188292", FIRST_READ)
+        store.mark_master_submitted("074-51188292", "宛平", {"mode": "live"}, ams_sent=dict(SENT_BACK))
+        two = mp.run_master("074-51188292", {"MASTER_NO": "074-51188292",
+                                             "AMS_RECORD": dict(SENT_BACK,
+                                                                SHIPPER_INFO_COMP_ADDRESS="25A,HISENSE TOWER")})
+        assert "SHIPPER_INFO_COMP_ADDRESS" in _labels(two["transcript"]), two["transcript"]
+        assert "SHIPPER_INFO_COMP_ADDRESS" not in [x["label"] for x in two["excluded_self"]]
+        assert sorted(x["label"] for x in two["excluded_self"]) == \
+            ["GOODS_INFO_HSCODE", "MAWB_NO", "SHIPPER_INFO_COMP_NAME"], two["excluded_self"]
+        assert two["text_md5"] != one["text_md5"], "公司真的多录了一行，指纹要变、要重解析，不然新值进不了模型"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_a_master_written_back_before_this_upgrade_only_says_it_cannot_tell():
+    """升级前解析的老票没有当场钉下的基线。两种情况分开处置，都不许假装分得清：
+    ① 还有上一次解析的记录 ⇒ 退到它读到的那批行当对照（比这些行晚出现、又与本机发过的相同 ⇒ 剔），
+       但这份"证据不是当场钉的"要如实带着（`baseline_dirty`），重解析一次也不许洗掉；
+    ② 连上一次记录都没有（缓存被清过）⇒ 一行都不剔，只报分不清几行。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        prev_read = {"MASTER_NO": "074-51188292",
+                     "AMS_RECORD": {"MASTER_NO": "074-51188292", "SHIPPER_INFO": "DSV AIR & SEA CO., LTD.",
+                                    "GOODS_NAME": "QUARTZ GLASS", "MAWB_NO": "074-51188292"}}
+        mp._write({"mawb": "074-51188292", "state": "done", "text_md5": mp._md5("x"),
+                   "face_md5": mp._face_md5(), "model": config.master_model_bundle()["model"],
+                   "transcript": mf.build_transcript(prev_read), "ams": {}, "ams_raw": {},
+                   "baseline": [], "qc": {"flags": [], "needs_review": False}, "error": ""})
+        store.mark_master_submitted("074-51188292", "宛平", {"mode": "live"}, ams_sent=dict(SENT_BACK))
+        rec = mp.run_master("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)})
+        assert rec["baseline_dirty"] is True, "基线是从上一次解析那份补的，界面要看得见这句话"
+        assert sorted(x["label"] for x in rec["excluded_self"]) == \
+            ["GOODS_INFO_HSCODE", "SHIPPER_INFO_COMP_NAME"], rec["excluded_self"]
+        assert sorted(rec["baseline"]) == ["GOODS_NAME", "MASTER_NO", "MAWB_NO", "SHIPPER_INFO"], rec["baseline"]
+        again = mp.run_master("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)})
+        assert again["baseline_dirty"] is True, "重解析一次就把污点忘掉＝界面在撒谎"
+        assert sorted(x["label"] for x in again["excluded_self"]) == \
+            sorted(x["label"] for x in rec["excluded_self"]), "同一份基线要剔同一批行，别看第几次解析"
+        # ②：缓存清干净，只剩台账那份发过的值
+        mp.path_for("074-51188292").unlink()
+        fresh = mp.run_master("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)})
+        assert fresh["excluded_self"] == [], "连可比对象都没有，一行都不许剔"
+        assert {x["label"] for x in fresh["unknown_self"]} == \
+            {"MASTER_NO", "MAWB_NO", "GOODS_INFO_HSCODE", "SHIPPER_INFO", "GOODS_NAME",
+             "SHIPPER_INFO_COMP_NAME"}, fresh["unknown_self"]
+        assert fresh["baseline_dirty"] is False, "这一张是从这次读回当场钉的基线，谈不上补证"
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_searching_a_pinned_master_twice_costs_no_new_parse():
+    """认了「第一次要重跑」这一刀之后必须钉住的另一半：剔完的输入与首次一致 ⇒ 指纹一致 ⇒
+    以后再怎么写回都不再花钱。走 ensure（路由那条真链路），不是 run_master。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    try:
+        first = mp.ensure("074-51188292", FIRST_READ)
+        assert first["state"] == "done" and len(box) == 1, box
+        mp.stage_master("074-51188292", {"MAWB_NO": "074-51188292", "GOODS_INFO_HSCODE": "702000",
+                                         "SHIPPER_INFO_COMP_NAME": "DSV AIR & SEA CO., LTD."},
+                        "宛平", "reviewer", acked_flags=[])
+        again = mp.ensure("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)})
+        assert again["state"] == "done" and len(box) == 1, "暂存过再检索，模型一次都不该再调"
+        assert sorted(set(_labels(again["transcript"]))) == ["GOODS_NAME", "MASTER_NO", "SHIPPER_INFO"], again
+        assert again["baseline_dirty"] is False, again["baseline_dirty"]
+        # 强制重解析要走 ensure 写占位那一下（`state=parsing` 是把上一份整个盖掉的），
+        # 基线/发过的值没带过去的话，这一次重跑就把刚钉的原件洗没了
+        forced = mp.ensure("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)},
+                           force=True)
+        assert len(box) == 2, box
+        assert sorted(x["label"] for x in forced["excluded_self"]) == \
+            ["GOODS_INFO_HSCODE", "MAWB_NO", "SHIPPER_INFO_COMP_NAME"], forced["excluded_self"]
+        assert forced["baseline_dirty"] is False, "占位那次 _write 不许把刚钉的基线洗掉"
+
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_the_parsing_placeholder_still_carries_the_baseline():
+    """重解析先把 `state=parsing` 那一份写下去——它是**整份盖掉**上一份记录的，而轮询读到的就是它。
+    基线、本机发过的那份账不带着走，占位这一档就没有可比对象：等真值写回来时，
+    这一次读到的行已经被当成"公司一直都有"了（v1.27.0 的标注在这条真链路上从来不出，就是这个洞）。"""
+    import tempfile
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mp_"))
+    old = _use_tmp(tmp)
+    box, undo = _stub_extract()
+    seen = {}
+    try:
+        mp.ensure("074-51188292", FIRST_READ)
+        store.mark_master_submitted("074-51188292", "宛平", {"mode": "live"}, ams_sent=dict(SENT_BACK))
+        stub = vlm_extract.extract_master
+
+        def peek(transcript, **kw):
+            seen.update(mp.read_master("074-51188292") or {})
+            return stub(transcript, **kw)
+
+        vlm_extract.extract_master = peek
+        try:
+            mp.ensure("074-51188292", {"MASTER_NO": "074-51188292", "AMS_RECORD": dict(SENT_BACK)},
+                      force=True)
+        finally:
+            vlm_extract.extract_master = stub
+        assert seen.get("state") == "parsing", seen.get("state")
+        assert sorted(seen.get("baseline") or []) == ["GOODS_NAME", "MASTER_NO", "SHIPPER_INFO"], \
+            "占位记录没带基线：轮询那一眼就没有可比对象"
+        assert "MAWB_NO" in (seen.get("sent_back") or {}), "本机发过的那份账也要跟着占位记录走"
     finally:
         undo()
         _restore(old, tmp)

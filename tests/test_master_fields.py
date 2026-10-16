@@ -8,7 +8,7 @@
 """
 from master_fields import (AMS_SERVER_COLS, MASTER_COLS, MASTER_FIELDS, MASTER_GROUP_LABELS,
                            MASTER_LIMIT50, MASTER_META_COLS, OUTER_REF_COLS,
-                           build_transcript, clean_ams, norm_mawb_hyphen, self_filled, submit_body)
+                           build_transcript, clean_ams, norm_mawb_hyphen, original_lines, submit_body)
 
 # 公司真返回（176-62400004 精简 + 一条 NOTIFY 块）
 ORDER = {
@@ -152,11 +152,13 @@ def test_submit_body_is_the_only_master_column_surface():
     assert "for col in mf.MASTER_COLS}" not in src, "company_api 里又长出一份列面抄本"
 
 
-def test_self_filled_marks_only_lines_that_we_sent_back():
-    """第二次检索同一条主单时，L1 会长出「本机上次写回公司的那些列」——主单没有票面原件，
-    资料文本就是唯一的原始凭据，让它冒充公司录的原始资料，模型就是在抄自己上次的答案，
-    漏取/保真这两道核查当场失去独立性（2026-10-15 用户在 074-51188292 上实测到）。
-    判据要两条同时成立才算回填：这一行上次没有 + 值等于本机发出去的那一格。"""
+def test_original_lines_drops_only_what_we_sent_back():
+    """第二次检索同一条主单时，读回的资料里会长出「本机上次写回公司的那些列」——主单没有票面原件，
+    资料文本就是唯一的原始凭据，让它冒充原始资料，模型就是在抄自己上次的答案，漏取/保真两道核查
+    当场失去独立性（2026-10-15 用户在 074-51188292 上实测到）。
+    IT 2026-10-16 定的口径是**不许进资料**，不是"进资料但标一下"：所以这里剔掉。
+    判据仍要两条同时成立才剔：这一行在首次钉下的基线里没有 + 值等于本机发出去的那一格
+    （宁可少剔：误剔等于把公司真值从模型眼前藏掉，还会冒一条假漏取）。"""
     prev = [{"i": 1, "text": "MASTER_NO: 074-51188292"},
             {"i": 2, "text": "SHIPPER_INFO: DSV AIR & SEA CO., LTD."}]
     new = prev + [{"i": 3, "text": "MAWB_NO: 074-51188292"},
@@ -167,8 +169,18 @@ def test_self_filled_marks_only_lines_that_we_sent_back():
     sent = {"MAWB_NO": "074-51188292", "GOODS_INFO_HSCODE": "702000",
             "CONSIGNEE_INFO_TEL": "+49  69 6952060",     # 空白差一个也算同一格（出行时就是这么归一的）
             "SHIPPER_INFO_TEL": "0532-00000000"}         # 我们发的是另一个号码：公司改过了，是真资料
-    assert self_filled(new, prev, sent) == ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"]
-    assert self_filled(new, [], sent) == [], "第一次解析没有可比对象，一格都不该标"
-    assert self_filled(new, prev, {}) == [], "本机什么都没发过，就没有回填这回事"
-    assert self_filled(new, prev, {"SHIPPER_INFO": "DSV AIR & SEA CO., LTD."}) == [], \
-        "上次 L1 里就有这一行 = 公司原本录的，即使值与本机发过的相同也不算回填"
+    base = ["MASTER_NO", "SHIPPER_INFO"]
+    kept, gone, unknown = original_lines(new, base, sent)
+    assert [x["label"] for x in gone] == ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"], gone
+    assert [x["text"] for x in gone][0] == "MAWB_NO: 074-51188292", "剔掉的行要原样记账，回头查得着"
+    assert [x["text"].split(":")[0] for x in kept] == \
+        ["MASTER_NO", "SHIPPER_INFO", "SHIPPER_INFO_TEL", "CONSIGNEE_INFO_EORI"], kept
+    assert [x["i"] for x in kept] == [1, 2, 3, 4], "剔完不重排行号，前端说的第几行与点字段名的定位就指错行了"
+    assert unknown == [], "有基线可比，就没有「分不清」这一档"
+    kept2, gone2, unknown2 = original_lines(new, [], sent)
+    assert gone2 == [] and len(kept2) == len(new), "连可比对象都没有：一行都不许剔"
+    assert [x["i"] for x in kept2] == list(range(1, len(new) + 1)), "没剔行也要给连续行号"
+    assert [x["label"] for x in unknown2] == ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"], unknown2
+    assert original_lines(new, base, {})[1] == [], "本机什么都没发过，就没有回填这回事"
+    assert original_lines(new, base + ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"],
+                          sent)[1] == [], "基线里就有这几行 = 公司先录的，值相同也不许剔"
