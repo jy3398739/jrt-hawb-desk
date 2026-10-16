@@ -72,7 +72,7 @@ def test_search_mawb_live_reads_j9_and_joins_local_stem():
     sent = []
     restore = _patch_post([ROW], monkey_master=[{"MASTER_NO": "020-18134281", "AMS_RECORD": None}], sent=sent)
     real_lookup = company_api.store.lookup_stem
-    company_api.store.lookup_stem = lambda m, h: "T1"
+    company_api.store.lookup_stem = lambda m, h, index=None: "T1"
     try:
         out = company_api.search_mawb("020-18134281")
     finally:
@@ -307,3 +307,68 @@ def test_submit_live_refuses_locked_row_without_writing():
         restore()
         config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = old
     assert len(sent) == 1, "闸门拦下时绝不能发出 hawb2 写请求"
+
+
+def test_all_four_write_endpoints_get_the_write_timeout_not_the_read_one():
+    """读口 10s、写口 20s（整表写回要落库，慢是常态）。从前判「是不是写口」用的是
+    "路径以 2 结尾"：2 只是**暂存**口的尾号，3 才是提交发送口——于是最该给预算的那一下
+    拿的是最短的超时，弱网下提前断开，人看到的只有一句"公司失败"，而票可能已经写进去了
+    （2026-10-13、10-16 两份效率审查都点到这一条，v2 那份把它列成唯一的真隐患 B12）。
+    写口按 IT 给的四个路径点名，不靠尾号猜。"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY,
+           config.COMPANY_HAWB_KEY, config.SUBMIT_GUARD_DIR)
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_to_"))
+    config.SUBMIT_GUARD_DIR = tmp
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = "km", "kh"
+    real_open = company_api.urllib.request.urlopen
+    seen = []
+
+    class _Resp:
+        def __init__(self, payload):
+            self._b = json.dumps(payload).encode("utf-8")
+
+        def read(self):
+            return self._b
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_open(req, timeout=None):
+        path = req.full_url.split("/j9/", 1)[1].rstrip("/")
+        seen.append((path, timeout))
+        if path == "hawb":
+            return _Resp({"code": 0, "data": [dict(ROW)]})
+        if path == "mawb":
+            return _Resp({"code": 0, "data": [{"MASTER_NO": "020-18134281",
+                                               "AMS_RECORD": {"MAWB_NO": "020-18134281",
+                                                              "SEND_STATUS": 0}}]})
+        return _Resp({"code": 0, "success": True, "action": "update", "rows": 1})
+
+    try:
+        company_api.urllib.request.urlopen = fake_open
+        company_api.submit_order({"mawb": "020-18134281", "hawb": "NOAIRWAW050582",
+                                  "stem": "T2", "air": AIR_REVIEWED})
+        # 暂存换一张号：同一张票在幂等锁的 TTL 内会被上一次的回执拦下，测不到写口那一下
+        company_api.stage_order({"mawb": "020-18134281", "hawb": "NOAIRWAW050583",
+                                 "stem": "T3", "air": AIR_REVIEWED})
+        company_api.submit_master({"mawb": "020-18134281", "ams": {"MAWB_NO": "020-18134281"}})
+        company_api.stage_master({"mawb": "020-18134282", "ams": {"MAWB_NO": "020-18134282"}})
+    finally:
+        company_api.urllib.request.urlopen = real_open
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY,
+         config.COMPANY_HAWB_KEY, config.SUBMIT_GUARD_DIR) = old
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    def budget(name):
+        got = [t for p, t in seen if p == name]
+        assert got, f"这一趟没走到 {name}：{seen}"
+        return got[-1]
+
+    r, w = float(config.J9_TIMEOUT_READ), float(config.J9_TIMEOUT_WRITE)
+    assert budget("hawb") == r and budget("mawb") == r, "读口拿读超时就够了"
+    for p in ("hawb3", "hawb2", "mawb3", "mawb2"):
+        assert budget(p) == w, f"{p} 是写口，实际给的超时是 {budget(p)}"

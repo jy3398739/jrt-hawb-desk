@@ -1473,7 +1473,7 @@ def test_desk_actions_on_top_columns_scroll_apart_and_boxes_fit_content():
     assert ctl and "rows=" not in re.sub(r'rows="1"', "", ctl.group(1)), \
         "control 又按换行数算 rows 了——整段不换行的长文本会缩成一行（只许写死那一档）"
     assert re.search(r"function autoGrow\(el\)\{", html), "autoGrow 没了"
-    assert re.search(r'\$\("#main"\)\.querySelectorAll\("textarea"\)\.forEach\(autoGrow\)', html), \
+    assert re.search(r'growAll\(\$\("#main"\)\.querySelectorAll\("textarea"\)\);', html), \
         "渲染后没给文本框量高：打开时还是一行"
     wire = re.search(r"if \(inp\.tagName === \"TEXTAREA\"\)(.*?)\n", html)
     assert wire and "autoGrow(inp)" in wire.group(1), "边打字没跟着长高"
@@ -1488,8 +1488,8 @@ def test_field_boxes_keep_a_dragged_height_and_two_handles_resize_the_desk():
     js = web_src.part("js/desk.js")
     page = web_src.part("index.html")
     assert "resize:vertical" in css, "长文本格没有原生拖拽把手"
-    assert re.search(r"function autoGrow\(el\)\{.*L\.fieldHeight\(", js, re.S), \
-        "autoGrow 还在自己定高度：人拖完一打字就弹回去"
+    assert 'if (rec) el.style.height = L.fieldHeight(rec, 0) + "px";' in web_src.fn(js, "function growAll(els){"), \
+        "量高那段还在自己定高度：人拖完一打字就弹回去（v1.29 起这段在 growAll 里，别再跨函数乱匹配）"
     assert "localStorage.setItem(LS.fieldH" in js and "localStorage.getItem(LS.fieldH" in js, \
         "拖出来的高度没存本机：换张票、刷新一次就没了"
     assert "pointerdown" in js and "pointerup" in js, \
@@ -1650,3 +1650,82 @@ def test_a_queued_job_can_be_cancelled_over_http_once_and_only_once():
                 "作业号本身就是凭证（GET /job 连票面内容都不设身份门）：这一层不单独装一半"
     finally:
         gate.set()
+
+
+def test_draft_writes_are_batched_and_survive_a_full_storage():
+    """每敲一个字都把全部草稿 stringify 一遍写 localStorage，而且一次编辑 input 与 blur 各写一遍：
+    打字延迟和写放大都在这条上（2026-10-16 效率审查 F2）。改成记脏 + 350ms 合并写一次，
+    失焦/切走/关页面立刻落盘；写不进（隐私模式、超额）要当场说一句并丢掉最旧的重试——
+    既不许让整页编辑跟着抛错，也不许悄悄不说（人以为存住了）。
+
+    另两条是删草稿与画草稿：待写那份必须一起撤掉，否则下一次合并把删掉的又写回来；
+    「未保存的编辑」那一栏画的是盘上那份，所以画之前先落盘，屏上才等于留痕。"""
+    js = web_src.part("js/desk.js")
+    body = web_src.fn(js, "function saveDraft(t){")
+    assert "localStorage.setItem" not in body, "saveDraft 还在当场写盘：防抖没接上"
+    assert "DRAFT_MS" in body and "setTimeout(" in body, "没有那一下「攒一下」"
+    flush = web_src.fn(js, "function draftFlush(){")
+    assert "if (!keys.length) return;" in flush, "没东西待写也写一遍 = input/blur 双写又回来了"
+    assert "writeDrafts(d);" in flush, "合并那一下没走统一的写入口"
+    w = web_src.fn(js, "function writeDrafts(d){")
+    assert "try {" in w and "L.draftTrim(" in w and "toast(" in w, \
+        "写失败要么没兜底（整页抛错），要么静默（人以为存住了）"
+    drop = web_src.fn(js, "function dropDraft(stem){")
+    assert "delete draftPending[stem];" in drop, "删了草稿没撤那份待写：下一次合并会把它写回来"
+    assert "draftFlush();" in web_src.fn(js, "function renderDrafts(){"), \
+        "「未保存的编辑」那一栏要先落盘再画"
+    assert '"pagehide", draftFlush' in js, "关页面/切走前没落盘：防抖那几百毫秒就是丢编辑的窗口"
+
+
+def test_box_heights_are_measured_once_per_render_not_once_per_box():
+    """38 个值框的高度从前逐格「写 auto → 读 scrollHeight → 写回」，每读一次逼一次同步布局，
+    一次渲染 38 次 reflow（2026-10-16 效率审查 F3）。三段分开做：先全部写 auto，
+    再一次性量完，再一次性写回——整批只逼一次。列高那份本机偏好也一次渲染读一遍，
+    不随格子数重读。人拖过的那一列仍按拖的来（不许弹回内容高度），这条没变，一并钉住。"""
+    js = web_src.part("js/desk.js")
+    g = web_src.fn(js, "function growAll(els){")
+    assert g.count("scrollHeight") == 1, "量高度出现在不止一段里，读写又混回去了"
+    assert g.index('el.style.height = "auto"') < g.index("scrollHeight") < g.index("hs.forEach"), \
+        "三段顺序不对：读写交错就还是每格一次 reflow"
+    assert g.count("fieldHeights()") == 1, "列高偏好按格重读：一次渲染读一遍就够"
+    assert "L.fieldHeight(rec, 0)" in g, "拖过的高度没照记录写：又会弹回去"
+    assert "growAll($(\"#main\").querySelectorAll(\"textarea\"));" in web_src.fn(js, "function renderMain(){"), \
+        "渲染主区还是逐格 autoGrow"
+    assert "function autoGrow(el){ growAll([el]); }" in js, \
+        "单格那几处（输入完立刻长）要共用同一份实现，别再各写一遍读写顺序"
+
+
+def test_text_assets_go_out_gzipped_and_ticket_images_stay_raw():
+    """审核台的壳每次刷新都重下（no-store 是有意的：缓存里留半份旧脚本出现过"点了没反应"），
+    而 desk.js 已经长到 230KB——不压缩等于让每台机器每天反复搬原文。这条从 v1.15 那份审查起
+    提了三回，每次都是"一行中间件"却一直没按。
+
+    两件事必须同时成立，所以用例一起写：
+    ① 会 gzip 的客户端拿压缩、不会的拿原文，且这一类响应要标 Vary，否则中间代理把压缩版
+       发给不压的客户端；
+    ② 票面 PNG 不再压一遍（二进制白烧 CPU），而且 /render 的 ETag/304 不能被压缩层顶掉。"""
+    client = TestClient(server.app)
+    gz = client.get("/web/js/desk.js", headers={"Accept-Encoding": "gzip"})
+    assert gz.status_code == 200, gz.text
+    assert gz.headers.get("content-encoding") == "gzip", "230KB 的脚本要压着发"
+    assert len(gz.content) > 100000, "解回来还得是完整那份脚本，不能压出个残体"
+    assert "Accept-Encoding" in gz.headers.get("vary", ""), \
+        "同一 URL 两种形态：不标 Vary，代理会把压缩版发给不压的客户端"
+    plain = client.get("/web/js/desk.js", headers={"Accept-Encoding": "identity"})
+    assert "content-encoding" not in plain.headers, "不支持 gzip 的客户端要拿到原文"
+    assert plain.text == gz.text, "压与不压，内容必须一字不差"
+
+    server._RENDER_CACHE.clear()
+    try:
+        with _stubbed(), _archive({"GLZ1/GLZ1.pdf": _mkpdf(2)}):
+            _login_admin(client)
+            r = client.get("/render/GLZ1?page=2&scale=2", headers={"Accept-Encoding": "gzip"})
+            assert r.status_code == 200 and r.content[:8] == b"\x89PNG\r\n\x1a\n"
+            assert len(r.content) > 500, "这条要证明的是「类型不压」，图太小就证明不了"
+            assert r.headers.get("content-encoding") != "gzip", "票面 PNG 已是二进制，再压只费 CPU"
+            back = client.get("/render/GLZ1?page=2&scale=2",
+                              headers={"Accept-Encoding": "gzip",
+                                       "If-None-Match": r.headers["etag"]})
+            assert back.status_code == 304, "压缩层不能把 /render 的 304 顶掉"
+    finally:
+        server._RENDER_CACHE.clear()

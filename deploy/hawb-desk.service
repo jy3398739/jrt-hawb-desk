@@ -2,6 +2,12 @@
 [Unit]
 Description=HAWB 分单审核台（PDF/Excel → 结构化字段）
 After=network.target
+# 启动熔断：只有 Restart=always + RestartSec=3 时，配置一错（工作目录挪了、venv 坏了、端口被占）
+# systemd 就每 3 秒拉一次、永远拉不起来，journal 被同一条错误刷满，真故障淹没在里头。
+# 光靠发行版默认值挡不住：窗口默认只有 10s，3 秒一轮正好次次落在窗口外＝等于没设。
+# 这两个选项自 systemd 229 归 [Unit] 段，写进 [Service] 会被忽略并告警。
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 # 只绑回环：对外入口是 nginx 反代（见 deploy/nginx-hawb-location.conf），别改成 0.0.0.0

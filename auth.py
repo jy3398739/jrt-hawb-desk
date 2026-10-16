@@ -17,6 +17,7 @@ import base64
 import hashlib
 import hmac
 import json
+import copy
 import os
 import re
 import secrets
@@ -89,17 +90,32 @@ def seed_data() -> dict:
 def _write(data: dict) -> None:
     """原子写盘并保住权限：里面既有口令哈希又有签名 secret，新建时收进 600，
     已存在则沿用原权限（os.replace 会把临时文件的权限一起带过去，见 atomic.py）。"""
+    _CACHE["key"] = None                  # 自己动过盘，缓存立刻作废
     atomic.write_json(USERS_FILE, data, mode=0o600)
+
+
+# 每个受保护请求都要读账号表（会话要用 secret 验签、再看那人的角色还在不在），而审核台同一页
+# 开着四五个 poller——一份十几人的小 JSON 每请求读+解析一遍是被并发放大的白活
+# （2026-10-16 效率审查 K1）。这里按「盘上还是不是那一份」缓存：路径+mtime+大小，任一动过
+# 就重读；_write 自己作废。口令拿旧的比慢一点严重得多，所以宁可多读也不能拿旧值。
+_CACHE: dict = {"key": None, "data": None}
 
 
 def load() -> dict:
     """读账号表；文件不存在即按种子建一份（首次启动自动初始化 admin + 8 位制单员）。"""
     if not USERS_FILE.is_file():
         _write(seed_data())
+    st = USERS_FILE.stat()
+    key = (str(USERS_FILE), st.st_mtime_ns, st.st_size)
+    if _CACHE["key"] == key:
+        # 回一份拷贝：从前每次读盘天然拿到新对象，某些调用会就地改这份再 save——
+        # 不改语义，免得"改了没保存"悄悄留在缓存里被下一个请求读到。
+        return copy.deepcopy(_CACHE["data"])
     data = json.loads(USERS_FILE.read_text(encoding="utf-8"))
     data.setdefault("users", {})
     data.setdefault("secret", secrets.token_hex(32))
-    return data
+    _CACHE["key"], _CACHE["data"] = key, data
+    return copy.deepcopy(data)
 
 
 def save(data: dict) -> None:

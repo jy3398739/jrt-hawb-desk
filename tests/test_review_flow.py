@@ -475,7 +475,7 @@ def test_flags_the_server_names_in_a_rejection_become_ackable():
     assert "t.srvFlags =" in sub, "点名的 flags 没存进这张票：toast 说完就丢，人还是没地方点确认"
     eff = web_src.fn(js, "function effectiveFlags(")
     assert "srvFlags" in eff, "服务端报的旗没并进待确认列表：画不出来也就点不到"
-    sd = web_src.fn(js, "function saveDraft(")
+    sd = web_src.fn(js, "function draftBody(t){")
     assert "srvFlags" in sd, "这份列表没进本机草稿：刷新一次就又变成看不见的死旗"
 
 

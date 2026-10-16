@@ -247,6 +247,47 @@ def test_live_rows_carry_our_own_submit_record():
         _restore(old, tmp)
 
 
+def test_searching_one_master_reads_the_submit_ledger_once_not_once_per_row():
+    """一条主单名下能挂 30 张分单。从前循环里每行都走 store.lookup_stem → number_index()
+    → 把提交台账整份重读一遍：一次检索 = 30 次全量读，录入员一天点几百次检索全烧在本地磁盘上。
+    台账一次检索读一遍，行内只做内存查表；「原件点不点得开」仍逐行查实（那是 stem 的含义本身）。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
+    old = _isolate(tmp)
+    old_live = (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+                config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
+    real_post, real_load = company_api._j9_post, store._load_ledger
+    reads = []
+    rows = [{"HAWB_NO": "VCE%03d" % i, "MAWB_NO": "999-95764373", "SEND_STATUS": 1}
+            for i in range(30)]
+    try:
+        for i in range(30):
+            (config.ARCHIVE_DIR / ("CLA%03d" % i)).mkdir(parents=True, exist_ok=True)
+            store.mark_submitted("CLA%03d" % i, "999-95764373", "VCE%03d" % i,
+                                 "马殿齐", {"mode": "live"})
+
+        def counting_load(path=None):
+            if path is None:                 # 只数提交台账；作废表是另一份文件，不算这一笔
+                reads.append(1)
+            return real_load(path)
+
+        store._load_ledger = counting_load
+        company_api._j9_post = lambda path, body, key: {
+            "code": 0, "data": [] if path.endswith("/mawb/") else rows}
+        config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+        config.COMPANY_MAWB_KEY = config.COMPANY_HAWB_KEY = "k"
+        got = company_api.search_mawb("999-95764373")
+        assert len(got["hawb_orders"]) == 30, got
+        assert [o["stem"] for o in got["hawb_orders"]] == ["CLA%03d" % i for i in range(30)], \
+            "合并台账读取不能把行内的 stem/提交人查表一起改坏"
+        assert all(o["reviewer"] == "马殿齐" for o in got["hawb_orders"])
+        assert len(reads) <= 3, f"一次检索把台账读了 {len(reads)} 遍：应是一遍，不是每行一遍"
+    finally:
+        company_api._j9_post, store._load_ledger = real_post, real_load
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL,
+         config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY) = old_live
+        _restore(old, tmp)
+
+
 def test_company_mawb_requires_login():
     tmp = Path(tempfile.mkdtemp(prefix="hawb_in_"))
     old = _isolate(tmp)

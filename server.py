@@ -46,6 +46,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Quer
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.gzip import GZipMiddleware
 
 import auth
 import company_api
@@ -61,6 +62,10 @@ import xlsx2pdf
 from jobs import handle_file
 
 app = FastAPI(title="HAWB 分单识别服务", version=config.APP_VERSION)
+# 静态壳是 no-store（有意：留半份旧脚本出现过"点了没反应"），所以每台机器每次刷新都要重下
+# 一整份 desk.js（已 230KB）。压缩层只管文本：PNG/JPG 这些二进制 Starlette 默认跳过，
+# /render 的 ETag/304 走的是空体那条分支，也不受影响。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 # 回传失败的原因只在这次 HTTP 响应里，页面关掉就查无实据（2026-09-29 用户连吃两个 502 无从下手），
 # 所以带号落到服务日志里，journalctl -u hawb-desk 能直接对着票查。
 LOG = logging.getLogger("hawb.desk")

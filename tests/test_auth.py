@@ -345,6 +345,49 @@ def test_desk_has_login_gate_and_role_scoped_controls():
     assert "apiKey" not in html and "X-API-Key" not in html, "前端还留着 X-API-Key 送密钥的路径"
 
 
+def test_users_file_is_parsed_once_and_a_rewrite_is_seen_immediately():
+    """`load()` 从前每个受保护请求都把 users.json 整份读一遍再解析（会话校验要用 secret 和
+    那人的角色）。审核台同一页开着四五个 poller，这种小读是被并发放大的（2026-10-16 效率审查 K1）。
+    缓存只许按"盘上这份是不是同一份"来认：路径 + mtime + 大小，三者任一动过就重读——
+    口令和角色拿旧的比慢十毫秒严重得多，所以用例两半都要钉住。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_users_cache_"))
+    old_file = auth.USERS_FILE
+    f = tmp / "users.json"
+    auth.USERS_FILE = f
+    reads = []
+    real_read_text = Path.read_text
+
+    def counting_read_text(self, *a, **k):
+        if str(self) == str(f):
+            reads.append(1)
+        return real_read_text(self, *a, **k)
+
+    Path.read_text = counting_read_text
+    try:
+        auth.ensure_seed()
+        reads.clear()
+        one, two = auth.load(), auth.load()
+        assert len(reads) == 1, f"两次 load 读了 {len(reads)} 遍盘"
+        assert one["users"] == two["users"] and one["secret"] == two["secret"], "缓存要回同一份内容"
+
+        auth.set_password("宛平", "wp-cache-1", "reviewer")
+        assert auth.verify_password("wp-cache-1", auth.load()["users"]["宛平"]["pw"]), \
+            "改过口令必须当场读到，缓存不许把这次改动吞掉"
+
+        # 别的进程绕过 auth.save 直接改写文件（另一台机器同步、手工修表）：靠 mtime/大小认出来
+        data = json.loads(real_read_text(f, encoding="utf-8"))
+        for name in list(data["users"]):
+            if name != auth.SEED_ADMIN_NAME:
+                del data["users"][name]
+        tmp.joinpath("users.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        left = set(auth.load()["users"])
+        assert left == {auth.SEED_ADMIN_NAME}, f"外部改写没被认出来，还在用旧那份：{sorted(left)}"
+    finally:
+        Path.read_text = real_read_text
+        auth.USERS_FILE = old_file
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_no_doc_names_a_role_guard_that_does_not_exist():
     """文档里出现 `require_xxx` 就必须真有其人。auth.py 的文件头和《IT对接说明》都还写着
     require_inputter（"制单员 403"），而这个依赖 2026-09-22 就连根删了：/company/mawb 认的是

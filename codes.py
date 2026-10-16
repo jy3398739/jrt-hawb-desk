@@ -181,6 +181,13 @@ _POSTAL_RXS = [
     re.compile(r"\b\d{3}\s?\d{2}\b"),                       # FR/SE
 ]
 
+# 「这个词单独成词」的正则：从前 parse_party 在函数体里按国家码表+省州表现拼现编，
+# 一票 177 条 × 两个主体 × 每张票（批处理时是纯 CPU 峰值，2026-10-16 效率审查 K2）。
+# 两张表都是本模块的常量，就在导入时编一次，按名字取用。
+_WORD_RX = {nm: re.compile(r"(?<![A-Z])" + re.escape(nm) + r"(?![A-Z])")
+            for nm in list(COUNTRY_ISO2) + list(_STATES)}
+_CITY_STOP_RX = re.compile(r"\b(" + "|".join(_CITY_STOP) + r")\b")
+
 def lookup_city(name):
     """城市名 -> IATA 三字码 (XI'AN->XIY)；查不到返回空串"""
     s = _fold_ascii(str(name or "").upper())
@@ -314,7 +321,7 @@ def parse_party(p):
     def _rightmost(names):
         best = None
         for nm in names:
-            rx = re.compile(r"(?<![A-Z])" + re.escape(nm) + r"(?![A-Z])")
+            rx = _WORD_RX[nm]
             for m in rx.finditer(up):
                 if best is None or m.end() > best.end():
                     best = m
@@ -349,7 +356,7 @@ def parse_party(p):
             text = re.sub(r"(?<![A-Z])" + re.escape(tok) + r"(?![A-Z])", " ", text)
     text = re.sub(r"\s*,\s*(,\s*)+", ", ", text).strip(" ,")
     segs = [s for s in (_strip_seg(x) for x in re.split(r"[,\n]", text)) if s]
-    stop_rx = re.compile(r"\b(" + "|".join(_CITY_STOP) + r")\b")
+    stop_rx = _CITY_STOP_RX     # 编好的那份（原来这行每次解析都在函数里现编）
     city, city_i = "", -1
     for i in range(len(segs) - 1, -1, -1):
         if not re.search(r"[A-Z]{2}", segs[i]):  # 城市段至少 2 个字母 (剔除 OCR 标点碎片)

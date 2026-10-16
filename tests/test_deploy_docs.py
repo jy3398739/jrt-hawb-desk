@@ -5,6 +5,7 @@
 注释做。写"配合 SSH 隧道访问、不暴露到网络"这种已经过时的话，比不写更危险。
 """
 import ast
+import configparser
 import re
 import sys
 from pathlib import Path
@@ -87,3 +88,43 @@ def test_unit_and_nginx_comments_match_reality():
     n = NGINX.read_text(encoding="utf-8")
     assert re.search(r"proxy_pass\s+http://127\.0\.0\.1:8020/;", n), "结尾斜杠剥前缀，少了它整站 404"
     assert "proxy_read_timeout" in n, "解析是长调用，默认 60s 会掐断上传"
+
+
+def test_unit_has_a_start_limit_that_can_actually_trip():
+    """`Restart=always` + `RestartSec=3` 而没有启动熔断：配置写错（工作目录挪了、venv 坏了、
+    端口被占）时 systemd 每 3 秒拉一次、永远拉不起来，journal 被同一条错误刷满，真故障淹没在里
+    头（2026-10-16 效率审查 D1）。这台 VM 是 systemd 255，默认窗口只有 10 秒/5 次，
+    3 秒一轮恰好次次落在窗口外＝等于没设——所以熔断窗口必须明显大于重启间隔。
+
+    另外这两个选项自 systemd 229 归 [Unit] 段，写进 [Service] 会被忽略并告警。"""
+    u = UNIT.read_text(encoding="utf-8")
+    cp = configparser.ConfigParser(strict=False)
+    cp.optionxform = str            # systemd 的选项名区分大小写，别让它转成小写
+    cp.read_string(u)
+    unit_opts = dict(cp["Unit"]) if cp.has_section("Unit") else {}
+    assert {"StartLimitIntervalSec", "StartLimitBurst"} <= set(unit_opts), \
+        "启动熔断没在 [Unit] 段里（写在 [Service] 会被 systemd 忽略并告警，等于没设）"
+    burst = int(unit_opts["StartLimitBurst"])
+    window = int(re.match(r"(\d+)", unit_opts["StartLimitIntervalSec"]).group(1))
+    interval = int(re.match(r"(\d+)", cp["Service"]["RestartSec"]).group(1))
+    assert 1 <= burst <= 10, f"熔断次数 {burst}：1 是一崩就停，太多等于不拦"
+    assert window >= interval * (burst + 1), \
+        f"窗口 {window}s 装不下 {burst} 次 {interval}s 一轮的重启，崩环照样跑满"
+
+
+def test_sync_prunes_its_own_deploy_backups():
+    """每次发版在 ~ 打一份 `.bak-<时刻>-deploy.tar`，从前只增不减：2026-10-16 数过这台共享机上
+    已攒 80 份、114MB（效率审查 D2）。回滚只看最近几版，留 80 版没用，迟早把盘写满。
+
+    两条都要钉住：① 真的有裁剪；② 只按自己的命名删——这台机器上还有别的备份
+    （run_batch/recheck 前手动打的 ~/backups/*.tar），通配写宽了就是删人家的东西。"""
+    s = (ROOT / "deploy" / "sync.sh").read_text(encoding="utf-8")
+    kept = re.search(r"KEEP=(\d+)", s)
+    assert kept, "sync.sh 里没有 KEEP：备份根本没有裁剪这一步"
+    assert 1 <= int(kept.group(1)) <= 10, f"备份留 {kept.group(1)} 份：这不叫清理"
+    prune = re.search(r"ls -t \.bak-\*-deploy\.tar[^\n]*", s)
+    assert prune, f"没找到「按时间留最近几份」那一步：{s[-400:]}"
+    assert "tail -n +$((KEEP+1))" in prune.group(0), "留几份必须由 KEEP 这一个数说了算"
+    assert "xargs -r rm -f" in prune.group(0), "空列表时不能报错（xargs -r），也别用宽通配"
+    assert s.index(".bak-$STAMP-deploy.tar") < s.index(prune.group(0)), \
+        "必须先打上本次备份再裁剪：顺序倒了会把上一份当最旧的删掉"

@@ -489,3 +489,17 @@ def test_server_state_prefers_the_submit_ledger_and_splits_the_two_empty_kinds()
         f"交出去之后又暂存过新的一版，现状是那一次：{later}"
     assert later["acked"] == ["旗二"], "没提交过时，最后一次暂存点过的确认就是服务器那份"
     assert web_src.logic("L.serverState(null, null)")["from"] == "", "两样都没有就是没有，别造一份空的"
+
+def test_draft_trim_keeps_the_newest_and_leaves_the_input_alone():
+    """localStorage 写满（隐私模式或草稿堆多了）时，兜底只能丢最旧的几张：
+    savedAt 是 YYYY-MM-DD HH:MM:SS，字符串序即时间序；没有 savedAt 的当最旧。
+    输入不许被改动——调用失败时手里那份还得是原样。"""
+    d = {"OLD1": {"savedAt": "2026-10-14 09:00:00"},
+         "NEW1": {"savedAt": "2026-10-16 09:00:00"},
+         "NOS": {},
+         "NEW2": {"savedAt": "2026-10-16 09:00:01"}}
+    kept = web_src.logic("L.draftTrim(d, 2)", d=d)
+    assert sorted(kept) == ["NEW1", "NEW2"], f"该留最新两张：{sorted(kept)}"
+    assert sorted(d) == ["NEW1", "NEW2", "NOS", "OLD1"], f"传进去那份被改了：{sorted(d)}"
+    assert web_src.logic("L.draftTrim(d, 9)", d=d) == d, "没超额就原样一份"
+    assert web_src.logic("L.draftTrim(d, 0)", d=d) == {}, "keep=0 就是全丢，别硬留"

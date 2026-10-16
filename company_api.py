@@ -104,13 +104,21 @@ def _throttle():
         _RATE["hits"] = hits
 
 
+_J9_WRITE_PATHS = {"/api/v1/j9/hawb2", "/api/v1/j9/hawb3",
+                   "/api/v1/j9/mawb2", "/api/v1/j9/mawb3"}
+
+
 def _j9_post(path: str, body: dict, key: str, timeout: float | None = None) -> dict:
     """调 j9 接口。path 形如 `/api/v1/j9/hawb`；HTTP 非 200 或 code!=0 都抛 CompanyApiError。
 
-    超时读 10s / 写 20s（路径以 2 结尾的是写接口，写要落库）。只有对端抖动
-    （429/5xx/连不上）才退避重试；400 这类业务错是我们报文自己的问题（限长、单号格式），
-    重试只会再撞一次并把人等更久，直接把公司原话抛出去。"""
-    is_write = path.rstrip("/").endswith("2")
+    超时读 10s / 写 20s（写要整表落库，慢是常态）。从前用"路径以 2 结尾"猜写口，
+    结果只认得暂存口：提交发送口 hawb3/mawb3 被当成读口，最短的预算配给了最慢的那一下，
+    弱网下提前超时、人只看到"公司失败"，而公司那边可能已经写进去了。
+    现在按 IT 给的四个写路径点名（主单那两个带尾斜杠，比对时先剥掉）。
+
+    只有对端抖动（429/5xx/连不上）才退避重试；400 这类业务错是我们报文自己的问题
+    （限长、单号格式），重试只会再撞一次并把人等更久，直接把公司原话抛出去。"""
+    is_write = path.rstrip("/") in _J9_WRITE_PATHS
     if timeout is None:
         timeout = config.J9_TIMEOUT_WRITE if is_write else config.J9_TIMEOUT_READ
     url = config.COMPANY_API_URL + path
@@ -189,8 +197,9 @@ def search_mawb(mawb: str) -> dict:
             raise CompanyNotConfigured(
                 f"COMPANY_API_MODE={config.COMPANY_API_MODE!r}：只能是 mock 或 live。")
         # stem 一律现查（和 live 分支同一个口径）：台账里那条名字可能已经点不开了。
+        index = store.number_index(store.ledger())   # 台账一次检索读一遍，行内只做内存查表
         orders = [{"hawb": e.get("hawb", ""), "mawb": e.get("mawb", ""),
-                   "stem": store.lookup_stem(e.get("mawb", ""), e.get("hawb", "")),
+                   "stem": store.lookup_stem(e.get("mawb", ""), e.get("hawb", ""), index=index),
                    "reviewer": e.get("reviewer", ""),
                    "submitted_at": e.get("submitted_at", ""),
                    "submitted_here": True}
@@ -217,10 +226,12 @@ def search_mawb(mawb: str) -> dict:
     orders = []
     # j9 的行里没有"谁提交/何时提交"，而本机提交台账有。不 join 的话，刚提交过的票在界面上
     # 显示两栏"—"，看着像从没动过——SEND_STATUS=0 在公司侧就是"已录入待发送"，两件事必须分开看。
-    mine = {e.get("key"): e for e in store.ledger().values()}
+    led = store.ledger()
+    mine = {e.get("key"): e for e in led.values()}
+    index = store.number_index(led)     # 同一份台账派生的查表：30 行不等于重读 30 遍
     for row in rows:
         hawb = str(row.get("HAWB_NO", ""))
-        stem = store.lookup_stem(mawb, hawb)
+        stem = store.lookup_stem(mawb, hawb, index=index)
         ent = mine.get(store.number_key(mawb, hawb)) or {}
         orders.append({"hawb": hawb, "mawb": str(row.get("MAWB_NO", "")),
                        "stem": stem, "reviewer": ent.get("reviewer") or "—",

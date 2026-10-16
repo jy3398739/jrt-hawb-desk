@@ -72,6 +72,13 @@ ssh "$HOST" "cd $REMOTE_DIR && tar cf ~/$BK --ignore-failed-read -T /tmp/hawb-de
   || die "远端备份失败（$BK），没有动任何文件"   # tar 退出码非 0 视为不可用：宁可不推
 say "== 服务器已备份到 ~/$BK"
 
+# 备份从前只增不减：2026-10-16 数过，这台共享机的 ~ 下已攒 80 份 .bak-*-deploy.tar、114MB，
+# 而回滚只会用到最近几版。留 5 份，且只按本脚本自己的命名删——手动跑 --recheck 前打的
+# ~/backups/*.tar 是另一回事，别碰。这一步失败不拦发版（盘还没满到那个地步）。
+KEEP=5
+ssh "$HOST" "cd ~ && ls -t .bak-*-deploy.tar 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f" || true
+say "== 远端部署备份只留最近 $KEEP 份"
+
 tar cf - -T "$LIST" | ssh "$HOST" "cd $REMOTE_DIR && tar xf -" || die "推送中断，服务器仍是备份里的旧版"
 
 ssh "$HOST" "cd $REMOTE_DIR && xargs -a /tmp/hawb-deploy-list md5sum | sed 's/^\([0-9a-f]*\)[ *][ *]*/\1 /' | LC_ALL=C sort" > "$REMOTE" \

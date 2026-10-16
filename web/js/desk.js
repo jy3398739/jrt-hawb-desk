@@ -233,24 +233,54 @@ function effectiveFlags(t){
    改名是因为「暂存」现在单指服务器那一档：同名会让制单员以为点了就交上去了，
    而没上服务器的票同事查不到。这块存的只是这台浏览器里的编辑。 */
 function drafts(){ try { return JSON.parse(localStorage.getItem(LS.draft) || "{}"); } catch (e) { return {}; } }
-function saveDraft(t){
-  if (!t.stem) return;
-  const d = drafts();
+/* 写盘改成「记脏 + 攒一下」：从前每敲一个字都把全部草稿 stringify 一遍，一次编辑 input 与 blur
+   还各写一遍——打字延迟和写放大都出在这条上（2026-10-16 效率审查 F2）。现在输入路径只记哪几张
+   脏了，350ms 后合并写一次；失焦、切走、关页面前立刻落盘。
+   读仍每次现读（不缓存整份）：另一个标签页写的草稿不会被这一份盖掉。 */
+const DRAFT_MS = 350, DRAFT_KEEP = 20;
+let draftPending = {}, draftTimer = 0;
+function draftBody(t){
   /* ackE（哪些空栏人确认过「本就为空」）与 todoBase（进度分母那份快照）都要跟着存：
      只存 airE 的话，刷新一次确认全丢、进度从"核到一半"退回 0/0——那正是最该留住的两样。 */
-  d[t.stem] = {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
-               qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], ackE:t.ackE || [],
-               skipE:t.skipE || [],
-               srvFlags:t.srvFlags || [], todoBase:t.todoBase, submitted:t.submitted};
-  localStorage.setItem(LS.draft, JSON.stringify(d));
+  return {stem:t.stem, filename:t.filename, channel:t.channel, elapsed:t.elapsed, savedAt:nowTxt(),
+          qc:t.qc, raw:t.raw, air:t.air, airE:t.airE, ackF:t.ackF || [], ackE:t.ackE || [],
+          skipE:t.skipE || [],
+          srvFlags:t.srvFlags || [], todoBase:t.todoBase, submitted:t.submitted};
+}
+function saveDraft(t){
+  if (!t.stem) return;
+  draftPending[t.stem] = draftBody(t);
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(draftFlush, DRAFT_MS);
+}
+function draftFlush(){
+  clearTimeout(draftTimer); draftTimer = 0;
+  const keys = Object.keys(draftPending);
+  if (!keys.length) return;         // 没脏的就不写：blur 与 input 落到这儿只留一下
+  const d = drafts();
+  keys.forEach(k => { d[k] = draftPending[k]; });
+  draftPending = {};
+  writeDrafts(d);
+}
+/* 写不进去只有两种可能：这台浏览器不让存（隐私模式）或者存满了。都不该把整页编辑带崩，
+   但也绝不许悄悄不说——先丢掉最旧的几张再试一次，还不行就当场讲一句「这一改刷新就没了」。 */
+function writeDrafts(d){
+  try { localStorage.setItem(LS.draft, JSON.stringify(d)); return; } catch (e) {}
+  try { localStorage.setItem(LS.draft, JSON.stringify(L.draftTrim(d, DRAFT_KEEP))); }
+  catch (e2) {
+    toast("本机浏览器存不下草稿（隐私模式或已写满）：这一次编辑只在页面上，刷新就没了", "bad");
+  }
 }
 function dropDraft(stem){
+  delete draftPending[stem];        // 待写那份一起撤：不然下一次合并把删掉的又写回来
   const d = drafts();
   if (!Object.prototype.hasOwnProperty.call(d, stem)) return;
   delete d[stem];
-  localStorage.setItem(LS.draft, JSON.stringify(d));
+  writeDrafts(d);
   renderDrafts();
 }
+window.addEventListener("pagehide", draftFlush);        // 关页面/被收回内存前落盘
+document.addEventListener("visibilitychange", () => { if (document.hidden) draftFlush(); });
 /* 老版本提交成功后把那份副本留着（还写着"未提交"）：开机清一次，值与确认都在服务器上了。 */
 function pruneSubmittedDrafts(){
   const d = drafts();
@@ -258,7 +288,7 @@ function pruneSubmittedDrafts(){
   Object.keys(d).forEach(k => {
     if (d[k] && d[k].submitted && d[k].submitted.mode === "server"){ delete d[k]; n++; }
   });
-  if (n) localStorage.setItem(LS.draft, JSON.stringify(d));
+  if (n) writeDrafts(d);
   return n;
 }
 function loadDraft(stem){
@@ -1301,6 +1331,7 @@ function afterWrite(t, sent){
   if (sent) gotoNextTicket();
 }
 function renderDrafts(){
+  draftFlush();                       // 这一栏画的是"盘上那份"：先落盘再画，屏上才等于留痕
   const d = drafts();
   const keys = Object.keys(d).filter(k => !S.tickets.some(t => t.stem === k));
   $("#drafts").innerHTML = keys.length ? keys.map(k => {
@@ -1350,19 +1381,28 @@ function blockEnter(e){
   gotoNextTodo(t, k);
 }
 /* 长文本框高度跟着内容走：以前按 "\n" 数行数，收发货人整串是一整段没有换行，
-   再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。 */
-function autoGrow(el){
-  /* 宽不是单格的属性（斜角拖那一下改的是整列），所以每次量高度前先把 inline 宽交还给列：
-     留着它，这一格就从此钉死在自己那个宽度上，别人再调列宽也调不到它。 */
-  el.style.width = "";
-  /* 人拖过的那一列以拖的为准：从前这里每次渲染与每一下输入都按内容重设高度，
-     拖完一打字就弹回去——"能拖"在用户那儿等于"不能自定义"（2026-10-09）。 */
-  const k = el.dataset.k || el.dataset.mk || "";
-  const rec = k ? fieldHeights()[k] : 0;
-  if (rec){ el.style.height = L.fieldHeight(rec, 0) + "px"; return; }
-  el.style.height = "auto";
-  el.style.height = L.fieldHeight(0, el.scrollHeight + 2) + "px";
+   再长也只有 1 行高，看着别扭；改成量实际渲染高度（封顶后出滚动条）。
+   一批格子走 growAll：写 auto → 读 scrollHeight → 写回 分三段做。逐格三步的话每读一次
+   都逼一次同步布局，一次渲染 38 格＝38 次 reflow（2026-10-16 效率审查 F3）；
+   先全部写完再统一读，整批只逼一次。 */
+function growAll(els){
+  const fh = fieldHeights();          // 本机列高偏好：一次渲染读一遍，不随格子数重读
+  const need = [];
+  els.forEach(el => {
+    /* 宽不是单格的属性（斜角拖那一下改的是整列），所以每次量高度前先把 inline 宽交还给列：
+       留着它，这一格就从此钉死在自己那个宽度上，别人再调列宽也调不到它。 */
+    el.style.width = "";
+    /* 人拖过的那一列以拖的为准：从前这里每次渲染与每一下输入都按内容重设高度，
+       拖完一打字就弹回去——"能拖"在用户那儿等于"不能自定义"（2026-10-09）。 */
+    const k = el.dataset.k || el.dataset.mk || "";
+    const rec = k ? fh[k] : 0;
+    if (rec) el.style.height = L.fieldHeight(rec, 0) + "px";
+    else { el.style.height = "auto"; need.push(el); }
+  });
+  const hs = need.map(el => L.fieldHeight(0, el.scrollHeight + 2));
+  hs.forEach((h, i) => { need[i].style.height = h + "px"; });
 }
+function autoGrow(el){ growAll([el]); }
 /* 自定义的框高按列记（不分票）：地址那格想一直高一点，不该每张票重拖一次。 */
 function fieldHeights(){
   let o = {};
@@ -1425,7 +1465,7 @@ function edgeGripHtml(){
 function resetFieldHeights(){
   const n = Object.keys(fieldHeights()).length;
   localStorage.removeItem(LS.fieldH);
-  document.querySelectorAll("textarea[data-k], textarea[data-mk]").forEach(autoGrow);
+  growAll(document.querySelectorAll("textarea[data-k], textarea[data-mk]"));
   render();
   toast(n ? `已恢复 ${n} 列的框高为自动` : "没有自定义过的框高", "ok");
 }
@@ -1796,7 +1836,7 @@ function renderMain(){
     </div>`;
   wireMain(t);
   measureChrome();
-  $("#main").querySelectorAll("textarea").forEach(autoGrow);
+  growAll($("#main").querySelectorAll("textarea"));
   $("#barFill").style.width = pr.pct + "%";    // 宽度只能在这儿写：模板里不许出现内联样式（守卫盯着）
   drawAnchors();                                // 确认一条红旗，票面上那个常驻锚点就要当场没
 }
@@ -1942,7 +1982,9 @@ function wireMain(t){
       if (inp.tagName === "TEXTAREA") autoGrow(inp);
     };
     inp.addEventListener("input", apply);
-    inp.addEventListener("blur", apply);
+    /* 失焦那一下不再从头写一遍：值早在 input 里记脏了，这里只把它落盘。
+       从前 input 与 blur 各调一次 apply = 同一次编辑写两遍 localStorage。 */
+    inp.addEventListener("blur", () => { apply(); draftFlush(); });
     inp.addEventListener("keydown", blockEnter);
   });
   const mrv = $("#markReviewed");
@@ -2047,6 +2089,7 @@ $("#clearDrafts").addEventListener("click", () => {
   const n = Object.keys(drafts()).length;
   if (!n){ toast("本机没有未保存的编辑", "bad"); return; }
   if (!confirm(`清空本机浏览器里未保存的 ${n} 条编辑？（它们从没上过服务器；已落盘的 JSON 结果不受影响）`)) return;
+  draftPending = {}; clearTimeout(draftTimer);      // 待写那份也要撤，不然清完又被合并写回来
   localStorage.removeItem(LS.draft); renderDrafts();
   toast(`已清空本机未保存的编辑 ${n} 条`, "ok");
 });

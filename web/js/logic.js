@@ -324,6 +324,21 @@ const L = {
     return out;
   },
 
+  /* localStorage 写满时的兜底：只留最新 keep 条（savedAt 是 YYYY-MM-DD HH:MM:SS，字符串序就是
+     时间序；没有 savedAt 的当最旧）。同样不就地改传入那份——重试失败时手里还得是原样。 */
+  draftTrim(all, keep){
+    const d = all || {}, n = Math.max(0, keep | 0);
+    const keys = Object.keys(d);
+    if (keys.length <= n) return Object.assign({}, d);
+    const byNew = keys.slice().sort((a, b) => {
+      const x = String(d[a] && d[a].savedAt || ""), y = String(d[b] && d[b].savedAt || "");
+      return x < y ? 1 : (x > y ? -1 : 0);
+    });
+    const out = {};
+    byNew.slice(0, n).forEach(k => { out[k] = d[k]; });
+    return out;
+  },
+
   /* ── 票面浏览的缩放档位 ────────────────────────────────────────────────
      内嵌阅读器只吃地址参数（view=FitH / view=Fit / zoom=数字），所以"下一档是什么"得我们自己算。
      坑在于：整页 = min(按宽, 按高)，票面栏比票更高时按宽就是那个最小值，FitH 与 Fit 算出同一个

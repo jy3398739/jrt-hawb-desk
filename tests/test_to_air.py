@@ -226,6 +226,37 @@ def test_validator_warns_on_missing_first_routing_hop():
         validator.validate_raw(dict(base, TO1="FRA", DEST_NAME="CHI"))
 
 
+def test_party_parsing_compiles_no_regex_after_the_tables_are_built():
+    """parse_party 每票要给收、发货人各扫一遍国家码表（约 200 项）与省州表（约 60 项），
+    从前「取最右那一个匹配」是在函数体里现场 `re.compile`——一票几百次 escape+拼串+查缓存，
+    批处理时是纯 CPU 峰值（2026-10-16 效率审查 K2）。两张表都是模块级常量，
+    正则就该在导入时编一次；城市停用词那条同理。
+
+    数的是编译次数：跑热之后再解析二十票，一次都不许编。"""
+    import re
+    party = {"name": "SHENZHEN XINGTAIKE ELECTRONIC CO LTD", "tel": "", "fax": "",
+             "tax_id": "",
+             "address": "ROOM 501 BLOCK B, SHENZHEN, GUANGDONG 518000, CHINA"}
+    got = codes.parse_party(party)
+    assert (got["city"], got["state"], got["postal"], got["country"]) == \
+        ("SHENZHEN", "GUANGDONG", "518000", "CHINA"), f"先确认解析本身没变：{got}"
+
+    calls = []
+    real = re.compile
+
+    def counting(pattern, *a, **k):
+        calls.append(pattern)
+        return real(pattern, *a, **k)
+
+    re.compile = counting
+    try:
+        for _ in range(20):
+            codes.parse_party(party)
+    finally:
+        re.compile = real
+    assert not calls, f"二十票里现场编了 {len(calls)} 次正则，例：{calls[:2]}"
+
+
 def test_validator_warns_on_missing_awb_numbers():
     """主/分单号分两格印时容易漏抄其中一格，缺哪个都要单独出声。"""
     base = {"MAWB_NO": "020-43605590", "HAWB_NO": "PEK1642839",

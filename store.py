@@ -466,24 +466,28 @@ def master_pipeline_key(mawb: str) -> str:
 
 
 
-def number_index() -> dict:
+def number_index(ledger=None) -> dict:
     """派生：复合键 → {stem, mawb, hawb}。只含已提交集，号天然齐全。
-    每次从台账现算（台账是本地小 JSON，几十~几千条，读一遍毫秒级）；量大再上内存缓存。"""
+    每次从台账现算（台账是本地小 JSON，几十~几千条，读一遍毫秒级）；量大再上内存缓存。
+
+    `ledger` 给调用方一次读、循环里复用：一次主单检索名下能挂几十张分单，
+    逐行现算等于把台账整份重读几十遍（2026-10-16 效率审查 T3）。"""
     out = {}
-    for e in _load_ledger().values():
+    for e in (ledger if ledger is not None else _load_ledger()).values():
         k = e.get("key") or number_key(e.get("mawb", ""), e.get("hawb", ""))
         if k and k != "|":                    # 两个号都空的坏条目直接跳过，不进索引
             out[k] = {"stem": e.get("stem"), "mawb": e.get("mawb", ""), "hawb": e.get("hawb", "")}
     return out
 
 
-def lookup_stem(mawb: str, hawb: str):
+def lookup_stem(mawb: str, hawb: str, index=None):
     """录入员检索用：给主单号+分单号 → 本机**点得开**原件的 stem，打不开一律返回 None。
 
     光在台账里有一条记录 ≠ 原件还在这台机器上：归档可能被清、票也可能是在别的机器解析后
     在这里提交的。带着这种 stem 去渲染「查看原件」，点开只剩一坨裸 JSON 404，录入员对不了
-    票面还会以为系统坏了——所以这里就地把"有没有原件"查实，让 stem 这一个字段说一件事。"""
-    stem = (number_index().get(number_key(mawb, hawb)) or {}).get("stem")
+    票面还会以为系统坏了——所以这里就地把"有没有原件"查实，让 stem 这一个字段说一件事。
+    （查目录这一下仍逐行做，那是"点得开"的含义本身；`index` 省的是台账那一次全量读。）"""
+    stem = ((index if index is not None else number_index()).get(number_key(mawb, hawb)) or {}).get("stem")
     if not stem:
         return None
     return stem if (config.ARCHIVE_DIR / str(stem)).is_dir() else None
