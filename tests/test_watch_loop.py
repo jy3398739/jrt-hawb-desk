@@ -84,3 +84,23 @@ def test_skip_existing_flag():
         _drive(tmp, lambda p, save=True: calls.append(p) or {"error": ""},
                lambda p: False, tries=4, extra=("--skip-existing",))
         assert calls == [], "--skip-existing 不该碰存量文件"
+
+
+def test_one_scan_round_rebuilds_the_summary_once_for_all_new_files():
+    """一轮扫到三张新票：从前每张成功都「全量重扫 raw+air、重写两份汇总 JSON」，
+    监控形态下 O(N²)（2026-10-17 效率审查 C1）。一轮收口一次就够。"""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        for n in ("甲.pdf", "乙.pdf", "丙.pdf"):
+            (tmp / n).write_bytes(b"%PDF-1.4 ok")
+        ok = {"stem": "ok", "channel": "vlm", "elapsed": 0.1, "raw": {}, "air": {},
+              "transcript": None, "warns": [], "fidelity": None, "archive": None,
+              "error": ""}
+        builds = []
+        real = store.rebuild_summary
+        store.rebuild_summary = lambda: builds.append(1)
+        try:
+            _drive(tmp, lambda p, save=True: dict(ok), lambda p: False, tries=8)
+        finally:
+            store.rebuild_summary = real
+        assert len(builds) == 1, f"三张票触发了 {len(builds)} 次全量重建：一轮一次"

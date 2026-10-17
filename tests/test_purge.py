@@ -1366,3 +1366,33 @@ def test_an_illegal_master_number_is_still_named_illegal():
         for bad in ("", "small", "99../1", "x" * 300):
             assert "不合法" in purge.refuse("mawb", bad, 30, now=NOW), repr(bad)
             assert purge.plan("mawb", bad, 30, now=NOW) is None, repr(bad)
+
+
+def test_a_batch_purge_rebuilds_the_summary_once_not_once_per_ticket():
+    """删 100 张从前是 100 次「全量重扫 raw+air、重写两份汇总 JSON」——清理窗口随票量平方
+    拉长（2026-10-17 效率审查 C1/G1）。all_hawbs*.json 是纯派生物，一批删完重建一次就够；
+    前提是这批**真的删掉了**带 rebuild 标记的票——一张没删成（拒绝/不在盘上）就不该重建。"""
+    with _world() as t:
+        a = _ticket(t, "S1", void=True)
+        b = _ticket(t, "S2", hawb="JRT8", void=False)
+        builds = []
+        real = store.rebuild_summary
+
+        def counting():
+            builds.append(1)
+            return real()
+
+        store.rebuild_summary = counting
+        try:
+            r = purge.purge([{"kind": "hawb", "key": "hawb|" + a},
+                             {"kind": "hawb", "key": "hawb|" + b}],
+                            by="admin", days=30, now=NOW)
+            assert all(x["ok"] for x in r), r
+            assert len(builds) == 1, f"两张票触发了 {len(builds)} 次全量重建：一批一次"
+            # 全被拒的一批不该重建：没有东西被删，汇总没有变化可言
+            builds.clear()
+            r2 = purge.purge([{"kind": "hawb", "key": "hawb|ghost"}], by="admin", days=30, now=NOW)
+            assert not r2[0]["ok"], r2
+            assert builds == [], "一张都没删成也重建了一遍：纯浪费还容易让人误以为删了"
+        finally:
+            store.rebuild_summary = real

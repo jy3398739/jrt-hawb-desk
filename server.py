@@ -488,7 +488,8 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
     if not tickets:
         raise HTTPException(400, "没有待提交的票据")
     masters = store.master_ledger()      # 整批只读一次：循环里反复开台账是白费
-    passed, blocked, notes = [], {}, []
+    asked = {}                           # 同一次提交里同一条主单只问公司一遍（A1）：
+    passed, blocked, notes = [], {}, []  # 30 张同主单的票，从前是 30 次串行往返堵住唯一出口
     for tk in tickets:
         if not isinstance(tk, dict):
             raise HTTPException(400, "票据格式不正确：tickets 里每一项都应是对象")
@@ -525,7 +526,10 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         # 放在最后是因为前面几道都是"这张票自己还没好"，先把内容说清，才轮到"先去做另一件事"。
         mk = store.norm_no(mawb)
         if mk not in masters:
-            verdict, why = company_api.master_sent(mawb)
+            # 第一次问的时刻与从前一字不差，后到的票复用这一答案——比"循环前预取"的窗口更短。
+            if mk not in asked:
+                asked[mk] = company_api.master_sent(mawb)
+            verdict, why = asked[mk]
             if verdict == "not_sent":
                 blocked[mk] = mawb
             elif verdict == "unknown":
@@ -540,6 +544,7 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             "message": f"主单 {names}{more} 还没提交发送：先把主单交了，再回来提交它名下的分单",
             "ack": "master_first", "mawb": next(iter(blocked.values()))})
     results, codes = [], []
+    specs, done = [], []      # 台账一批一次写：先收齐回执，循环结束后统一落账
     for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty, self_submit in passed:
         # 逐张收集成败，不在第一张错上 raise：/submit 收的是列表，前面几张已经写进公司库了，
         # 让它们随异常一起消失，调用方就分不清"没发出去"和"发出去了但没回执"，
@@ -556,20 +561,25 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             results.append({"stem": stem, "ok": False, "error": str(e)})
             codes.append(502)
             continue
-        fp = _sent_fingerprint(mawb, hawb, rec)
-        entry = store.mark_submitted(stem, mawb, hawb, str(user.get("name") or ""), receipt,
-                                     acked_flags=acked,
-                                     edited_fields=(tk.get("edited_fields")
-                                                    if isinstance(tk.get("edited_fields"), list) else []),
-                                     sent_fingerprint=fp,
-                                     company_action=str(receipt.get("action") or ""),
-                                     air_sent=rec, stager=st.get("stager") or "",
-                                     staged_at=st.get("staged_at") or "",
-                                     no_inputter_review=not reviewed and not self_submit,
-                                     inputter_self_submit=self_submit,
-                                     skipped_empty=skipped_empty, acked_empty=acked_empty)
+        # 回执到手才进批次——顺序说死在用例里：先写台账后发公司，会把「没发出去」记成「发出去了」
+        specs.append(dict(stem=stem, mawb=mawb, hawb=hawb,
+                          reviewer=str(user.get("name") or ""), receipt=receipt,
+                          acked_flags=acked,
+                          edited_fields=(tk.get("edited_fields")
+                                         if isinstance(tk.get("edited_fields"), list) else []),
+                          sent_fingerprint=_sent_fingerprint(mawb, hawb, rec),
+                          company_action=str(receipt.get("action") or ""),
+                          air_sent=rec, stager=st.get("stager") or "",
+                          staged_at=st.get("staged_at") or "",
+                          no_inputter_review=not reviewed and not self_submit,
+                          inputter_self_submit=self_submit,
+                          skipped_empty=skipped_empty, acked_empty=acked_empty))
+        done.append((stem, mawb, hawb, receipt, acked, st, acked_empty, skipped_empty, reviewed))
+    # 一批回执拿齐，台账一次写完：M 张票 = 1 次整份读写（从前是 M 次，2026-10-17 效率审查 A2）
+    for (stem, mawb, hawb, receipt, acked, st, acked_empty, skipped_empty, reviewed), entry in \
+            zip(done, store.mark_submitted_batch(specs)):
         if st:
-            store.mark_staged_submitted(stem, str(user.get("name") or ""), fp)
+            store.mark_staged_submitted(stem, str(user.get("name") or ""), entry["sent_fingerprint"])
         results.append({"stem": stem, "ok": True, "submitted": True,
                         "key": entry["key"], "mode": receipt.get("mode")})
         LOG.info("分单提交 who=%s %s|%s 模式=%s 公司=%s 幂等重放=%s 改动=%d 列 确认旗=%d 条 暂存人=%s"
@@ -731,7 +741,7 @@ def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str, role: str)
         try:
             r = handle_file(path, True, meta)
             if not r["error"]:
-                store.rebuild_summary()
+                store.schedule_rebuild()   # 合并重建：安静 3 秒后一次，别 4 个 worker 抢着全量扫
         except (Exception, SystemExit) as e:
             # handle_file 自己会兜住绝大部分失败；真漏出来的一律变成任务结果，别把 worker 带走
             r = {"stem": path.stem, "channel": "", "elapsed": 0.0, "raw": None, "air": None,
@@ -899,12 +909,12 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1),
         want = "mine"
     # 复核那一档与号检索都不按天：昨天暂存的今天还得核，手里只有一个号的时候更不该先猜哪天。
     flat = want in ("toreview", "reviewed") or bool(qn)
-    every = store.day_rows(None if flat else d)
+    day, every = store.day_and_all("" if flat else d)   # 一次全量扫（B1）：两个口径内存筛
     if want in ("toreview", "reviewed"):
         rows = [r for r in every if not r.get("submitted") and not r.get("voided")
                 and bool(r.get("reviewed_by_inputter")) == (want == "reviewed")]
     else:
-        rows = every if want == "all" else [r for r in every if store.owns(r, who, None if flat else d)]
+        rows = day if want == "all" else [r for r in day if store.owns(r, who, None if flat else d)]
     if qn:
         # 整号相等，或（归一后至少 5 位时）截段命中：只允许整号的话，人敲号尾那几个字符
         # 会看到"查无此号"，而那正是这一页最容易被误读成"票丢了"的一种空。
@@ -916,8 +926,8 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1),
 
         rows = [r for r in rows if _hit(r.get("mawb")) or _hit(r.get("hawb"))
                 or _hit(r.get("stem")) or _hit(r.get("source_name"))]
-    all_days = every if flat else store.day_rows()
-    others = 0 if want in ("toreview", "reviewed") else len(every) - len(rows)
+    all_days = every
+    others = 0 if want in ("toreview", "reviewed") else len(day) - len(rows)
     who_r = {str((r["submitted"] or {}).get("reviewer") or "") for r in rows} - {""}
     return {"ok": True, "date": "" if flat else d, "rows": rows, "reviewers": sorted(who_r),
             "scope": want, "me": who, "others_today": others, "q": q, "count": len(rows),
@@ -1277,7 +1287,7 @@ def render(stem: str, request: Request,
             raise HTTPException(415, f"票面按页渲染失败（{type(e).__name__}: {e}），请点「下载原件」在本地打开")
         hit = (png, total, '"' + hashlib.sha1(png).hexdigest()[:16] + '"')
         with _RENDER_LOCK:
-            if len(_RENDER_CACHE) >= 8:
+            if len(_RENDER_CACHE) >= 32:
                 _RENDER_CACHE.pop(next(iter(_RENDER_CACHE)))
             _RENDER_CACHE[key] = hit
     png, total, etag = hit

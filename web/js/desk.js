@@ -207,8 +207,7 @@ function awbFilled(t){
 function isMissingAwbFlag(f){
   return /缺失|均为空|都(?:为空|缺失)/.test(f) && (f.includes("MAWB_NO") || f.includes("HAWB_NO"));
 }
-function effectiveFlags(t){
-  /* 「已清」只认两种：人点过确认（ackF 就是提交时的 acked_flags），或号补齐后服务端重算
+function effectiveFlags(t){  /* 「已清」只认两种：人点过确认（ackF 就是提交时的 acked_flags），或号补齐后服务端重算
      本来就不再报它。从前这里还有第三条"税号那格已自动摘掉标签 → 当它已清"的猜测：它把旗从
      界面上拿掉却不写进 acked_flags，而服务端那道门只认 acked_flags 里的字符串
      （server.py 的 `f not in acked`）——那条旗就成了看不见也点不到的死旗，整段核对同样收不到
@@ -1167,7 +1166,17 @@ function exportTickets(list, name){
 }
 
 /* ── 渲染 ───────────────────────────────────────────────────────────── */
-function statusOf(t){
+/* 一次渲染里同一张票的旗清单只算一遍（H1 半步）：侧栏循环、窄轨、主区从前各算各的，
+   O(票数×字段) 的纯重复 CPU。备忘只在 render() 进场清一次；事件路径（refreshRow /
+   提交点击 / 提交体）不经过它，拿到的永远是实时值——refreshRow 改了旗要顺手失效那张。 */
+let EF_MEMO = new Map();
+function efOf(t){
+  const k = t.stem || t.filename || "?";
+  let v = EF_MEMO.get(k);
+  if (v === undefined){ v = effectiveFlags(t); EF_MEMO.set(k, v); }
+  return v;
+}
+function statusOf(t, ef){
   if (t.state === "queued") return ["", "排队中"];
   if (t.state === "busy") return ["busy", t.hint || "解析中…"];
   if (t.state === "failed") return ["bad", "失败"];
@@ -1178,7 +1187,7 @@ function statusOf(t){
        : (t.seed.flags ? ["warn", "需复核"] : ["ok", "干净"]);
   if (t.submitted && t.submitted.mode === "server") return ["ok", "已提交"];
   if (t.submitted) return ["warn", "待提交"];
-  if (effectiveFlags(t).length) return ["warn", "需复核"];
+  if ((ef || effectiveFlags(t)).length) return ["warn", "需复核"];
   return ["ok", "干净"];
 }
 /* 「这张还要不要人核」只在这一处判：计数、窄轨、跳下一票用的是同一个答案。
@@ -1227,12 +1236,13 @@ async function dropRow(i){
   else toast("已从列表里拿掉（服务器上早就没有这一张作业）");
 }
 function render(){
+  EF_MEMO = new Map();   // 一次渲染一份旗备忘（efOf）：改旗的事件路径会各自失效
   const done = S.tickets.filter(t => t.state === "done" || t.state === "seed").length;
   const rev = S.tickets.filter(needsReview).length;
   $("#cnt").textContent = S.tickets.length + " 票 · 已解析 " + done + (rev ? " · 需复核 " + rev : "");
   const nq = $("#tabQueueN"); if (nq) nq.textContent = rev ? " " + rev : "";   // 页签上的数字＝还要复核几票
   $("#list").innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
-    const [c, label] = statusOf(t), n = editedList(t).length;
+    const [c, label] = statusOf(t, efOf(t)), n = editedList(t).length;
     const isCur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
     /* 还没成票的那三档（排队 / 在跑 / 失败）在行上直接给一颗删除：列队里点错了、
        或者一次塞了十张想先做别的，不该只能干等它排到。已经解析好的走操作条那颗
@@ -1256,8 +1266,8 @@ function render(){
    换票动作从"回侧栏滚动找那一行"变成点一下；≡ 展开成覆盖式列表（只有单号与状态，
    不是侧栏那张卡的复制品——那张有"改 N 项/未提交"这些窄轨不需要的东西）。 */
 const RAIL = {open: false};
-function railLabel(t){
-  return (t.hawb || t.stem || t.filename) + "：" + statusOf(t)[1];
+function railLabel(t, ef){
+  return (t.hawb || t.stem || t.filename) + "：" + statusOf(t, ef)[1];
 }
 function renderRail(){
   const box = $("#railDots"); if (!box) return;
@@ -1267,8 +1277,9 @@ function renderRail(){
   prg.title = "本机今天：已提交 " + done + " / 经手 " + S.tickets.length + " 张";
   box.innerHTML = S.tickets.map((t, i) => {
     const cur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
+    const ef = efOf(t);
     return `<button type="button" class="rd" data-i="${i}"${cur ? ' aria-current="true"' : ""}
-      aria-label="${esc(railLabel(t))}"><span class="dot ${statusOf(t)[0]}" aria-hidden="true"></span></button>`;
+      aria-label="${esc(railLabel(t, ef))}"><span class="dot ${statusOf(t, ef)[0]}" aria-hidden="true"></span></button>`;
   }).join("");
   const old = document.querySelector(".railList"); if (old) old.remove();
   $("#railExpand").setAttribute("aria-expanded", String(RAIL.open));
@@ -1277,10 +1288,11 @@ function renderRail(){
   panel.className = "railList";
   panel.innerHTML = S.tickets.length ? S.tickets.map((t, i) => {
     const cur = (t.stem && t.stem === S.sel) || (!t.stem && t.filename === S.sel);
+    const ef = efOf(t);
     return `<button type="button" class="rr" data-i="${i}"${cur ? ' aria-current="true"' : ""}>
-      <span class="dot ${statusOf(t)[0]}" aria-hidden="true"></span>
+      <span class="dot ${statusOf(t, ef)[0]}" aria-hidden="true"></span>
       <span class="nm">${esc(t.hawb || t.stem || t.filename)}</span>
-      <span class="st">${esc(statusOf(t)[1])}</span></button>`;
+      <span class="st">${esc(statusOf(t, ef)[1])}</span></button>`;
   }).join("") : '<div class="empty">尚无票据。</div>';
   $("#rail").appendChild(panel);
 }
@@ -1473,7 +1485,7 @@ function resetFieldHeights(){
    flags 给的是"这一列红旗总数（含人已确认的）"，acked 给的是"该确认的都确认了"：
    补好的缺号那类自己消掉的旗不算 acked——没人确认过它，不该显示成「已确认」，更不该配一颗撤回。 */
 function fieldRows(t, ef){
-  const all = flagsByField(t.qc).map, left = flagsByField({flags: ef || effectiveFlags(t)}).map;
+  const all = flagsByField(t.qc).map, left = flagsByField({flags: ef || efOf(t)}).map;
   const ackF = t.ackF || [], ackE = t.ackE || [], skipE = t.skipE || [];
   return FIELDS.map(([k, lab, g]) => {
     const list = all[k] || [], out = left[k] || [];
@@ -1497,7 +1509,7 @@ function fieldRows(t, ef){
    从前同样两行抄了五处（提交按钮、武装那一下、待办条、跳下一个、跳首个），
    少改一处就是待办条说的和提交门数的不是同一件事。 */
 function ticketTodo(t){
-  const ef = effectiveFlags(t), rows = fieldRows(t, ef);
+  const ef = efOf(t), rows = fieldRows(t, ef);
   return {ef, rows, todo: L.todoOf(rows, flagsByField({flags: ef}).rest)};
 }
 const BADGE_CLS = {flag: "warn", confirmed: "conf", empty: "emptyb", emptyok: "conf",
@@ -1627,7 +1639,7 @@ function submitClick(t){
   submitTicket(t);
 }
 function firstFlagKey(t, ef){
-  const map = flagsByField({flags: ef || effectiveFlags(t)}).map;
+  const map = flagsByField({flags: ef || efOf(t)}).map;
   return KEYS.find(k => (map[k] || []).length) || "";
 }
 function renderMain(){
@@ -1773,7 +1785,7 @@ function renderMain(){
     $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
   }
-  const ef = effectiveFlags(t), [c, label] = statusOf(t);
+  const ef = efOf(t), [c, label] = statusOf(t, ef);
   /* 重画一次就收回"武装"那一下：提交按钮的红态只代表"这最后一次点击会真的发送"，
      中间人又点了别的（确认、改值、换票）就等于改了主意，不该还留着。 */
   DESK.armed = false;
@@ -1872,6 +1884,7 @@ function refreshChrome(t){
   drawSubmitCtl(t);
 }
 function refreshRow(t, k){
+  EF_MEMO.delete(t.stem || t.filename || "?");   // 这一下改了旗/值：备忘里那张作废，别让下帧拿旧旗
   const tr = $("#f-" + CSS.escape(k)), ef = effectiveFlags(t), rows = fieldRows(t, ef);
   const r = rows.find(x => x.k === k);
   if (tr && r){
@@ -1998,7 +2011,7 @@ function wireMain(t){
     jumpToField(t, ks[0]);
   });
   $("#main").querySelectorAll("[data-jump-first]").forEach(b => b.addEventListener("click", () => {
-    const rows = fieldRows(t, effectiveFlags(t));
+    const rows = fieldRows(t, efOf(t));
     const r = rows.find(x => x.st.s === (b.dataset.jumpFirst === "flag" ? "flag" : "empty"));
     if (!r){ toast(b.dataset.jumpFirst === "flag" ? "红旗都确认过了" : "空栏都确认过了", "ok"); return; }
     jumpToField(t, r.k);
@@ -2344,12 +2357,20 @@ function mstRender(j, mawb){
 }
 /* 点分单号 = 从主单侧回到那张分单自己的核对页：服务器上落盘的 L2/L3/质检直接装回票据列表，
    不需要制单员重新上传原件。改完还是走 /submit，红旗由服务端按当前值重算。 */
+let OH_SEQ = 0;   // 在飞守卫（与票面图 _pvSeq/_pdfSeq 同款）：连点两张票，慢的旧响应不许盖上后点的
 async function openHouse(stem){
   const hit = S.tickets.find(t => t.stem === stem);
   /* 种子行（刷新后从服务器种回来的那批）身上只有号与状态，点开它才去取完整那份。 */
   if (hit && hit.state !== "seed"){ mvOff(); S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
+  const seq = ++OH_SEQ;
   try{
-    const r = await fetch(BASE + "/ticket/" + encodeURIComponent(stem));
+    /* /ticket 与 /staged 并行取：两份谁也不依赖谁的值。/staged 失败照旧容忍
+       （那一格本来就是"有就用、没有拉倒"），/ticket 失败才Throw。 */
+    const [r, sr] = await Promise.all([
+      fetch(BASE + "/ticket/" + encodeURIComponent(stem)),
+      fetch(BASE + "/staged/" + encodeURIComponent(stem)).catch(() => null),
+    ]);
+    if (seq !== OH_SEQ) return;      // 已经改点别张：这份整体作废
     if (!r.ok){
       const j = await r.json().catch(() => ({}));
       throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
@@ -2360,10 +2381,8 @@ async function openHouse(stem){
        提交过的票重开，发货人整串退回模型那一版，「变形了」），而确认过的红旗与空栏也会整片
        回潮（同一张票按铮写「仍有 13 项待核对」）。谁新用谁，算式在 L.serverState 一处。 */
     let st = null;
-    try{
-      const sr = await fetch(BASE + "/staged/" + encodeURIComponent(stem));
-      if (sr.ok) st = await sr.json();
-    }catch(e){ st = null; }
+    if (sr && sr.ok){ try{ st = await sr.json(); }catch(e){ st = null; } }
+    if (seq !== OH_SEQ) return;      // 解析 /staged 那几毫秒里也可能被改点
     const sf = L.serverState(d.submitted, st);
     const srvEdits = {}; sf.edits.forEach(k => { srvEdits[k] = 1; });
     const mg = L.stagedMerge(sf.values, dr.airE || {}, srvEdits);
@@ -2428,18 +2447,22 @@ async function restoreQueue(){
   const pick = S.tickets.some(t => t.stem === last) ? last : S.tickets[0].stem;
   await openHouse(pick);             // 回到离开时那一张：这一张取完整那份，其余点开再取
 }
+let MST_SEQ = 0;
 async function mstSearch(force){
   const m = $("#mstNo").value.trim(), st = $("#mstStatus");
   if (!m){ st.textContent = "请先填主单号"; return; }
   st.textContent = "检索中…";
+  const seq = ++MST_SEQ;   // 在飞守卫：连敲两次检索，慢的那份不许盖上后敲的
   /* 打开着的若是另一张主单，先换成空壳：解析中那两栏（L1 原文、36 列核对表）要空着等新票，
      不能让上一张的内容冒充它。force 是「重新解析」那一路——同一张票自己的重跑，不清。 */
   if (!force && MV && L.normNo(m) !== L.normNo(MV.mawb)){ mvSave(); MV = mvShell(m); render(); }
   try{
     const r = await fetch(BASE + "/company/mawb?mawb=" + encodeURIComponent(m) + (force ? "&force=1" : ""));
+    if (seq !== MST_SEQ) return;
     if (r.status === 401){ $("#gate").hidden = false; throw new Error("登录已过期，请重新登录"); }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    if (seq !== MST_SEQ) return;
     st.textContent = "（" + j.mode + "）";
     MST_LAST = j;
     mstRender(j, m);
@@ -2484,13 +2507,22 @@ function mvFlags(){
    算式在 logic.js（L.draft*），这里只做 localStorage 与 MV 的接线；
    不和分单草稿共用一把键——分单存 airE/ackF，主单存 edit/acked，混着读会读出半截字段。 */
 function mstDrafts(){ try { return JSON.parse(localStorage.getItem(LS.masterDrafts) || "{}"); } catch (e) { return {}; } }
+/* 主单草稿写盘：与分单侧 writeDrafts 同一套兜底（写满先丢最旧再试、还不行当场说一句）。
+   挂的是 change 事件（不是每击键），所以不做防抖——要的是「写不进不能炸掉这一下编辑」。 */
+function writeMasterDrafts(d){
+  try { localStorage.setItem(LS.masterDrafts, JSON.stringify(d)); return; } catch (e) {}
+  try { localStorage.setItem(LS.masterDrafts, JSON.stringify(L.draftTrim(d, DRAFT_KEEP))); }
+  catch (e2) {
+    toast("本机浏览器存不下主单草稿（隐私模式或已写满）：这一次编辑只在页面上，刷新就没了", "bad");
+  }
+}
 function mvSave(){
   if (!MV || !MV.mawb) return;
   const entry = L.draftEntry(MV.editBase, MV.edit, MV.acked, MV.extraFlags, nowTxt());
-  localStorage.setItem(LS.masterDrafts, JSON.stringify(L.draftPut(mstDrafts(), MV.mawb, entry)));
+  writeMasterDrafts(L.draftPut(mstDrafts(), MV.mawb, entry));
 }
 function mstDraftClear(mawb){
-  localStorage.setItem(LS.masterDrafts, JSON.stringify(L.draftPut(mstDrafts(), mawb, null)));
+  writeMasterDrafts(L.draftPut(mstDrafts(), mawb, null));
 }
 function mvLabel(k){
   const f = ((MV && MV.rec && MV.rec.fields) || []).find(x => x[0] === k);
@@ -2692,9 +2724,11 @@ const todayStr = () => {
 };
 /* fade=true 才是"换了一批数据"（切页/换日期/点刷新）——只有这时行才挂 dvin 播入场淡入。
    作废完重画传 false：那一屏还是同一批票，重播一遍淡入就是坑 9 说的"列表频繁闪"。 */
+let DAY_SEQ = 0;
 async function loadDay(fade){
   const box = $("#dayBox");
   box.innerHTML = '<div class="empty">正在读今天的台账…</div>';
+  const seq = ++DAY_SEQ;   // 在飞守卫：连翻两天/连敲两次检索，慢的那份不许盖上后点的
   try{
     const picked = $("#dayDate").value;
     const kw = ($("#dayQ").value || "").trim();
@@ -2712,6 +2746,7 @@ async function loadDay(fade){
     else if (picked && picked !== VIEW.date) q.push("date=" + encodeURIComponent(picked));
     const r = await fetch(BASE + "/day" + (q.length ? "?" + q.join("&") : ""));
     const j = await r.json().catch(() => ({}));
+    if (seq !== DAY_SEQ) return;    // 旧响应回来时人已经在看别的页/别的天了
     if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
     VIEW.date = j.date; VIEW.rows = j.rows || []; VIEW.lastDate = j.last_date || "";
     VIEW.machineLast = j.machine_last_date || ""; VIEW.others = Number(j.others_today) || 0;

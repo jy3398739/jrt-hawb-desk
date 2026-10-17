@@ -16,9 +16,13 @@
 ## 1. 系统依赖
 
 ```bash
-sudo apt-get install -y python3.12-venv libreoffice fonts-noto-cjk
+sudo apt-get install -y python3.12-venv libreoffice fonts-noto-cjk nodejs
 soffice --version          # 现状 24.2.7.2
 ```
+
+`node` 只为跑回归里的前端纯逻辑断言（`tests/web_src.py` 的 `logic()`，~40 条契约用例）：
+**机器上没有它，那批用例算失败不算跳过**——缺一块契约没人看着，等于闸门上开了个洞。
+服务器不跑回归可以不装；跑回归的机器（本机、VM、公司那台）都必须有。
 
 - **LibreOffice 必需**：Excel 电子单先由它无头转成 PDF，再走和扫描件一样的链路。
   没装会明确报"服务器上没装 LibreOffice"，不会静默出空结果。

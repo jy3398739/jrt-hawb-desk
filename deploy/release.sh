@@ -41,10 +41,16 @@ elif [ -x ".venv/bin/python" ]; then
   PY=".venv/bin/python"
 fi
 echo "   用 $PY"
-LOG="/tmp/hawb-release-reg.log"
+LOG="$(mktemp)"   # 从前写死 /tmp/hawb-release-reg.log：共用机上同时发版互相覆盖、跑完也不删
 RC=0; "$PY" -X utf8 tests/run_tests.py >"$LOG" 2>&1 || RC=$?
 tail -3 "$LOG"
-[ "$RC" = "0" ] || { echo "停：回归没过（退出码 $RC，全文在 $LOG），版本号已退回（不发版）" >&2; exit 1; }
+if [ "$RC" != "0" ]; then
+  echo "停：回归没过（退出码 $RC）。失败段如下，版本号已退回（不发版）：" >&2
+  tail -40 "$LOG" >&2
+  rm -f "$LOG"
+  exit 1
+fi
+rm -f "$LOG"
 ROLLBACK=0
 
 [ "$DRY" = "1" ] && { echo "== --dry-run：改号与检查完成，没提交也没推"; exit 0; }

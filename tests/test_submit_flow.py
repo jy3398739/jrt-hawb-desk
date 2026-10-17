@@ -211,6 +211,84 @@ def test_submit_clean_writes_ledger_mock_receipt():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_batch_submit_writes_the_ledger_once_for_the_whole_batch():
+    """批量提交从前是 M 张票 M 次「整份台账读+整份台账写」：每提交一张就把台账全量重读一遍、
+    改一条、连着 air_sent 全文整份写回，提交越多写放大越狠（2026-10-17 效率审查 v4 A2）。
+    一批的回执都到手之后，台账一次写完就够了。
+
+    顺序这条要在用例名里说死：**先拿齐回执、再写台账**——反过来会把"没发出去"记成
+    "发出去了"，那是台账在撒谎，比慢严重得多。所以失败的那几张（公司 502）也照样
+    只该贡献 0 次写，成功的那几张合起来 1 次。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_sub_batch_"))
+    with _desk_dirs(tmp):
+        stems = [f"CLA2609002{i}" for i in range(5)]
+        for s in stems:
+            (config.ARCHIVE_DIR / s).mkdir(exist_ok=True)
+            (config.OUTPUT_AIR_DIR / f"{s}.json").write_text(
+                json.dumps({"MAWB_NO": "235-96146363", "HAWB_NO": s}, ensure_ascii=False),
+                encoding="utf-8")
+            store.save_qc(s, {"source_name": s + ".pdf", "channel": "vlm",
+                              "model": "qwen3.8-flash", "model_choice": "qwen38-flash-bailian",
+                              "processed_at": "2026-10-08T09:00:00", "flags": [], "error": ""})
+        writes = []
+        real_write = store._write_ledger
+
+        def counting_write(data, path=None):
+            writes.append(1)
+            return real_write(data, path)
+
+        store._write_ledger = counting_write
+        try:
+            client = _logged_client(tmp)
+            r = client.post("/submit",
+                            json={"tickets": [_clean_ticket(stem=s, mawb="235-96146363", hawb=s)
+                                             for s in stems]})
+        finally:
+            store._write_ledger = real_write
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] and all(x.get("ok") for x in body["results"]), body
+        assert len(writes) == 1, f"五张票把台账写了 {len(writes)} 遍：应是一批一次"
+        led = store.ledger()
+        assert sorted(led) == sorted(stems), f"五张都要在台账里：{sorted(led)}"
+
+
+def test_tickets_under_one_master_ask_the_company_once_not_once_per_ticket():
+    """提交门的第四道（先交主单）从前是**每张票各问公司一次**：本机主单台账没记过的主单，
+    30 张同主单的分单 = 30 次串行 j9 往返 × 8/s 自限流，提交从秒级拖成分钟级，堵的还是
+    唯一交付出口（2026-10-17 效率审查 A1）。
+    同一次提交里同一条主单问一次就够；后到的票复用先到的答案——比「循环前预取」的
+    窗口更短（第一次问的时刻与从前一字不差）。被挡的语义不许变：仍按 master_first 挡。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_sub_gate_"))
+    with _desk_dirs(tmp, master_sent=False):
+        stems = [f"CLA2609002{i}" for i in range(5)]
+        for s in stems:
+            (config.ARCHIVE_DIR / s).mkdir(exist_ok=True)
+            (config.OUTPUT_AIR_DIR / f"{s}.json").write_text(
+                json.dumps({"MAWB_NO": "235-96146363", "HAWB_NO": s}, ensure_ascii=False),
+                encoding="utf-8")
+            store.save_qc(s, {"source_name": s + ".pdf", "channel": "vlm",
+                              "model": "qwen3.8-flash", "model_choice": "qwen38-flash-bailian",
+                              "processed_at": "2026-10-08T09:00:00", "flags": [], "error": ""})
+        calls = []
+        real_ms = company_api.master_sent
+
+        def counting(m):
+            calls.append(1)
+            return real_ms(m)
+
+        company_api.master_sent = counting
+        try:
+            client = _logged_client(tmp)
+            r = client.post("/submit",
+                            json={"tickets": [_clean_ticket(stem=s, mawb="235-96146363", hawb=s)
+                                              for s in stems]})
+        finally:
+            company_api.master_sent = real_ms
+        assert r.status_code == 400 and r.json()["detail"]["ack"] == "master_first", r.text
+        assert len(calls) == 1, f"五张同主单的票把公司问了 {len(calls)} 遍：一次提交问一遍就够"
+
+
 def test_submit_rejects_missing_mawb_or_hawb():
     old_ledger = config.SUBMIT_LEDGER
     tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))

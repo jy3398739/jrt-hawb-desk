@@ -112,6 +112,32 @@ def rebuild_summary():
     return len(raws), len(airs)
 
 
+_REBUILD_TIMER = {"t": None}
+_REBUILD_TIMER_LOCK = threading.Lock()
+
+
+def schedule_rebuild(delay: float = 3.0) -> None:
+    """把「每票一次」的全量重建合并成「安静 delay 秒后一次」（2026-10-17 效率审查 C1）。
+
+    all_hawbs*.json 是纯派生物：仓内没有运行时读者（export_excel/db_writer 都不读），
+    只供仓外取数——晚几秒到齐没有害处；而解析队列 4 个 worker 并发完工时，从前是
+    互相覆盖的 N 次全量重扫。计时器是守护线程：进程退出时没赶上那一次就不跑了，
+    下一次解析/清理会再触发（run_batch 与 purge 的批末重建不走这里，不受影响）。"""
+    with _REBUILD_TIMER_LOCK:
+        if _REBUILD_TIMER["t"] is not None:
+            _REBUILD_TIMER["t"].cancel()
+        t = threading.Timer(delay, _rebuild_once)
+        t.daemon = True
+        _REBUILD_TIMER["t"] = t
+        t.start()
+
+
+def _rebuild_once() -> None:
+    with _REBUILD_TIMER_LOCK:
+        _REBUILD_TIMER["t"] = None
+    rebuild_summary()
+
+
 def list_inputs(inp: Path):
     if inp.is_file():
         return [inp]
@@ -190,6 +216,53 @@ def _write_ledger(data: dict, path=None) -> None:
     atomic.write_json(path or config.SUBMIT_LEDGER, data, mode=0o600)
 
 
+def _submit_entry(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
+                  acked_flags: list = None, edited_fields: list = None,
+                  sent_fingerprint: str = "", company_action: str = "",
+                  air_sent: dict = None, stager: str = "", staged_at: str = "",
+                  no_inputter_review: bool = False, inputter_self_submit: bool = False,
+                  skipped_empty: list = None, acked_empty: list = None) -> dict:
+    """构造一条提交台账 entry。单一真源：单笔与批量共用这一份，改字段口径只许改这里。"""
+    entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
+             "key": number_key(mawb, hawb), "reviewer": reviewer,
+             "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
+             "acked_flags": [str(a) for a in (acked_flags or [])],
+             "edited_fields": [str(x) for x in (edited_fields or [])],
+             "skipped_empty": [str(x) for x in (skipped_empty or [])],
+             "acked_empty": [str(x) for x in (acked_empty or [])],
+             "sent_fingerprint": sent_fingerprint or "",
+             "company_action": company_action or "",
+             "air_sent": air_sent if isinstance(air_sent, dict) else {},
+             "stager": str(stager or ""), "staged_at": str(staged_at or ""),
+             "no_inputter_review": bool(no_inputter_review),
+             # 录入员本人核对完直接发（没有暂存那一步）：单独一档，不进"未经复核"那个对照组
+             "inputter_self_submit": bool(inputter_self_submit),
+             "receipt": receipt or {}}
+    if isinstance((receipt or {}).get("before"), dict):
+        entry["before"] = receipt["before"]
+    return entry
+
+
+def mark_submitted_batch(items: list) -> list:
+    """一批提交，台账一次读、一次写。从前 M 张票是 M 次「整份读+整份写」（entry 还带着
+    air_sent 全文），提交越多写放大越狠（2026-10-17 效率审查 A2）。
+
+    items 的每个元素就是 mark_submitted 那套参数的字典；返回按传入顺序的 entry 列表。
+    **调用方必须先拿齐回执再调**：先写台账后发公司，等于把「没发出去」记成「发出去了」。
+    空表不碰盘。锁语义与单笔一致：整批一把 _LEDGER_LOCK。"""
+    if not items:
+        return []
+    with _LEDGER_LOCK:
+        data = _load_ledger()
+        out = []
+        for it in items:
+            entry = _submit_entry(**it)
+            data[entry["stem"]] = entry
+            out.append(entry)
+        _write_ledger(data)
+    return out
+
+
 def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict = None,
                    acked_flags: list = None, edited_fields: list = None,
                    sent_fingerprint: str = "", company_action: str = "",
@@ -207,28 +280,9 @@ def mark_submitted(stem: str, mawb: str, hawb: str, reviewer: str, receipt: dict
     skipped_empty / acked_empty：提交那一版里空着的列分两档记——人逐列确认过「票面本来就没印」
     的是 acked_empty，没确认就点第二次按钮硬发出去的是 skipped_empty（同一套软闸门留痕）。
     两档都是空表也要落键：读的一方按"有没有这一档"分支，缺键会让统计当场崩或悄悄漏。"""
-    with _LEDGER_LOCK:
-        data = _load_ledger()
-        entry = {"stem": stem, "mawb": str(mawb or "").strip(), "hawb": str(hawb or "").strip(),
-                 "key": number_key(mawb, hawb), "reviewer": reviewer,
-                 "submitted_at": datetime.datetime.now().isoformat(timespec="seconds"),
-                 "acked_flags": [str(a) for a in (acked_flags or [])],
-                 "edited_fields": [str(x) for x in (edited_fields or [])],
-                 "skipped_empty": [str(x) for x in (skipped_empty or [])],
-                 "acked_empty": [str(x) for x in (acked_empty or [])],
-                 "sent_fingerprint": sent_fingerprint or "",
-                 "company_action": company_action or "",
-                 "air_sent": air_sent if isinstance(air_sent, dict) else {},
-                 "stager": str(stager or ""), "staged_at": str(staged_at or ""),
-                 "no_inputter_review": bool(no_inputter_review),
-                 # 录入员本人核对完直接发（没有暂存那一步）：单独一档，不进"未经复核"那个对照组
-                 "inputter_self_submit": bool(inputter_self_submit),
-                 "receipt": receipt or {}}
-        if isinstance((receipt or {}).get("before"), dict):
-            entry["before"] = receipt["before"]
-        data[stem] = entry
-        _write_ledger(data)
-    return entry
+    # 参数原样转交批量版（第一行取 locals() 正好就是这份参数表）：单笔与批量共用
+    # _submit_entry 那一份构造，字段口径才不会漂。
+    return mark_submitted_batch([locals()])[0]
 
 
 def mark_staged_submitted(stem: str, submitter: str, sent_fingerprint: str) -> dict | None:
@@ -416,7 +470,7 @@ def master_rows(date: str = None, who: str = None) -> list:
         days = {str(when)[:10], str(rec.get("started_at") or "")[:10]}
         days |= {str(ev.get("at") or "")[:10] for ev in (rec.get("events") or [])}
         days |= {str((led.get(norm_no(mawb)) or {}).get("submitted_at") or "")[:10]}
-        if date and date not in days:
+        if not _day_hit_mawb(days, date):
             continue
         e = led.get(norm_no(mawb)) or {}
         events = rec.get("events") or []
@@ -439,6 +493,7 @@ def master_rows(date: str = None, who: str = None) -> list:
         rows.append({"kind": "mawb", "stem": "", "source_name": mawb,
                      "channel": "master", "elapsed": rec.get("elapsed"),
                      "processed_at": when, "state": state,
+                     "started_day": str(rec.get("started_at") or "")[:10],
                      "uploader": str(last.get("by") or ""), "uploader_role": str(last.get("role") or ""),
                      "model": rec.get("model") or "", "mawb": mawb, "hawb": "",
                      "filled": sum(1 for c, _, _ in mfields.MASTER_FIELDS
@@ -503,6 +558,19 @@ def submitted_by_mawb(mawb: str) -> list:
     return [e for e in _load_ledger().values() if norm_no(e.get("mawb", "")) == want]
 
 
+def _day_hit_hawb(when: str, sent: str, date: str) -> bool:
+    """分单行的「这天经手过吗」：读出来（processed_at）或发走（submitted_at）任一。
+    只认前者的话，"今天提交的票"在今天那页一张都不显示（2026-10-12 现场）。
+    ticket_rows 与 /day 的单遍化（day_and_all）共用这一份，别再抄第二份。"""
+    return (not date) or when.startswith(date) or sent.startswith(date)
+
+
+def _day_hit_mawb(days: set, date: str) -> bool:
+    """主单行的「这天经手过吗」：改过（updated_at）、开始解析（started_at）、发走
+    （submitted_at）任一那天。master_rows 与 day_and_all 共用这一份。"""
+    return (not date) or date in days
+
+
 def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str = None) -> list:
     """这台服务器经手过的票，一行一张，**状态从盘上现算**。
 
@@ -531,7 +599,7 @@ def ticket_rows(date: str = None, state: str = None, mawb: str = None, who: str 
         # （提交台账那一次）。只认前者的话，"今天提交的票"在这页一张都不显示——2026-10-12
         # 用户提交完四张票就是这么以为票丢了。一张票因此会出现在它动过的每一天。
         sent = str((led.get(stem) or {}).get("submitted_at") or "")
-        if date and not when.startswith(date) and not sent.startswith(date):
+        if not _day_hit_hawb(when, sent, date):
             continue
         found.append((stem, rec))
     found.sort(key=lambda kv: str(kv[1].get("processed_at")))
@@ -635,6 +703,27 @@ def day_rows(date: str = None, who: str = None) -> list:
     out = ticket_rows(date=date, who=who) + master_rows(date, who)
     out.sort(key=lambda r: str(r.get("processed_at") or ""))
     return out
+
+
+def _row_in_day(r: dict, date: str) -> bool:
+    """行级的日期归属：判据与两个 builder 内部那份同源（_day_hit_hawb / _day_hit_mawb）。
+    主单行上带 started_day 才对得上「开始解析那天」——那是行上唯一多出来的一个来源。"""
+    if r.get("kind") == "mawb":
+        return _day_hit_mawb({str(r.get("processed_at") or "")[:10],
+                              str(r.get("started_day") or "")[:10],
+                              str((r.get("submitted") or {}).get("at") or "")[:10]}, date)
+    return _day_hit_hawb(str(r.get("processed_at") or ""),
+                         str((r.get("submitted") or {}).get("at") or ""), date)
+
+
+def day_and_all(date: str = "") -> tuple:
+    """/day 单遍化（2026-10-17 效率审查 B1）：一次全量扫，同时给出「这一天」与「全部天」
+    两份行。ticket_rows/master_rows 本来就是全量读、日期在内存里筛——从前 /day 把同一份
+    全量扫做两遍。date 为空（号检索/待复核那两档）两份是同一列表。"""
+    every = day_rows()
+    if not date:
+        return every, every
+    return [r for r in every if _row_in_day(r, date)], every
 
 
 

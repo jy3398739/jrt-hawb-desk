@@ -831,3 +831,34 @@ def test_the_empty_day_page_says_which_of_the_four_thing_it_is():
              lastDate="2026-10-01", machineLast="2026-10-01") == "nohit"
     assert e(scope="mine", rows=[], date="2026-10-14", others=3,
              lastDate="2026-10-14", machineLast="2026-10-14") == "others", "老句子不许被新档挤掉"
+
+
+def test_a_day_page_scans_the_directories_once_not_twice():
+    """/day 按天那两档（mine/all）从前把同一份全量目录扫做两遍：第一遍 day_rows(d) 出
+    「这一天」，第二遍 day_rows() 出「最近有票是哪天」——而 ticket_rows/master_rows 本来就是
+    全量读、按日期内存筛，第二遍是纯白扫（2026-10-17 效率审查 B1）。
+    数的是 day_rows 调用次数：一次请求一遍。语义一个字段都不许漂——行、last_date、
+    others_today 与两遍时代一致，同文件里那些 /day 用例钉的就是它们。"""
+    with _sandbox():
+        _uploaded("D1", "admin", when="2026-09-30")
+        _uploaded("D2", "admin", when="2026-09-21")
+        calls = []
+        real = store.day_rows
+
+        def counting(*a, **k):
+            calls.append(1)
+            return real(*a, **k)
+
+        store.day_rows = counting
+        try:
+            c = _login("admin", "admin123")
+            j = c.get("/day", params={"date": "2026-09-30"}).json()
+            assert [r["stem"] for r in j["rows"]] == ["D1"], j
+            assert j["last_date"] == "2026-09-30" and j["others_today"] == 0, j
+            assert len(calls) == 1, f"按天那页把目录扫了 {len(calls)} 遍：一遍就够"
+            calls.clear()
+            j2 = c.get("/day", params={"q": "D1"}).json()      # 号检索那档（flat）也要是一遍
+            assert [r["stem"] for r in j2["rows"]] == ["D1"], j2
+            assert len(calls) == 1, f"号检索那档扫了 {len(calls)} 遍"
+        finally:
+            store.day_rows = real

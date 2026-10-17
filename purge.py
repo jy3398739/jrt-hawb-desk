@@ -414,8 +414,7 @@ def remove(p, by, now=None, auto=False, early=False):
         delete_ticket(p["stem"] or p["mawb"])
     except Exception as e:
         errors.append("数据库行没删掉：%s" % e)
-    if p["rebuild"]:                                   # 5) 聚合副本
-        store.rebuild_summary()
+    # 5) 聚合副本不再在这里重建：purge() 一批收口一次（C1），逐张重建是 O(N²)
     _tell_caches(p["stem"] or p["mawb"])
     if errors:
         return {"ok": True, "key": p["key"], "removed": removed, "error": errors[0], "warn": True}
@@ -466,6 +465,7 @@ def purge(items, by, days=None, now=None, auto=False):
     满了的票谎报 early 也会被记成正常清理。"""
     d = retention() if days is None else max(0, int(days))
     out = []
+    need_rebuild = False
     for it in items or []:
         kind = str((it or {}).get("kind") or "").strip().lower()
         key = str((it or {}).get("key") or "").split("|", 1)[-1].strip()
@@ -477,7 +477,11 @@ def purge(items, by, days=None, now=None, auto=False):
             continue
         early = p["idle_days"] is None or p["idle_days"] < d
         p["days"] = d              # 凭据与面板看的都是当下窗口，不是内部那个 0
+        if p.get("rebuild"):
+            need_rebuild = True    # 批末一次：N 张 = 1 次全量重建（2026-10-17 效率审查 C1）
         out.append(remove(p, by, now, auto=auto, early=early))
+    if need_rebuild:
+        store.rebuild_summary()
     return out
 
 

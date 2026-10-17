@@ -46,6 +46,9 @@ def _stubbed():
 
     class _FakeStore:
         save_preview = staticmethod(real_store.save_preview)   # 票面预览要真落盘，测试才验得了缓存
+        # v1.30.0 起汇总重建走合并调度（C1）：worker 只记「请求过一次重建」，
+        # 真全量扫归 store 的安静期计时器，那边有专门的行为用例。
+        schedule_rebuild = staticmethod(lambda: calls.append({"rebuild": True}))
 
         def rebuild_summary(self):
             calls.append({"rebuild": True})
@@ -1693,6 +1696,72 @@ def test_box_heights_are_measured_once_per_render_not_once_per_box():
         "渲染主区还是逐格 autoGrow"
     assert "function autoGrow(el){ growAll([el]); }" in js, \
         "单格那几处（输入完立刻长）要共用同一份实现，别再各写一遍读写顺序"
+
+
+def test_parsed_tickets_coalesce_their_summary_rebuilds():
+    """队列 worker 每解析完一张就全量重建汇总，4 槽位并发完工还会互相覆盖
+    （2026-10-17 效率审查 C1）。worker 里只许「请求合并重建」，真重建由 store 的
+    安静期计时器收口——那边的合并语义有专门的行为用例，这里钉的是接线没退回旧样子。"""
+    import inspect
+    src = inspect.getsource(server._parse_ticket)
+    assert "store.schedule_rebuild(" in src, "worker 里没走合并重建"
+    assert "store.rebuild_summary()" not in src, "worker 还在每票直接全量重建"
+
+
+def test_stale_responses_cannot_overwrite_fresher_ones():
+    """连点两张票、连敲两次检索、连翻两天台账：慢的那份旧响应回来会把新画面盖掉
+    （2026-10-17 效率审查 H5）。票面图那两层早有 _pvSeq/_pdfSeq 同款守卫，
+    这三条取数链补齐；openHouse 的两个请求改成并行发（/staged 失败照旧容忍，
+    那一格本来就是「有就用、没有拉倒」）。"""
+    js = web_src.part("js/desk.js")
+    oh = web_src.fn(js, "async function openHouse(stem){")
+    assert "Promise.all(" in oh, "openHouse 还是串行双取：一张票两次往返"
+    assert "OH_SEQ" in oh and oh.count("seq !== OH_SEQ") >= 2, \
+        "openHouse 没有在飞守卫（取回后与解析暂存后都要拦一遍，删一处守卫也会被这条咬住）"
+    ms = web_src.fn(js, "async function mstSearch(force){")
+    assert "MST_SEQ" in ms and "seq !== MST_SEQ" in ms, "主单检索没有在飞守卫"
+    ld = web_src.fn(js, "async function loadDay(fade){")
+    assert "DAY_SEQ" in ld and "seq !== DAY_SEQ" in ld, "台账页没有在飞守卫"
+
+
+def test_one_render_pass_computes_flags_once_per_ticket():
+    """一次 render 里侧栏循环、窄轨、主区各算各的 effectiveFlags——旗清单是
+    O(票数×字段) 的纯重复 CPU（2026-10-17 效率审查 H1 半步）。efOf 备忘：
+    render 进场清一次；事件路径（refreshRow / 提交点击 / 提交体）不经过备忘。
+    refreshRow 改了旗必须顺手失效那一张，否则下一帧渲染拿旧旗——这是本条唯一的暗坑。"""
+    js = web_src.part("js/desk.js")
+    assert "function efOf(t){" in js, "没有 efOf 备忘"
+    assert "EF_MEMO = new Map();" in web_src.fn(js, "function render(){"), \
+        "render 进场没清备忘：改完旗再触发别的渲染会拿旧旗"
+    assert "EF_MEMO.delete(" in web_src.fn(js, "function refreshRow(t, k){"), \
+        "refreshRow 改了旗却不失效备忘"
+    assert "function statusOf(t, ef){" in js, "statusOf 没收旗参数（事件路径要能绕开备忘拿实时值）"
+    rm = web_src.fn(js, "function renderMain(){")
+    assert "efOf(t)" in rm and "effectiveFlags(" not in rm, "渲染主区还在自己现算旗"
+    assert "efOf(t)" in web_src.fn(js, "function ticketTodo(t){"), "进度分母还在现算"
+    # drawAnchors 是事件路径（缩放/定位/点确认都直接重画），必须直调拿实时旗——
+    # v1.30.0 第一版错把它当渲染子树换成了 efOf，全量回归当场抓出来
+    da = web_src.fn(js, "function drawAnchors(){")
+    assert "efOf(" not in da and "effectiveFlags(t)" in da, "锚点层不许走旗备忘"
+    # 事件路径这三处必须保持直调（另有守卫钉着委托块那三行字面量）
+    assert "const remaining = effectiveFlags(t);" in js, "提交点击的实时旗不许走备忘"
+    assert "flags: effectiveFlags(t)" in js, "提交体的旗不许走备忘"
+
+
+def test_master_drafts_survive_a_full_storage_too():
+    """主单草稿从前 setItem 裸奔：隐私模式或写满时异常顺着 change 事件冒出来打断编辑，
+    而分单侧同一种病 v1.29.0 已治（2026-10-17 效率审查 H2 的真实半边）。
+    报告说「每击键」是错的——主单值框挂的是 change（:1738），一次编辑只在失焦提交时写
+    一回，所以只借「写满兜底」这半边（丢最旧再试 + 当场说一句），不借防抖。"""
+    js = web_src.part("js/desk.js")
+    assert "function writeMasterDrafts(d){" in js, "主单草稿没有统一写入口 writeMasterDrafts"
+    w = web_src.fn(js, "function writeMasterDrafts(d){")
+    assert "try {" in w and "L.draftTrim(" in w and "toast(" in w, \
+        "写失败要么没兜底（整页抛错），要么静默（人以为存住了）"
+    for head in ("function mvSave(){", "function mstDraftClear(mawb){"):
+        body = web_src.fn(js, head)
+        assert "localStorage.setItem" not in body, head + " 还在裸写 localStorage"
+        assert "writeMasterDrafts(" in body, head + " 没走统一写入口"
 
 
 def test_text_assets_go_out_gzipped_and_ticket_images_stay_raw():

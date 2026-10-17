@@ -11,9 +11,11 @@
 新增样本：把该单的 L2 JSON 拷进 fixtures/l3/input/，跑 --update-baseline 复核差异即可入基线。
 """
 import argparse
+import atexit
 import importlib.util
 import json
 import os
+import shutil
 import sys
 import tempfile
 import traceback
@@ -46,6 +48,7 @@ os.environ["MODEL_THINKING"] = ""
 # 下次回放同一张票会被判"重复提交"直接吞掉——测试假绿，现场却少了提交。
 GUARD_DIR = Path(tempfile.mkdtemp(prefix="hawb_guard_"))
 os.environ["SUBMIT_GUARD_DIR"] = str(GUARD_DIR)
+atexit.register(shutil.rmtree, GUARD_DIR, ignore_errors=True)   # 从前只建不删，每跑一轮回归在 %TEMP% 留一个
 
 
 def _load_modules(only: str):

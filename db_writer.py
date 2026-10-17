@@ -50,12 +50,24 @@ def _params(rec: dict, qc: dict):
     return p
 
 
+_ENG = None
+
+
+def _engine():
+    """全模块共用一个池化连接（pool_pre_ping 防空闲断连）：删票路径从前每张
+    create_engine 一次，每日清理 100 张＝100 次建连（2026-10-17 效率审查 G2）。"""
+    global _ENG
+    if _ENG is None:
+        _ENG = create_engine(config.DB_URL, pool_pre_ping=True)
+    return _ENG
+
+
 def delete_ticket(source_file: str) -> int:
     """彻底删除一张票时，把库里那两行一起删掉（两张表都按 source_file 主键，与 upsert 同一个键）。
     没配 DB_URL 就直接返回 0——本机与 VM 现在的常态是只出 Excel，那不是错误。"""
     if not config.DB_URL or not str(source_file or "").strip():
         return 0
-    eng = create_engine(config.DB_URL)
+    eng = _engine()
     n = 0
     for table in ("hawb_raw", "hawb_air"):
         with eng.begin() as conn:

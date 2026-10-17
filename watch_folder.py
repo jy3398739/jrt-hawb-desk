@@ -58,6 +58,7 @@ def main():
     try:
         while True:
             current = scan()
+            round_dirty = False        # 一轮收口一次重建（C1）：从前每张成功都全量重扫
             # 发现/变化的文件重置稳定计数
             for name, (size, mtime, fpath) in current.items():
                 if name in processed:
@@ -86,11 +87,13 @@ def main():
                             w = f"  ⚠ {len(r['warns'])} 条提示" if r["warns"] else ""
                             print(f"{r['channel']} {r['elapsed']}s 完成{w}")
                             processed.add(name)
-                            store.rebuild_summary()
+                            round_dirty = True
             # 删除已不存在的待处理项
             for name in list(pending):
                 if name not in current and name in processed:
                     pending.pop(name, None)
+            if round_dirty:
+                store.rebuild_summary()    # 一轮一次：这轮有票落盘才值得全量重扫
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("\n已停止监控。")

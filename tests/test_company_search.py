@@ -177,7 +177,11 @@ def test_master_drafts_survive_refresh():
         "主单草稿要自己的键：分单按 stem、主单按 mawb，塞同一个对象会撞键"
 
     save = _fn(html, "mvSave")
-    assert "localStorage.setItem(LS.masterDrafts" in save, "改动要即时落盘"
+    # v1.30.0 起写盘走统一入口 writeMasterDrafts（写满丢最旧再试、还不行当场说一句）：
+    # mvSave 同步调它＝照样即时落盘，守卫钉入口而不是钉裸 setItem
+    assert "writeMasterDrafts(" in save, "改动要即时落盘"
+    assert "localStorage.setItem(LS.masterDrafts" in _fn(html, "writeMasterDrafts"), \
+        "统一写入口里得真有那一下 setItem"
     for frag in ("MV.edit", "MV.acked", "MV.extraFlags", "MV.editBase"):
         assert frag in save, f"落盘要带上 {frag}：缺一样，恢复出来的就是半份工作"
     assert "L.draftEntry" in save and "L.draftPut" in save, "算式在 logic.js，desk.js 只做 localStorage 接线"

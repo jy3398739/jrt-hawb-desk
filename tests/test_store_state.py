@@ -5,6 +5,7 @@
 """
 import json
 import tempfile
+import time
 from pathlib import Path
 
 import config
@@ -82,3 +83,24 @@ def test_lookup_stem_requires_archive_on_disk():
         finally:
             config.SUBMIT_LEDGER = old_ledger
             config.ARCHIVE_DIR, config.OUTPUT_RAW_DIR = old
+
+
+def test_rebuild_requests_coalesce_into_one():
+    """解析队列 4 个 worker 并发完工，从前各自触发一次全量重建、互相覆盖白扫盘
+    （2026-10-17 效率审查 C1）。schedule_rebuild 把「每票一次」合并成「安静 delay 秒后
+    一次」：all_hawbs*.json 是纯派生物，仓内没有运行时读者，晚几秒无碍。
+    第二段证明计时器不是一次性的：安静期之后再来请求要能再触发。"""
+    assert hasattr(store, "schedule_rebuild"), "store 里没有 schedule_rebuild：合并重建没接上"
+    calls = []
+    real = store.rebuild_summary
+    store.rebuild_summary = lambda: calls.append(1)
+    try:
+        for _ in range(5):
+            store.schedule_rebuild(delay=0.05)
+        time.sleep(0.4)
+        assert len(calls) == 1, f"五次请求变成 {len(calls)} 次重建：该是安静后一次"
+        store.schedule_rebuild(delay=0.05)
+        time.sleep(0.4)
+        assert len(calls) == 2, "安静期之后的下一次请求要能再触发，计时器不能是一次性的"
+    finally:
+        store.rebuild_summary = real
