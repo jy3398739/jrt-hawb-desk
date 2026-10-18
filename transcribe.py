@@ -90,9 +90,17 @@ def transcribe_one(path, urls=None) -> dict:
                 extra_body=config.model_extra_body(),
             )
             usage.note(resp, "L1")     # 转录与提取是两次独立收费：合成一栏就分不出扫描件贵在哪一步
+            if not resp.choices:
+                raise retry.Hopeless("响应里一条候选都没有")
+            if getattr(resp.choices[0], "finish_reason", "") == "length":
+                # 截断是确定性的：再发一次还是同一个长度，白花钱还多等一轮
+                raise retry.Hopeless("转录被 max_tokens 截断了（finish_reason=length）："
+                                     "再发一次还是同一个长度，先把 max_tokens 抬上去")
             return _parse(resp.choices[0].message.content)
         except Exception as e:
             last = e
+            if retry.hopeless(e):
+                break          # 报文自己错了 / 答案本身不会变：再发只是白花钱（2026-10-18 效率审查 M1）
             if "timeout" in type(e).__name__.lower():
                 timeout_tries += 1
                 if timeout_tries >= config.VLM_TIMEOUT_TRIES:      # 与 L2 同一条：超时不连撞三次

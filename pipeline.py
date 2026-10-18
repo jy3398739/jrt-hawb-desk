@@ -6,6 +6,7 @@ L1 一律优先直读 PDF 文字层（零 API 调用、逐字真值）：XLSX/XL
 L2/L3 全通道同一条 VLM + to_air 链路。
 """
 from pathlib import Path
+import hashlib
 import time
 
 import config
@@ -25,6 +26,19 @@ def render_pages(src) -> list:
     return vlm_extract.img_to_data_urls(src) if config.MODEL_VISION else []
 
 
+# L1 转录缓存的指纹版本：L1 的取法一变（换提示词、换判文字层的门槛、换模型）就 +1，
+# 老转录自然全部失效——不用去猜哪一次改动动了转录口径。
+L1_CACHE_V = 1
+
+
+def l1_prov(md5: str) -> dict:
+    """L1 转录的指纹：原件 md5 + 此刻的模型 + 转录提示词。
+    三者全对上才算同一份票面——换了模型或改了提示词，转录出来的就不是同一份东西了。
+    **要在转录之前取**：解析途中管理员热切了模型的话，事后现取会把这份转录记到新模型头上。"""
+    return {"v": L1_CACHE_V, "md5": md5, "model": config.VLM_MODEL,
+            "prompt": hashlib.md5(transcribe.TRANSCRIBE_PROMPT.encode("utf-8")).hexdigest()}
+
+
 def transcribe_l1(path, urls=None) -> dict:
     """L1：能直读文字层就直读，读不到（扫描件）才让 VLM 转录。"""
     tr = None
@@ -33,10 +47,15 @@ def transcribe_l1(path, urls=None) -> dict:
     return tr or transcribe.transcribe_one(path, urls=urls)
 
 
-def process_file(path, do_transcript: bool = True) -> dict:
+def process_file(path, do_transcript: bool = True, reuse: dict | None = None,
+                 bag: dict | None = None) -> dict:
     """返回 {raw, air, channel, transcript, src, model, model_choice, timings}。
     src 是真正送进管道的文件：电子单是转出的 PDF，其余就是原件——审核台回看票面要的就是这一张。
-    timings 是分段秒数（render/l1/l2/l3）：没有它，"这一秒值不值得省"只能靠猜。"""
+    timings 是分段秒数（render/l1/l2/l3）：没有它，"这一秒值不值得省"只能靠猜。
+
+    reuse 是调用方认定可以复用的 L1 转录（自动路径重跑同一份原件时给）：给了就跳过转录、
+    只跑 L2/L3。bag 是可写字典，L1 一产出就塞进 bag["transcript"]——管道自己不留盘，
+    但 L2 死在后面时，那份已经付过钱的转录得有路回到调用方手里去落盘。"""
     path = Path(path)
     ext = path.suffix.lower()
     if ext in config.XLS_EXTS:
@@ -49,8 +68,13 @@ def process_file(path, do_transcript: bool = True) -> dict:
     urls = render_pages(src)
     timings["render"] = round(time.perf_counter() - t0, 2)
     t0 = time.perf_counter()
-    tr = transcribe_l1(src, urls) if do_transcript else None
+    if reuse is not None:
+        tr = reuse                       # 复用的转录照旧走完 L2/L3：只省掉一次 L1 调用
+    else:
+        tr = transcribe_l1(src, urls) if do_transcript else None
     timings["l1"] = round(time.perf_counter() - t0, 2)
+    if bag is not None:
+        bag["transcript"] = tr           # 立刻交出去：后面 L2 一死，这份转录就只剩这一条路了
     # 就在调用前一刻取模型名：管理员能在审核台热切模型，等建质检记录时再去读 config，
     # 一张解析了十分钟的票会被记到切换后的那个模型头上，按模型分账的统计就全错了。
     used = {"model": config.VLM_MODEL, "model_choice": config.VLM_MODEL_CHOICE}

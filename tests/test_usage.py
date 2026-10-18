@@ -168,7 +168,7 @@ def test_qc_carries_the_tokens_and_where_the_time_went():
     没有分段耗时，"扫描件渲染两遍值不值得修"这种事只能靠猜。"""
     case = json.loads(FIX.read_text(encoding="utf-8"))
 
-    def stub(path, do_transcript=True):
+    def stub(path, do_transcript=True, reuse=None, bag=None):
         usage.note(_resp(use=_usage(1200, 260, 1460, 180)), "L2")
         usage.note(_resp(use=_usage(400, 60, 460)), "L1")
         return {"raw": case["raw"], "air": dict(case["raw"]), "channel": "vlm",
@@ -186,7 +186,7 @@ def test_qc_carries_the_tokens_and_where_the_time_went():
 def test_a_ticket_that_died_midway_still_reports_what_it_spent():
     """解析失败的票照样烧了额度——那几张最需要算清"这次白花多少"。
     账是在收尾取的，所以中途抛异常不许把账一起丢掉。"""
-    def stub(path, do_transcript=True):
+    def stub(path, do_transcript=True, reuse=None, bag=None):
         usage.note(_resp(use=_usage(1200, 260, 1460)), "L2")
         raise RuntimeError("模型答的不是 JSON")
 
@@ -199,7 +199,7 @@ def test_two_tickets_in_a_row_do_not_share_the_bill():
     """批处理与队列 worker 是同一个线程反复跑：上一张的账没清干净，下一张就报出双倍的数。"""
     case = json.loads(FIX.read_text(encoding="utf-8"))
 
-    def stub(path, do_transcript=True):
+    def stub(path, do_transcript=True, reuse=None, bag=None):
         usage.note(_resp(use=_usage(100, 10, 110)), "L2")
         return {"raw": case["raw"], "air": dict(case["raw"]), "channel": "vlm",
                 "transcript": None, "src": str(path), "model": "m", "model_choice": "c",

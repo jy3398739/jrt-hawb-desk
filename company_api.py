@@ -131,7 +131,16 @@ def _j9_post(path: str, body: dict, key: str, timeout: float | None = None) -> d
             headers={"Content-Type": "application/json", "X-Api-Key": key})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                out = json.loads(resp.read().decode("utf-8"))
+                raw = resp.read().decode("utf-8", "replace")
+                try:
+                    out = json.loads(raw)
+                except ValueError:
+                    # 网关/代理抽风时会回一页 HTML（连 200 都可能）。不兜住这页 HTML 就会
+                    # 冒到 /submit 变成光秃秃 500：现场看不到公司原话，批量里那张票发没发出去
+                    # 也说不清。转成 CompanyApiError，调用方那边一律 502 并把原话带出去。
+                    raise CompanyApiError(
+                        f"j9 {path} 返回的不是 JSON（HTTP {getattr(resp, 'status', '?')}）："
+                        f"{raw.strip()[:200]}") from None
             break
         except urllib.error.HTTPError as e:
             detail = ""

@@ -11,6 +11,29 @@ DELAYS = (2.0, 8.0, 20.0)      # 第 1/2/3 次重试前等多久，之后重复�
 JITTER = 0.25                  # ±25%
 
 
+class Hopeless(Exception):
+    """答案本身不会再变：被 max_tokens 截断、响应里一条候选都没有。
+    重发一次只是再花一次钱，直接失败并把原因说清楚。"""
+
+
+# 报文自己错了（参数不被接受、鉴权、路径不存在）：再发一次还是同一个 4xx。
+# 429 与 5xx 是"对端在抖"，照旧重试；超时那一档另有 VLM_TIMEOUT_TRIES 收口。
+_HOPELESS_NAMES = frozenset((
+    "BadRequestError", "AuthenticationError", "PermissionDeniedError", "NotFoundError",
+    "UnprocessableEntityError", "UnsupportedParamsError", "MethodNotAllowedError"))
+
+
+def hopeless(e) -> bool:
+    """这个失败再发一次有没有意义。判据按 HTTP 码走（openai 的异常都带 status_code），
+    拿不到码时退回按类名认——认不出的照旧当"可以再试"，宁可多试一次也别把能救的判死。"""
+    if isinstance(e, Hopeless):
+        return True
+    code = getattr(e, "status_code", None)
+    if isinstance(code, int):
+        return 400 <= code < 500 and code != 429
+    return type(e).__name__ in _HOPELESS_NAMES
+
+
 def delay(attempt: int) -> float:
     """attempt 从 0 起（第一次失败后要等多久）。"""
     base = DELAYS[min(attempt, len(DELAYS) - 1)]

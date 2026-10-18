@@ -6,7 +6,7 @@ from pathlib import Path
 
 import store
 import usage
-from pipeline import process_file
+from pipeline import process_file, l1_prov
 from validator import validate_raw, validate_air
 from fidelity import verify_fidelity
 
@@ -53,19 +53,30 @@ def recompute_flags(raw: dict | None, air: dict, transcript: dict | None = None)
     return warns
 
 
-def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
+def handle_file(path, save: bool = True, meta: dict | None = None,
+                fresh: bool = False) -> dict:
     """返回 {stem, channel, elapsed, raw, air, transcript, warns, fidelity, archive, qc, error}。
-    meta={"uploader","uploader_role"} 是给质检记录留痕用的（谁传的这张票）。"""
+    meta={"uploader","uploader_role"} 是给质检记录留痕用的（谁传的这张票）。
+
+    fresh=True 表示"人要重跑这一票"（HTTP 上传那条路）：不复用上一次的 L1 转录，整条链重来。
+    自动路径（批处理/监控/站点）不给它，于是重跑同一份原件时能省掉一次 L1 调用——
+    转录与提取是两次独立收费，扫描件重跑一次就白付一半的钱（2026-10-18 效率审查 E1）。"""
     path = Path(path)
     t0 = time.time()
     usage.begin()
     r = {"stem": path.stem, "channel": "", "elapsed": 0.0, "raw": None, "air": None,
          "transcript": None, "warns": [], "fidelity": None, "archive": None,
          "model": "", "model_choice": "", "usage": {}, "timings": {}, "qc": None, "error": ""}
+    prov = None
     try:
         if save:
             r["archive"] = store.archive_original(path)          # L0
-        res = process_file(path)                                 # L1+L2+L3
+        # L1 的指纹在转录**之前**取一次（原件 md5 + 此刻的模型 + 提示词），查复用与落盘共用同一份：
+        # 解析途中管理员热切了模型的话，事后现取会把这份转录记到新模型头上，下次就认错了。
+        md5 = (r["archive"] or {}).get("md5") or ""
+        prov = l1_prov(md5) if md5 else None
+        reuse = store.reusable_transcript(path.stem, prov) if (prov and not fresh) else None
+        res = process_file(path, reuse=reuse, bag=r)             # L1+L2+L3
         r["raw"], r["air"], r["channel"], r["transcript"] = (
             res["raw"], res["air"], res["channel"], res["transcript"])
         r["model"], r["model_choice"] = res.get("model") or "", res.get("model_choice") or ""
@@ -88,11 +99,13 @@ def handle_file(path, save: bool = True, meta: dict | None = None) -> dict:
         r["usage"] = usage.take()      # 中途失败的票也要报出它白烧了多少额度
         r["qc"] = build_qc(path, r, meta)
         if save:
+            # L1 只要拿到手就落盘，失败的票也一样：这份转录是花钱买的，L2 死在后面时
+            # 下次自动重跑能直接复用，不必再买一次（2026-10-18 效率审查 E1）。
+            if r["transcript"] is not None:
+                store.save_transcript(path.stem, r["transcript"], prov=prov)
             if r["error"]:
                 store.save_qc(path.stem, r["qc"])     # 失败的票更要留痕，别让它在 output 里隐身
             else:
-                if r["transcript"] is not None:
-                    store.save_transcript(path.stem, r["transcript"])
                 store.save_result(path.stem, r["raw"], r["air"])
                 store.save_qc(path.stem, r["qc"])
     return r

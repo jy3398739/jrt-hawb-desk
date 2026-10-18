@@ -152,7 +152,13 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
                 extra_body=config.model_extra_body() if extra_body is None else extra_body,
             )
             usage.note(resp, stage)        # 额度是本项目最贵的资源：每一次调用都得数得上来
-            text = resp.choices[0].message.content.strip()
+            if not resp.choices:
+                raise retry.Hopeless("响应里一条候选都没有")
+            if getattr(resp.choices[0], "finish_reason", "") == "length":
+                # 截断是确定性的：同一个请求再发一次还是同一个长度，白花钱还多等一轮
+                raise retry.Hopeless("响应被 max_tokens 截断了（finish_reason=length）："
+                                     "再发一次还是同一个长度，先把 max_tokens 抬上去")
+            text = (resp.choices[0].message.content or "").strip()
             if text.startswith("```"):
                 text = "\n".join(l for l in text.split("\n") if not l.strip().startswith("```"))
             data = json.loads(text)
@@ -163,6 +169,8 @@ def _chat_json(prompt: str, urls: list[str], want: list[str], label: str,
             return data
         except Exception as e:
             last_err = e
+            if retry.hopeless(e):
+                break          # 报文自己错了 / 答案本身不会变：再发只是白花钱（2026-10-18 效率审查 M1）
             if "timeout" in type(e).__name__.lower():
                 timeout_tries += 1
                 # 慢模型重跑一遍还是五分钟，再等一轮只是把人钉在等待上；超时最多试 VLM_TIMEOUT_TRIES 次

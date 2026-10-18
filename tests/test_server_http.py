@@ -31,8 +31,8 @@ def _stubbed():
     case = json.loads(FIX.read_text(encoding="utf-8"))
     real_hf, real_store = server.handle_file, server.store
 
-    def fake_handle_file(path, save=True, meta=None):
-        calls.append({"path": Path(path), "save": save, "meta": meta,
+    def fake_handle_file(path, save=True, meta=None, fresh=False):
+        calls.append({"path": Path(path), "save": save, "meta": meta, "fresh": fresh,
                       "exists": Path(path).exists()})
         return {"stem": Path(path).stem, "channel": "vlm", "elapsed": 0.1,
                 "raw": case["raw"], "air": {"MAWB_NO": "235-96146363"},
@@ -672,6 +672,21 @@ def test_extraction_runs_off_the_event_loop():
     assert "await file.read()" not in src, "整体 read() 会把超大上传一次性吃进内存，要分块写盘"
 
 
+def test_a_manual_upload_never_reuses_the_last_transcription():
+    """口径（2026-10-18 效率审查 E1）：L1 复用只走自动路径（批处理 / 监控 / 站点 worker）。
+    上传这条路是人有意重跑这一票，fresh=True 必须钉在这里——人点重跑多半就是因为上次结果不对，
+    悄悄把上次那份转录喂回去，等于把同一个错误再算一遍，还多花一次提取的钱。
+    这条闸门防的是"顺手把 fresh 去掉"：去掉之后一切照常跑绿，只是钱悄悄多花一倍。"""
+    src = Path(server.__file__).read_text(encoding="utf-8")
+    assert "handle_file(path, True, meta, fresh=True)" in src, \
+        "上传那条路没标 fresh：人工重跑会复用上次的 L1 转录"
+    home = Path(server.__file__).resolve().parent
+    for rel in ("run_batch.py", "watch_folder.py", "site_worker.py"):
+        body = (home / rel).read_text(encoding="utf-8")
+        assert "fresh=True" not in body, \
+            f"{rel} 是自动路径，不该标 fresh：它正该复用上次的 L1（重跑一张已经转录过的票）"
+
+
 def test_main_starts_and_seeds_accounts():
     """main() 起来就该：把默认账号种到 users.json（别落到包目录），并把 uvicorn 拉起来。
     公网绑定不再靠 HTTP_API_KEY 拦，改为一句提醒改默认口令——这是内部署，同事登录即用。"""
@@ -1239,6 +1254,20 @@ def test_layout_serves_stored_transcript_with_page_count():
     anon = TestClient(server.app)
     with _stubbed(), _transcripts({"CLA26090022.json": tr}):
         assert anon.get("/layout/CLA26090022").status_code == 401, "转录接口也要登录"
+
+
+def test_layout_does_not_leak_the_l1_fingerprint():
+    """L1 指纹（原件 md5 / 模型 / 提示词）是复用判据，不是这个接口数据面的一部分：
+    跟着 lines/full_text 一起发出去，前端拿到一份用不上的东西，以后想改指纹还得顾虑它。"""
+    client = TestClient(server.app)
+    tr = {"lines": [{"i": 1, "text": "SHIPPER ALPHA", "bbox": [0, 0, 100, 10]}],
+          "full_text": "SHIPPER ALPHA",
+          "_l1": {"v": 1, "md5": "abc", "model": "某个模型", "prompt": "某个指纹"}}
+    with _stubbed(), _transcripts({"CLA26090022.json": tr}):
+        _login_admin(client)
+        j = client.get("/layout/CLA26090022").json()
+    assert "_l1" not in j, j
+    assert j["lines"] and j["full_text"] == "SHIPPER ALPHA", j
 
 
 def test_layout_explains_missing_and_refuses_traversal():

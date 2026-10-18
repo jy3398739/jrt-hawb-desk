@@ -11,6 +11,7 @@ from pathlib import Path
 import company_api
 import config
 import j9_fake
+import retry
 
 
 def _patch_post(monkey_rows, monkey_master=None, sent=None):
@@ -372,3 +373,42 @@ def test_all_four_write_endpoints_get_the_write_timeout_not_the_read_one():
     assert budget("hawb") == r and budget("mawb") == r, "读口拿读超时就够了"
     for p in ("hawb3", "hawb2", "mawb3", "mawb2"):
         assert budget(p) == w, f"{p} 是写口，实际给的超时是 {budget(p)}"
+
+
+def test_a_non_json_reply_becomes_a_readable_company_error():
+    """网关/代理抽风时会回一页 HTML（甚至带着 200 回来）。从前 json.loads 没兜住，
+    这页 HTML 会冒到 /submit 变成光秃秃 500：现场看不到公司原话，批量里那张票
+    是发出去了还是没发出去也说不清（2026-10-18 效率审查 R2）。
+    现在一律转成 CompanyApiError（带 HTTP 码与响应开头），/submit 捕它 → 502 把原话带出去。"""
+    old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY,
+           config.COMPANY_HAWB_KEY)
+    config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
+    config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY = "km", "kh"
+    real_open, real_wait = company_api.urllib.request.urlopen, retry.wait
+
+    class _Resp:
+        status = 200
+
+        def read(self):
+            return b"<html><body>502 Bad Gateway</body></html>"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    try:
+        company_api.urllib.request.urlopen = lambda req, timeout=None: _Resp()
+        retry.wait = lambda attempt: 0.0
+        try:
+            company_api.search_mawb("020-18134281")
+            raise AssertionError("非 JSON 的响应居然被当成检索成功了")
+        except company_api.CompanyApiError as e:
+            msg = str(e)
+            assert "JSON" in msg, f"没说清是响应不是 JSON：{msg}"
+            assert "502 Bad Gateway" in msg, f"没把响应开头带出来，现场还是看不到原话：{msg}"
+    finally:
+        company_api.urllib.request.urlopen, retry.wait = real_open, real_wait
+        (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY,
+         config.COMPANY_HAWB_KEY) = old

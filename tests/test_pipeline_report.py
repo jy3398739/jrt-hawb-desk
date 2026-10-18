@@ -159,3 +159,61 @@ def test_process_file_says_where_the_time_went():
     assert t["l2"] >= 0.04, f"提取那一格没在计时：{t}"
     for k, v in t.items():
         assert isinstance(v, float) and v >= 0, f"{k} 那一格不是个能读的秒数：{v!r}"
+
+
+# ── L1 转录复用（2026-10-18 效率审查 E1）──────────────────────────────────
+
+
+def test_a_reused_l1_skips_the_transcription_call():
+    """自动路径重跑一张票时，L1 直接拿上次那份，不再调模型。
+    转录与提取是两次独立收费：扫描件重跑一次就白付一半的钱。"""
+    case = json.loads(FIX.read_text(encoding="utf-8"))
+    n = {"l1": 0}
+    seen = {}
+
+    def counting_l1(path, urls=None):
+        n["l1"] += 1
+        return {"lines": [{"i": 1, "text": "MAWB NO. 1", "bbox": [0, 0, 9, 9]}],
+                "full_text": "MAWB NO. 1"}
+
+    def fake_l2(path, transcript=None, urls=None):
+        seen["tr"] = transcript
+        return dict(case["raw"])
+
+    stored = {"lines": [{"i": 1, "text": "SHIPPER ALPHA", "bbox": [0, 0, 9, 9]}],
+              "full_text": "SHIPPER ALPHA"}
+    old = _swap({"l1": counting_l1, "l2": fake_l2})
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            pdf = Path(d) / "某分单 TAO3333333.pdf"
+            pdf.write_bytes(b"%PDF-1.4 ticket")
+            res = pipeline.process_file(pdf, reuse=stored)
+    finally:
+        _restore(old)
+    assert n["l1"] == 0, "给了上次的转录还是又调了一次 L1：这一步是单独收费的"
+    assert res["transcript"] == stored, "交回去的不是复用的那一份"
+    assert seen["tr"] == stored, "L2 拿到的不是复用的那一份"
+
+
+def test_the_l1_we_already_paid_for_reaches_the_caller_when_l2_dies():
+    """L2 挂了，L1 的钱已经花出去：那份转录必须交回调用方去落盘。
+    管道自己不留盘，所以要有条路把它带出来——否则这份钱白花。"""
+    def boom(path, transcript=None, urls=None):
+        raise RuntimeError("L2 提取失败")
+
+    old = _swap({"l1": lambda p, urls=None: {"lines": [{"i": 1, "text": "X", "bbox": [0, 0, 1, 1]}],
+                                             "full_text": "X"},
+                 "l2": boom})
+    bag = {}
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            pdf = Path(d) / "某分单 TAO4444444.pdf"
+            pdf.write_bytes(b"%PDF-1.4 ticket")
+            try:
+                pipeline.process_file(pdf, bag=bag)
+            except RuntimeError:
+                pass
+    finally:
+        _restore(old)
+    assert bag.get("transcript"), "L2 失败时 L1 转录没交出来：这份钱白花了"
+    assert bag["transcript"]["full_text"] == "X"

@@ -55,6 +55,7 @@ import desk_queue
 import fieldspec
 import jobs
 import master_pipeline
+import metrics
 import purge
 import stats
 import store
@@ -739,7 +740,9 @@ def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str, role: str)
     meta = {"uploader": who, "uploader_role": role}
     try:
         try:
-            r = handle_file(path, True, meta)
+            # fresh=True：上传这条路是人有意重跑这一票（重传也走这里），不复用上次的 L1 转录。
+            # 复用只留给自动路径（批处理/监控/站点），口径见 jobs.handle_file。
+            r = handle_file(path, True, meta, fresh=True)
             if not r["error"]:
                 store.schedule_rebuild()   # 合并重建：安静 3 秒后一次，别 4 个 worker 抢着全量扫
         except (Exception, SystemExit) as e:
@@ -1000,8 +1003,23 @@ def stats_report(date_from: str = Query("", alias="from", description="含端点
             "summary": stats.summary(rows, group_by or None), "rows": rows}
 
 
-_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+@app.get("/metrics")
+def metrics_report(date_from: str = Query("", alias="from", description="含端点的起始日 yyyy-mm-dd"),
+                   date_to: str = Query("", alias="to", description="含端点的截止日 yyyy-mm-dd"),
+                   _: dict = Depends(require_admin)):
+    """额度与耗时花在哪：按天 / 按模型 / 按阶段聚合每张票 qc 里的 token 账与分段耗时，
+    外加失败按类分档。
 
+    `usage` 与 `timings` 从 v1.20.0 起就落在 qc 里了，缺的只是一个出口——没有它，
+    "换模型省了多少、哪类失败最多、卡在哪一段"只能一张张翻 qc。算术只有 `metrics.py` 一处。
+    这是运维视角的数：制单员/录入员用不到，也不该看到别人的账单，所以挂管理员门禁。"""
+    for d in (date_from, date_to):
+        if d and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            raise HTTPException(400, f"日期要写成 2026-09-30 这种四位日期：{d!r}")
+    return {"ok": True, **metrics.collect(store.load_qc(), date_from, date_to)}
+
+
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 @app.get("/stats/export")
 def stats_export(date_from: str = Query("", alias="from"), date_to: str = Query("", alias="to"),
@@ -1164,6 +1182,7 @@ def layout(stem: str, _: None = Depends(require_web)):
     except Exception as e:
         raise HTTPException(500, f"转录文件读坏了（{type(e).__name__}: {e}），可删掉 output/transcript/{name}.json 后重跑该票")
     pages = max([int(l.get("page") or 1) for l in (data.get("lines") or []) if isinstance(l, dict)] or [1])
+    data.pop("_l1", None)          # 指纹是给复用判据用的，不进这个接口的数据面
     return {**data, "pages": pages}
 
 

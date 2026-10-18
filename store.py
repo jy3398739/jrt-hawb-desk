@@ -48,8 +48,27 @@ def archive_original(path: Path) -> dict:
     return manifest
 
 
-def save_transcript(stem: str, transcript: dict):
-    _write(config.TRANSCRIPT_DIR / f"{stem}.json", transcript)
+def save_transcript(stem: str, transcript: dict, prov: dict | None = None):
+    """L1 逐字转录落盘。prov 是这份转录的指纹（见 `pipeline.l1_prov`）：
+    带上它，下次自动路径重跑同一份原件时，才认得出这份转录还能不能用。"""
+    data = dict(transcript or {})
+    if prov is not None:
+        data["_l1"] = dict(prov)
+    _write(config.TRANSCRIPT_DIR / f"{stem}.json", data)
+
+
+def reusable_transcript(stem: str, prov: dict) -> dict | None:
+    """上一次的 L1 转录能不能直接复用：指纹（原件 md5 / L1 模型 / 提示词）一模一样才算。
+    没有指纹的老转录一律返回 None——宁可重跑一次，也不把一份来路不明的转录当票面真值。
+    返回的是转录本体，指纹不进 lines/full_text 那份数据。"""
+    p = config.TRANSCRIPT_DIR / f"{stem}.json"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if data.get("_l1") != prov:
+        return None
+    return {k: v for k, v in data.items() if k != "_l1"}
 
 
 def already_done(path: Path) -> bool:

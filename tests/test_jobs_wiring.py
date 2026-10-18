@@ -20,8 +20,11 @@ class _FakeStore:
         self.calls.append(("L0", Path(p).name))
         return {"md5": "stub"}
 
-    def save_transcript(self, stem, tr):
+    def save_transcript(self, stem, tr, prov=None):
         self.calls.append(("L1", stem))
+
+    def reusable_transcript(self, stem, prov):
+        return None          # 这组用例盯的是接线：复用本身在 test_l1_reuse 里单独测
 
     def save_result(self, stem, raw, air):
         self.calls.append(("L2L3", stem))
@@ -38,7 +41,7 @@ def _run(raw, transcript, *, raises=None, save=True, src=None, meta=None):
     fs = _FakeStore()
     real_store, real_pf = jobs.store, jobs.process_file
 
-    def fake_process_file(path):
+    def fake_process_file(path, do_transcript=True, reuse=None, bag=None):
         if raises:
             raise raises
         out = {"raw": raw, "air": to_air.to_air(raw), "channel": "vlm", "transcript": transcript,
