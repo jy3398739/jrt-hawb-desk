@@ -128,3 +128,72 @@ def test_no_top_level_function_is_declared_twice():
     names = re.findall(r"^(?:async )?function ([A-Za-z0-9_]+)", js, re.M)
     dup = sorted({n for n in names if names.count(n) > 1})
     assert not dup, f"顶格重名，后一份会盖掉前一份：{dup}"
+
+
+# ── 队列只放「还没做完的票」（2026-10-18 用户报的：拿掉的刷新又回来、已提交的还在队列里）──
+
+
+def test_a_removed_ticket_does_not_come_back_on_refresh():
+    """「从列表移除」从前只改内存里那个数组：刷新时 restoreQueue 照 /day 重新派生一遍，
+    拿掉的原样回来。现在落一份本机记忆，补桌时跳过——只记今天，/day 本来就是按天的，
+    跨天自然失效（第二天重新动过它就该回来）。"""
+    js = web_src.part("js/desk.js")
+    rq = web_src.fn(js, "async function restoreQueue(")
+    assert "L.droppedToday(droppedRaw(), dayKey())" in rq, \
+        "补桌时没看「今天拿掉过谁」那份记忆：拿掉的刷新就回来"
+    assert "&& !x.submitted && gone.indexOf(x.stem) < 0);" in rq, \
+        "补桌的筛子要同时排掉「已提交」与「今天拿掉过」这两档——判据整行钉住，少一样就漏一档"
+    lv = web_src.fn(js, "function leaveQueue(")
+    assert "if (remember) rememberDropped(t.stem);" in lv, \
+        "拿掉那一下没记下来（整行钉住：只有人点的那一路才记，提交那一路不许记）"
+    assert "localStorage.setItem(LS.dropped" in web_src.fn(js, "function rememberDropped("), \
+        "记忆要落本机（服务器不知道人拿掉过谁），键用 LS.dropped"
+    ls = re.search(r"const LS = \{.*?\};", js, re.S)
+    assert ls and "dropped:" in ls.group(0), "LS 表里没登记 dropped 这个键"
+    assert "forgetDropped(" in web_src.fn(js, "async function openHouse("), \
+        "从今日台账主动点开一张拿掉过的票，得把它从记忆里摘掉——那是人主动要它回来"
+
+
+def test_a_submitted_ticket_leaves_the_queue():
+    """交出去＝这票做完了（用户：「我都已经提交了是不是应该从列队里自动删除，证明已经完成
+    这票业务了」）。判据用服务器那份 /day 的 submitted，不靠本机记忆——换台机器登录、
+    换个浏览器都一样。"""
+    js = web_src.part("js/desk.js")
+    rq = web_src.fn(js, "async function restoreQueue(")
+    assert "x.submitted" in rq, "补桌没跳过已提交的行：今天交出去的票刷新后又回队列"
+    sub = web_src.fn(js, "async function submitTicket(")
+    assert "leaveQueue(t, false)" in sub, \
+        "提交成功没当场把它从队列拿掉；第二参 false 说的是不记本机记忆——已提交由服务器那份判"
+    assert "leaveQueue(t, false)" in sub.split("afterWrite(")[0], \
+        "拿掉要排在回账之前：afterWrite 里那颗「跳下一票」否则会从刚交出去那张身上往下找"
+    assert sub.count("leaveQueue(") == 1, \
+        "只有成功那一条尾巴才许拿掉：失败、接口没开通那两条路票还在人手上"
+
+
+def test_removing_a_ticket_takes_its_unsaved_edits_with_it():
+    """改过值的票拿掉时，本机那份未保存的编辑要一起撤：留着就成了「队列里没了、未保存里还在」，
+    两个列表各说各话（用户报的「他会跳转到未保存里」正是这个——renderDrafts 只藏队列里那些
+    票的草稿，票一离开队列那份草稿就露头）。撤了就没了，所以先问一句。"""
+    js = web_src.part("js/desk.js")
+    one = web_src.fn(js, "function wireMain(")
+    assert "confirmDropEdits(t)" in one and "dropDraft(t.stem)" in one, \
+        "「从列表移除」没把本机那份编辑一起撤掉"
+    row = web_src.fn(js, "async function dropRow(")
+    assert "confirmDropEdits(t)" in row and "dropDraft(t.stem)" in row, \
+        "行上那颗 × 与操作条那颗走同一条口径"
+    c = web_src.fn(js, "function confirmDropEdits(")
+    assert "draftFlush()" in c, "判据要等于盘上那份：待写的那份先落盘再读（与 renderDrafts 同一手）"
+    assert "confirm(" in c and "return true" in c, \
+        "有本机编辑要先问一句；没有就静默拿掉，别多问"
+
+
+def test_the_dropped_memory_only_lasts_the_day():
+    """「今天拿掉过谁」只认今天：/day 本来就是按天的，跨天自然失效。写坏了的那份一律当空——
+    一份坏数据不许把整桌票挡在门外。"""
+    assert web_src.logic("L.droppedToday({A:'2026-10-18',B:'2026-10-17'}, '2026-10-18')") == ["A"]
+    assert web_src.logic("L.droppedToday({}, '2026-10-18')") == []
+    assert web_src.logic("L.droppedToday(null, '2026-10-18')") == []
+    assert web_src.logic("L.droppedToday(bad, '2026-10-18')", bad="坏数据") == []
+    assert web_src.logic("L.droppedToday({A:'2026-10-18'}, '')") == [], \
+        "没有今天这个键时什么都不算拿掉过"
+

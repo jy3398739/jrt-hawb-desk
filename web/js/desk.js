@@ -56,7 +56,8 @@ const SUBMIT_URL = BASE + "/submit";
 
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate", dayDensity:"hawb.review.day.density",
             locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
-            split:"hawb.review.split", colK:"hawb.review.colK", open:"hawb.review.open"};
+            split:"hawb.review.split", colK:"hawb.review.colK", open:"hawb.review.open",
+            dropped:"hawb.review.dropped"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -1149,7 +1150,12 @@ async function submitTicket(t){
   /* 这一发里没确认就发出去的那些空栏，服务器按 skipped_empty 留痕；本机照同一档收起来。
      刚点完提交还催「仍有 N 项待核对」是最容易被当成"按钮没生效"的一种话。 */
   t.skipE = [...new Set((t.skipE || []).concat(ticketTodo(t).todo.keys))];
-  dropDraft(t.stem); render(); toast("已提交：" + t.stem, "ok");
+  dropDraft(t.stem); toast("已提交：" + t.stem, "ok");
+  /* 交出去＝这票做完了：当场从队列拿掉（用户 2026-10-18：「我都已经提交了，是不是应该从
+     队列里自动删除，证明已经完成这票业务了」）。第二参 false：不记本机记忆——已提交由
+     服务器那份 /day 的 submitted 判，换台机器登录也一样。afterWrite 里那颗「跳下一票」
+     因此从还没交的那些里往下找。 */
+  leaveQueue(t, false);
   afterWrite(t, true);
   /* 回执里服务端随带的话要露头（比如"没读到这条主单在公司侧的状态，这次按你说的走"）：
      它没让提交失败，但也不等于验过了——不说，人就会以为顺序已经替他把过关。 */
@@ -1199,13 +1205,71 @@ function needsReview(t){
   return ticketTodo(t).todo.n > 0;
 }
 function current(){ return S.tickets.find(t => t.stem === S.sel) || S.tickets.find(t => t.filename === S.sel); }
+/* ── 队列只放「还没做完的票」（2026-10-18 用户报的两件事）────────────────────
+   ①「我点从列表删除，一旦我刷新页面他们又会出现在列队里」；②「我都已经提交了，是不是应该
+   从列队里自动删除，证明已经完成这票业务了」。根因是队列在每次开页面时由 restoreQueue 照
+   /day 重新派生，而"拿掉"只改了内存里那个数组、一个字节都没留。
+   两半各归其位：**已提交**由服务器那份（/day 行的 submitted）说了算，换台机器登录也一样；
+   **拿掉过谁**由本机记（服务器不知道人拿掉过谁），只记今天。 */
+function dayKey(){
+  /* 本机今天。别用 toISOString().slice(0,10)——那是 UTC，晚上八点之后会算成"明天"，
+     这份"只记今天"的记忆就提前一天失效。 */
+  const n = new Date();
+  return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-"
+         + String(n.getDate()).padStart(2, "0");
+}
+function droppedRaw(){
+  try{
+    const d = JSON.parse(localStorage.getItem(LS.dropped) || "{}");
+    return (d && typeof d === "object") ? d : {};
+  }catch(e){ return {}; }
+}
+function rememberDropped(stem){
+  if (!stem) return;
+  try{
+    const d = droppedRaw(); d[stem] = dayKey();
+    localStorage.setItem(LS.dropped, JSON.stringify(d));
+  }catch(e){}   /* 存不进去（隐私模式/写满）顶多下次刷新它再冒出来，不该把"拿掉"这个动作带崩 */
+}
+function forgetDropped(stem){
+  if (!stem) return;
+  try{
+    const d = droppedRaw();
+    if (!Object.prototype.hasOwnProperty.call(d, stem)) return;
+    delete d[stem];
+    localStorage.setItem(LS.dropped, JSON.stringify(d));
+  }catch(e){}
+}
+/* 从这一页的列表里拿掉一张。remember=true 时记进本机那份记忆（刷新后不再种回来）；
+   提交成功那一路传 false——已提交由服务器那份 /day 判，不靠本机记。 */
+function leaveQueue(t, remember){
+  const i = S.tickets.indexOf(t);
+  if (i < 0) return;
+  S.tickets.splice(i, 1);
+  if (S.sel === (t.stem || t.filename))
+    S.sel = S.tickets.length ? (S.tickets[Math.max(0, i - 1)].stem || S.tickets[Math.max(0, i - 1)].filename) : null;
+  if (remember) rememberDropped(t.stem);
+  render();
+}
+/* 拿掉一张改过值的票时，本机那份未保存的编辑跟着撤。不撤就成了「队列里没了、未保存里还在」，
+   两个列表各说各话——用户报的「他会跳转到未保存里」正是这个（renderDrafts 只藏队列里那些票
+   的草稿，票一离开队列那份草稿就露头）。改过的值从没上过服务器，撤了就没了，所以先问一句。 */
+function confirmDropEdits(t){
+  if (!t || !t.stem) return true;
+  draftFlush();                        // 待写那份先落盘，判据才等于盘上那份（与 renderDrafts 同一手）
+  const d = drafts()[t.stem];
+  if (!d) return true;                 // 没有本机编辑就别多问一句
+  const n = Object.keys(d.airE || {}).length;
+  return confirm("这张有没保存的改动（改 " + n + " 项，从没上过服务器），一起撤掉？\n\n"
+                 + "撤掉之后刷新页面它也不会再回到队列里；要看这张票去「今日归档」。");
+}
 /* 行上那颗 × 说的是三种不同的事，标题就得说三种：排队中的还没传出去（本机队列是一张一张发的），
    在跑的那一张服务器掐不掉（模型调用与 LibreOffice 子进程都在 worker 手里，硬杀会把解析到一半
    的票留在盘上），失败的那一张只是别再碍眼。写成一句"已删除"就是三句里两句假话。 */
 function dropTitle(t){
   if (t.state === "queued") return "还没开始解析：从列表里拿掉，也不会传去服务器";
   if (t.state === "busy") return "这张已经在解析了：删掉只是不再取它的结果（解析掐不掉，钱已经花了）";
-  return "从列表里拿掉（服务器上的解析结果不动，要彻底删除走「数据清理」）";
+  return "从列表里拿掉，刷新后也不再回到队列（服务器上的解析结果不动；要看这张票去「今日归档」，彻底删除走「数据清理」）";
 }
 /* 取消一张作业：三种结局（cancelled / running / gone）由服务器说，请求本身失败算第四种。
    这里不写界面话术——调用方有两处，要说的话不一样：行上那颗 × 要报给本人，
@@ -1221,11 +1285,10 @@ async function dropRow(i){
   const t = S.tickets[i];
   if (!t) return;
   const job = t.job;
+  if (!confirmDropEdits(t)) return;       // 有本机编辑先问一句：撤了就没了
+  if (t.stem) dropDraft(t.stem);
   t.dropped = true;                       // 轮询靠它收手：不然这张的 poller 会一直敲到 30 分钟上限
-  S.tickets.splice(i, 1);
-  if (S.sel === (t.stem || t.filename))
-    S.sel = S.tickets.length ? (S.tickets[Math.max(0, i - 1)].stem || S.tickets[Math.max(0, i - 1)].filename) : null;
-  render();
+  leaveQueue(t, true);
   if (!job) return;                       // 还没传出去的（本机队列一张一张发）：删了就是删了
   const j = await cancelJob(job);
   /* 三句话三张皮（类别只认 .toast.bad/.toast.ok）：掐掉了是好消息；
@@ -2025,10 +2088,9 @@ function wireMain(t){
   $("#prevOne").addEventListener("click", () => stepTicket(-1));
   $("#nextOne").addEventListener("click", () => stepTicket(1));
   $("#dropOne").addEventListener("click", () => {
-    const i = S.tickets.indexOf(t);
-    S.tickets.splice(i, 1);
-    S.sel = S.tickets.length ? (S.tickets[Math.max(0, i - 1)].stem || S.tickets[Math.max(0, i - 1)].filename) : null;
-    render();
+    if (!confirmDropEdits(t)) return;     // 本机那份编辑要一起撤，先问一句
+    if (t.stem) dropDraft(t.stem);
+    leaveQueue(t, true);
   });
 }
 
@@ -2360,6 +2422,7 @@ function mstRender(j, mawb){
 let OH_SEQ = 0;   // 在飞守卫（与票面图 _pvSeq/_pdfSeq 同款）：连点两张票，慢的旧响应不许盖上后点的
 async function openHouse(stem){
   const hit = S.tickets.find(t => t.stem === stem);
+  forgetDropped(stem);   // 人主动点开它：从「今天拿掉过谁」里摘掉，别再把它挡在队列外
   /* 种子行（刷新后从服务器种回来的那批）身上只有号与状态，点开它才去取完整那份。 */
   if (hit && hit.state !== "seed"){ mvOff(); S.sel = stem; render(); $("#view").scrollIntoView({behavior:"smooth", block:"start"}); return; }
   const seq = ++OH_SEQ;
@@ -2436,7 +2499,11 @@ async function restoreQueue(){
     const r = await fetch(BASE + "/day");
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return;
-    rows = (j.rows || []).filter(x => x.kind !== "master" && x.stem && !x.voided);
+    /* 队列只放还没做完的：**已提交**的（服务器那份说了算，换台机器登录也一样）与
+       **今天被拿掉过**的（本机记的，服务器不知道）都不种回来。 */
+    const gone = L.droppedToday(droppedRaw(), dayKey());
+    rows = (j.rows || []).filter(x => x.kind !== "master" && x.stem && !x.voided
+                                     && !x.submitted && gone.indexOf(x.stem) < 0);
   }catch(e){ return; }              // 拿不到就照旧：空列表加一句「尚无票据」，别在开门时弹窗
   if (!rows.length) return;
   /* 这几百毫秒里人可能已经点开了本机未保存的编辑、或刚丢上去一张：那几张不能被补桌整个盖掉。
