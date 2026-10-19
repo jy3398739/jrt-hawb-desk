@@ -463,6 +463,20 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .sdot{width:8px;height:8px;border-radius:50%;background:var(--c-bad);display:inline-block;margin-left:6px;
   vertical-align:middle}
 @media (max-width:900px){.setgrid{grid-template-columns:minmax(0,1fr)}}
+/* 更新说明窗（仅管理员，入口在「设置」的版本节）：一张窄窗，只有列表自己滚——
+   没有表头，不进「自己滚的带表浮层」sticky 那一家；当前版本那条用主色系点出来。 */
+.chlogbox{width:min(600px,100%);max-width:100%;padding:0;max-height:86vh;display:flex;flex-direction:column}
+.chlogbox .t{font-size:var(--f-base)}
+.chloglist{overflow:auto;padding:4px 16px 16px}
+.chlogrow{padding:10px 0;border-bottom:1px solid var(--c-line-soft)}
+.chlogrow:last-child{border-bottom:0}
+.chlogrow.cur{background:var(--c-accent-sel);border-radius:var(--r-md);padding-left:10px;padding-right:10px}
+.chloghead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.chloghead b{font-size:var(--f-base);color:var(--c-text-1)}
+.chlogdate{font-size:var(--f-sm);color:var(--c-text-2)}
+.chlogcur{font-size:var(--f-xs);color:var(--c-accent);background:var(--c-accent-soft);
+  border:1px solid var(--c-accent-line);border-radius:999px;padding:1px 8px}
+.chlogitem{margin-top:4px;font-size:var(--f-md);color:var(--c-text-2);line-height:1.5}
 /* 统计窗口里是一张看板（六卡 + 左条形图 + 右明细表），所以窗口给到接近原型那个 1380px；
    正文自己滚，标题行放不下就换行（起止日期 + 分组 + 刷新 + 导出 + 关闭）。 */
 .statsbox{width:min(1360px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}

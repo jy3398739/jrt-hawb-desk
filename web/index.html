@@ -160,7 +160,23 @@
           管理员口令还是默认值 · 点这里去改</button>
         <p class="hint hintp flush">制单员与录入员的口令也在这里下发；改自己的口令：上方填 admin + 新口令保存。</p>
       </section>
+      <section class="setsec">
+        <div class="t2">版本</div>
+        <div class="setacts"><button class="btn" id="btnChlog" hidden title="每个版本改了什么，大白话一条；升上新版后进页会自动弹一次的就是这张（仅管理员）">更新说明…</button></div>
+        <p class="hint hintp flush">升上新版后自动弹一次，看完关掉就不再弹；更早的版本也都在清单里。</p>
+      </section>
     </div>
+  </div>
+</div>
+
+<!-- 更新说明：每次发版在 changelog.js 最上面加一条，这扇窗照着画（v1.31.2 用户：管理员的
+     界面要一个「每次更新的说明」按钮）。升上新版后仅管理员自动弹一次，看过记在本机
+     localStorage、按版本记，回滚到没写说明的旧版不弹；内容是纯静态数据，没有接口、
+     没有 .py，改它连服务都不用重启。入口收在「设置」里，顶栏不再加项。 -->
+<div class="gate" id="chlogWin" hidden>
+  <div class="card chlogbox">
+    <div class="t">更新说明<span class="sp"></span><button class="btn sm gh" id="chlogClose" type="button">关闭</button></div>
+    <div class="chloglist" id="chlogList"></div>
   </div>
 </div>
 
@@ -308,6 +324,7 @@
 <div id="toasts" aria-live="polite"></div>
 
 <script src="web/js/logic.js"></script>
+<script src="web/js/changelog.js"></script>
 <script src="web/js/desk.js"></script>
 </body>
 </html>

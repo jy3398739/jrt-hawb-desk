@@ -57,7 +57,7 @@ const SUBMIT_URL = BASE + "/submit";
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate", dayDensity:"hawb.review.day.density",
             locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
             split:"hawb.review.split", colK:"hawb.review.colK", open:"hawb.review.open",
-            dropped:"hawb.review.dropped"};
+            dropped:"hawb.review.dropped", chlogSeen:"hawb.review.chlog.seen"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -866,6 +866,7 @@ async function probe(){
     $("#verTag").title = "版本 " + (r.version || "?") + "（形态 " + (r.form || "?") + "）\n"
       + "代码构建：" + (r.built_at || "?") + "\n进程启动：" + (r.started_at || "?")
       + (r.commit ? "\ngit：" + r.commit : "\n服务器只收 tar 推的文件，没有 git 仓库");
+    chlogAutoOpen(r.version || "");          // 升上新版后进页弹一次更新说明（仅管理员）
     /* 服务端跑的是改动前的旧进程时，票面浏览这类新功能会像坏了——直接说清是没重启 */
     const stale = r.stale_files || [];
     $("#svcDot").className = "dot " + (stale.length ? "bad" :
@@ -2188,6 +2189,7 @@ function applyRole(){
   $("#btnStats").hidden = !admin;            // 统计仅管理员（/stats 与 /stats/export 后端也是这道门）
   $("#btnPurge").hidden = !admin;            // 数据清理同样仅管理员；藏按钮只是遮眼睛，门在服务端
   $("#btnSet").hidden = !admin;              // 收纳入口本身：非管理员连「设置」都不该看见
+  $("#btnChlog").hidden = !admin;            // 更新说明收在设置里，同一个门
   if (admin) purgeBadgeLoad();               // 开门就看见有几张到期了，但删除仍要人点下去
   $("#pwWarn").hidden = !(admin && PW_DEFAULT);   // 默认口令没改：把话放在管理员天天看得见的地方
   $("#btnSetDot").hidden = !(admin && PW_DEFAULT); /* 告警收进设置之后，顶栏留一个圆点：
@@ -2266,11 +2268,53 @@ async function saveAcct(name, password, role){
     if (ME && name === ME.name) await checkAuth();   // 改的是自己的口令：顶栏那颗提示要当场灭掉
   }catch(e){ acctErr("保存失败：" + (e.message || e)); }
 }
+/* ── 更新说明（仅管理员，入口在「设置」）────────────────────────────────
+   内容在 changelog.js 里，每次发版加一条；这扇窗照着画。升上新版后自动弹一次：
+   seen 记在本机 localStorage、按版本记；回滚到没写说明的旧版＝没话可说，不弹。 */
+function chlogRows(){
+  return (typeof CHANGELOG === "undefined") ? [] : (Array.isArray(CHANGELOG) ? CHANGELOG : []);
+}
+function chlogSeenGet(){
+  try{ return localStorage.getItem(LS.chlogSeen) || ""; }catch(e){ return ""; }
+}
+function chlogMarkSeen(v){
+  try{ localStorage.setItem(LS.chlogSeen, String(v || "")); }catch(e){}
+}
+function chlogCurrent(){
+  const m = /^v([0-9.]+)/.exec($("#verTag").textContent);
+  return m ? m[1] : "";
+}
+function chlogRender(cur){
+  const rows = chlogRows();
+  $("#chlogList").innerHTML = rows.map(r => {
+    if (!r || !r.v) return "";
+    const isCur = !!cur && String(r.v) === String(cur);
+    const its = (Array.isArray(r.items) ? r.items : [])
+      .map(it => '<div class="chlogitem">' + esc(it) + '</div>').join("");
+    return '<div class="chlogrow' + (isCur ? " cur" : "") + '">'
+      + '<div class="chloghead"><b>v' + esc(r.v) + '</b>'
+      + (r.date ? '<span class="chlogdate">' + esc(r.date) + '</span>' : "")
+      + (isCur ? '<span class="chlogcur">当前版本</span>' : "") + '</div>' + its + '</div>';
+  }).join("") || '<p class="hint hintp">这份说明还没写过：changelog.js 里还是空的。</p>';
+}
+function chlogOpen(){
+  const cur = chlogCurrent();
+  chlogRender(cur);
+  chlogMarkSeen(cur);
+  openGate("chlogWin");
+}
+function chlogAutoOpen(version){
+  if (!ME || ME.role !== "admin") return;   // 说明窗是设置的一节：制单员既看不见也不该被打扰
+  if (!L.chlogShouldOpen(version, chlogSeenGet(), chlogRows())) return;
+  chlogOpen();                              // 打开即记 seen：这一版弹一次，关掉不再回来
+}
 /* 设置浮层：管理员入口的收纳处。开合只管这一层，里面每颗按钮打开的还是原来那张窗口。 */
 function openSet(){ $("#setWin").hidden = false; $("#btnSet").setAttribute("aria-expanded", "true"); }
 function closeSet(){ $("#setWin").hidden = true; $("#btnSet").setAttribute("aria-expanded", "false"); }
 $("#btnSet").addEventListener("click", () => { $("#setWin").hidden ? openSet() : closeSet(); });
 $("#setClose").addEventListener("click", () => { closeSet(); $("#btnSet").focus(); });
+$("#btnChlog").addEventListener("click", chlogOpen);
+$("#chlogClose").addEventListener("click", () => { $("#chlogWin").hidden = true; });
 /* 从设置里点开任何一张窗口，都要先把设置那一层收掉：两层都是全屏遮罩、同一个 z-index，
    叠着开就是新窗口压在设置底下——点了「解析正确率」却还看着设置，比不点更像坏了（浏览器里量到的）。 */
 function openGate(id){
@@ -2286,7 +2330,7 @@ $("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说
    焦点还给打开它的按钮，否则下一次 Tab 要从页面顶上重走一遍。
    登录遮罩 #gate 不在内：真正的门在服务端（未登录什么接口都调不动），但"Esc 一掀就露出页面"
    看着像门禁失效，这个错觉不给。 */
-const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct"};
+const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct", chlogWin: "#btnChlog"};
 function closeTopGate(){
   const open = [...document.querySelectorAll(".gate:not(#gate)")].filter(g => !g.hidden);
   if (!open.length) return false;

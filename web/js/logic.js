@@ -346,6 +346,26 @@ const L = {
     return Object.keys(m).filter(k => m[k] === today);
   },
 
+  /* 更新说明：当前运行版本那条在不在清单里。清单读坏了、不是数组的一律当没有——
+     一份坏数据不许把启动链拖死，说明窗空着也比报错强。 */
+  chlogRow(list, version){
+    const rows = Array.isArray(list) ? list : [];
+    const v = String(version || "");
+    if (!v) return null;
+    for (let i = 0; i < rows.length; i++){
+      if (rows[i] && String(rows[i].v) === v) return rows[i];
+    }
+    return null;
+  },
+
+  /* 要不要自动弹一次：版本与上次看过的不同，且清单里真有这一版的说明。
+     回滚到没写说明的旧版＝没话可说，不打扰；这是纯判据，弹那一下的权限在 desk.js 认。 */
+  chlogShouldOpen(version, seen, list){
+    const v = String(version || "");
+    if (!v || v === String(seen || "")) return false;
+    return L.chlogRow(list, v) != null;
+  },
+
   /* ── 票面浏览的缩放档位 ────────────────────────────────────────────────
      内嵌阅读器只吃地址参数（view=FitH / view=Fit / zoom=数字），所以"下一档是什么"得我们自己算。
      坑在于：整页 = min(按宽, 按高)，票面栏比票更高时按宽就是那个最小值，FitH 与 Fit 算出同一个
