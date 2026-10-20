@@ -34,7 +34,7 @@ class _ModelState:
 
     def __enter__(self):
         self.old = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE,
-                    config.MASTER_VLM_MODEL, config.MODEL_THINKING)
+                    config.MASTER_VLM_MODEL, config.MODEL_THINKING, config.MASTER_MODEL_THINKING)
         self._dir = tempfile.TemporaryDirectory()
         env = Path(self._dir.name) / ".env"
         env.write_text(f"VLM_MODEL={config.VLM_MODEL_CHOICE}\n"
@@ -44,7 +44,7 @@ class _ModelState:
 
     def __exit__(self, *exc):
         (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.ENV_FILE,
-         config.MASTER_VLM_MODEL, config.MODEL_THINKING) = self.old
+         config.MASTER_VLM_MODEL, config.MODEL_THINKING, config.MASTER_MODEL_THINKING) = self.old
         self._dir.cleanup()
         return False
 
@@ -262,20 +262,65 @@ def test_thinking_switch_three_modes_and_only_where_supported():
         config.set_thinking("")
 
 
-def test_master_chain_thinking_follows_its_own_preset():
-    """两条链可以指向不同渠道：分单开思考不许把主单也带上（主单是纯文本任务，
-    而且那条链可能压根不支持这个参数）。"""
+def test_master_chain_thinking_is_independent_from_hawb():
+    """2026-10-19 用户要拆：分单与主单各一个思考开关（旧的是一个全局值，两条链一起动）。
+    旧键 MODEL_THINKING 从此只管分单；主单用 MASTER_MODEL_THINKING，未设置时跟随**主单预设默认**
+    （qwen 那档是关）——不继承分单的档，否则一拨分单开关主单会跟着变，正是要拆掉的那件事。
+    主单渠道不支持这个参数时，档位记着也一个字都不发。"""
     with _ModelState():
         config.set_model("qwen38-flash-bailian")
-        config.set_thinking("1")
-        config.set_master_model("intern-s2-official")
-        b = config.master_model_bundle()
-        assert b["extra_body"] == {}, f"主单链不该被带上：{b['extra_body']}"
-        assert config.model_extra_body() == {"enable_thinking": True}, "分单链照自己的预设走"
         config.set_master_model("qwen38-flash-bailian")
-        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": True}, \
-            "主单链自己支持时开关要生效"
         config.set_thinking("")
+        config.set_master_thinking("")
+        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": False}, \
+            "主单未设置时应跟随主单预设默认（关），不是继承分单"
+        config.set_thinking("1")
+        assert config.model_extra_body() == {"enable_thinking": True}, "分单链照自己的档"
+        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": False}, \
+            "分单拨开把主单也带上了：两条链的思考档要各管各的"
+        config.set_master_thinking("1")
+        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": True}, \
+            "主单自己的档没落到真正发出去的参数上"
+        config.set_thinking("0")
+        assert config.model_extra_body() == {"enable_thinking": False}
+        assert config.master_model_bundle()["extra_body"] == {"enable_thinking": True}, \
+            "分单拨关把主单也带上了"
+        assert config.master_model_bundle()["thinking"]["mode"] == "1", \
+            "主单的档位要如实报主单自己那一份"
+        config.set_master_model("intern-s2-official")
+        assert config.master_model_bundle()["extra_body"] == {}, "主单渠道不支持时一个字都不许加"
+        assert config.master_model_bundle()["thinking"]["supported"] is False
+        config.set_master_thinking("1")   # 档位照记，但这家不支持
+        assert config.master_model_bundle()["extra_body"] == {}, \
+            "不支持的渠道上拨到开也不许塞参数（会 400）"
+        assert config.model_extra_body() == {"enable_thinking": False}, "主单那边怎么拨都不许改分单"
+        config.set_thinking("")
+        config.set_master_thinking("")
+
+
+def test_master_thinking_persists_to_its_own_env_line():
+    """拆出来的主单档也要落盘，而且只写自己那一行：重启后两条链各自的档位不许互相顶掉。"""
+    with _ModelState():
+        line = config.ENV_FILE.read_text(encoding="utf-8")
+        assert "MASTER_MODEL_THINKING=" not in line, "没拨过的档不该凭空多出一行"
+        config.set_master_thinking("1")
+        line = config.ENV_FILE.read_text(encoding="utf-8")
+        assert "MASTER_MODEL_THINKING=1" in line, f"主单档没写回 .env：{line!r}"
+        assert not [l for l in line.splitlines() if l.startswith("MODEL_THINKING=")], \
+            "拨主单档不许给分单那个键凭空写一行（按行首判断：MASTER_MODEL_THINKING 里也含这串）"
+        config.set_master_thinking("")
+        line = config.ENV_FILE.read_text(encoding="utf-8")
+        assert "\nMASTER_MODEL_THINKING=\n" in line or line.startswith("MASTER_MODEL_THINKING=\n"), \
+            "回到「跟随预设」要写成空值：留个 1 在那儿，重启后还是开着的"
+        assert sum(1 for l in line.splitlines() if l.startswith("MASTER_MODEL_THINKING=")) == 1, \
+            "要就地替换不是再追加一行"
+        for bad in ("2", "yes", "开"):
+            try:
+                config.set_master_thinking(bad)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError(f"{bad!r} 这种值居然放行了")
 
 
 def test_thinking_persists_to_env_and_restarts_with_it():

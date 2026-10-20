@@ -138,9 +138,11 @@
           分单模型<select id="modelSel"></select></label>
         <label class="f" id="fModelM" title="主单（MAWB）提取用的模型，和分单各切各的。主单资料是几百字符的纯文本、没有票面图，2026-09-29 实测同一条 S2 取到 2/36 列、qwen3.8-flash 取到 18/36 列。切换后已缓存的主单解析结果按新模型自动重算">
           主单模型<select id="modelSelM"></select></label>
-        <label class="f" id="fThink" title="思考模式（只对声明了该参数的渠道生效，现在只有 Qwen；官方书生不接受这个参数，下拉会置灰）。跟随预设=各家用自己的默认档（Qwen 是关着，省几千 reasoning token）；开=更肯想但单票更慢更贵。对照实验才开：同一天的台账混着两档，统计就分不清是模型的错还是档位的错">
-          思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
-        <p class="hint hintp flush">三条都当场生效，写回服务端 <b>.env</b>：重启后与批处理沿用同一份。</p>
+        <label class="f" id="fThink" title="分单链的思考模式（只对声明了该参数的渠道生效，现在只有 Qwen；官方书生不接受这个参数，下拉会置灰）。跟随预设=各家用自己的默认档（Qwen 是关着，省几千 reasoning token）；开=更肯想但单票更慢更贵。对照实验才开：同一天的台账混着两档，统计就分不清是模型的错还是档位的错">
+          分单思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
+        <label class="f" id="fThinkM" title="主单链的思考模式，与分单各管各的（2026-10-19 拆开）。只对声明了该参数的渠道生效，渠道不支持时下拉置灰；跟随即主单预设自己的默认档。开=主单解析更肯想但更慢更贵，主单是纯文本任务，通常不需要">
+          主单思考<select id="thinkSelM"><option value="">（连接中…）</option></select></label>
+        <p class="hint hintp flush">四条都当场生效，写回服务端 <b>.env</b>：重启后与批处理沿用同一份。两条链的思考档各管各的，拨一条不会带动另一条。</p>
       </section>
       <section class="setsec">
         <div class="t2">数据与统计</div>

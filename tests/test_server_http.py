@@ -1070,20 +1070,28 @@ def test_master_chain_model_is_visible_and_switchable_separately():
 
 
 def test_desk_thinking_selector_is_wired():
-    """思考档下拉三档齐全（跟随预设/关/开），值就是 .env 里那个模式串；
-    档位显示必须来自 /models 的回报，不能让浏览器自己记一份——重启后 .env 说了算，
-    界面停在旧档就成了说谎的下拉。仅管理员可见（与模型下拉同一道门）。"""
+    """思考档两条链各一个下拉（2026-10-19 用户要拆）：三档齐全（跟随预设/关/开），值就是 .env
+    里那个模式串；档位显示必须来自 /models 的回报，不能让浏览器自己记一份——重启后 .env 说了算，
+    界面停在旧档就成了说谎的下拉。两个下拉各发各的 chain。仅管理员可见（与模型下拉同一道门）。"""
     html = web_src.desk()
-    assert 'id="thinkSel"' in html, "思考档下拉没了"
-    assert 'id="fThink"' in html and '$("#fThink").hidden = !admin' in html, "思考档下拉没跟着管理员门走"
+    assert 'id="thinkSel"' in html and 'id="thinkSelM"' in html, "两条链的思考档下拉缺一个"
+    assert "分单思考" in html and "主单思考" in html, "两个下拉没标清是哪条链的"
+    assert 'id="fThink"' in html and '$("#fThink").hidden = !admin' in html, "分单思考下拉没跟着管理员门走"
+    assert 'id="fThinkM"' in html and '$("#fThinkM").hidden = !admin' in html, "主单思考下拉没跟着管理员门走"
     load = re.search(r"async function loadModels\(\)\{(.*?)\n\}", html, re.S)
-    assert load and '$("#thinkSel")' in load.group(1), "loadModels 没填思考档下拉（永远停在空选项）"
+    assert load and 'thinkOpts($("#thinkSel"), r.thinking, "分单")' in load.group(1), \
+        "loadModels 没按服务端回报填分单思考下拉（永远停在空选项）"
+    assert load and 'thinkOpts($("#thinkSelM"), r.master ? r.master.thinking : null, "主单")' in load.group(1), \
+        "loadModels 没填主单思考下拉：整行钉住（catch 兜底里也有 #thinkSelM，只查 id 会被蒙对）"
     assert re.search(r'\[\s*"",\s*"0",\s*"1"\s*\]\s*\.map', html), \
         "三档缺一个：只能开、不能回到「跟随预设」的开关没人敢碰"
     assert "跟随预设" in html, "档位要说人话：0/1 这种值让人猜不到「空」是什么意思"
-    switch = re.search(r"async function setThinking\(sel\)\{(.*?)\n\}", html, re.S)
+    switch = re.search(r"async function setThinking\(sel, chain\)\{(.*?)\n\}", html, re.S)
     assert switch and '"/model/thinking"' in switch.group(1), "改了档却不 POST：看着切了，其实没切"
-    opts = re.search(r"function thinkOpts\(th\)\{(.*?)\n\}", html, re.S)
+    assert "chain: chain" in switch.group(1), "POST 没带 chain：两条链会一起动，等于没拆"
+    assert 'setThinking(e.target, "hawb")' in html and 'setThinking(e.target, "master")' in html, \
+        "两个下拉要各自带 chain 参数，否则拨分单会把主单一起拨了"
+    opts = re.search(r"function thinkOpts\(sel, th, who\)\{(.*?)\n\}", html, re.S)
     assert opts and re.search(r"sel\.disabled\s*=\s*!th\.supported", opts.group(1)), \
         "渠道不支持思考时下拉要置灰：能拨却什么都不改的开关，只会被人当成坏了"
     assert opts and "th.supported" in opts.group(1) and "旧进程" in opts.group(1), \
@@ -1118,12 +1126,14 @@ def test_thinking_switch_is_three_way_admin_only_and_persists():
     client = TestClient(server.app)
     tmp = Path(tempfile.mkdtemp(prefix="hawb_env_"))
     old_env_file = config.ENV_FILE
-    old_state = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.MODEL_THINKING)
+    old_state = (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.MODEL_THINKING,
+                 config.MASTER_MODEL_THINKING)
     config.ENV_FILE = tmp / ".env"
     config.ENV_FILE.write_text("QWEN_API_KEY=sk-x\nVLM_MODEL=qwen38-flash-bailian\n", encoding="utf-8")
     try:
         with _stubbed():
             config.set_model("qwen38-flash-bailian")
+            config.set_master_thinking("")
             assert client.post("/model/thinking", json={"thinking": "1"}).status_code == 401, \
                 "开思考没要登录"
             _login_admin(client)
@@ -1137,13 +1147,29 @@ def test_thinking_switch_is_three_way_admin_only_and_persists():
             assert client.post("/model/thinking", json={"thinking": ""}).json()["thinking"] == \
                 {"supported": True, "param": "enable_thinking", "on": False, "mode": ""}, \
                 "跟随预设 = 回到各家用自己的默认值（qwen 那档是关）"
+            # 主单链自己那一档（2026-10-19 拆分）：只动 MASTER_MODEL_THINKING，不碰分单
+            r = client.post("/model/thinking", json={"thinking": "1", "chain": "master"})
+            assert r.status_code == 200 and r.json()["chain"] == "master", r.text
+            assert config.MASTER_MODEL_THINKING == "1", "主单档没在本进程生效"
+            assert config.MODEL_THINKING == "", "拨主单把分单也拨了：拆了等于没拆"
+            assert config.master_model_bundle()["extra_body"] == {"enable_thinking": True}, \
+                "主单档没落到真正发出去的参数上（主单此刻跟分单同一个 qwen 渠道）"
+            assert config.model_extra_body() == {"enable_thinking": False}, "主单那边动了分单的参数"
+            assert client.get("/health").json()["master_thinking"]["on"] is True, \
+                "健康检查没把主单档报出来"
+            assert "MASTER_MODEL_THINKING=1" in config.ENV_FILE.read_text(encoding="utf-8"), \
+                "主单档没写回 .env，重启就丢"
+            back = client.post("/model/thinking", json={"thinking": "", "chain": "master"}).json()
+            assert back["thinking"]["mode"] == "" and back["thinking"]["on"] is False
+            assert client.post("/model/thinking", json={"thinking": "1", "chain": "nope"}).status_code == 400, \
+                "chain 写错了要当场 400，不能悄悄当成分单"
             for bad in ("2", "yes", "开"):
                 assert client.post("/model/thinking", json={"thinking": bad}).status_code == 400, \
                     f"{bad!r} 这种值居然放行了"
     finally:
         config.ENV_FILE = old_env_file
-        (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION,
-         config.MODEL_THINKING) = old_state
+        (config.VLM_MODEL_CHOICE, config.VLM_MODEL, config.MODEL_VISION, config.MODEL_THINKING,
+         config.MASTER_MODEL_THINKING) = old_state
         shutil.rmtree(tmp, ignore_errors=True)
 
 

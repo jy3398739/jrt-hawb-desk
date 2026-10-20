@@ -310,6 +310,7 @@ class ModelChoice(BaseModel):
 class ThinkingChoice(BaseModel):
     # None 而不是 ""："" 是合法档位（跟随预设），漏发字段不能被读成"帮你改回跟随预设"
     thinking: str | None = None
+    chain: str = "hawb"      # hawb = 分单链（默认）；master = 主单链（2026-10-19 拆成两个开关）
 
 
 def _company_submit(payload: dict) -> dict:
@@ -712,20 +713,27 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
 def switch_thinking(body: ThinkingChoice, request: Request, _: None = Depends(require_admin)):
     """思考档三档："" 跟随预设 / "0" 关 / "1" 开。本进程立即生效并写回 .env（重启后、批处理沿用）。
     和换模型同一道门——它同样改变提取结果，而且开思考要多烧几千 reasoning token、单票更慢。
+    `chain=master` 拨的是主单链（写 MASTER_MODEL_THINKING 那一行），默认拨分单；两条链各管各的。
     只对预设里声明了该参数的渠道生效：官方书生不接受 extra_body，硬塞直接 400，所以在不支持的
     渠道上拨到"开"只是一次无害的偏好记录，切到 Qwen 才真的生效（响应里的 supported 会说清）。"""
     if body.thinking is None:
         raise HTTPException(400, '要带 thinking 字段："" 跟随预设 / "0" 关 / "1" 开')
+    chain = (body.chain or "hawb").strip().lower()
+    if chain not in ("hawb", "master"):
+        raise HTTPException(400, f"chain 只能是 hawb 或 master，收到 {chain!r}")
     try:
-        th = config.set_thinking(body.thinking)
+        th = (config.set_master_thinking(body.thinking) if chain == "master"
+              else config.set_thinking(body.thinking))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except OSError as e:
         raise HTTPException(500, f"思考档已在本进程切换，但写 .env 失败（重启后仍是旧档）：{e}")
     u = auth.session_user(request) or {}
-    LOG.info("思考档 who=%s mode=%s 生效=%s 渠道=%s 支持=%s",
-             u.get("name"), th["mode"], th["on"], config.VLM_MODEL_CHOICE, th["supported"])
-    return {"ok": True, "thinking": th, "model": config.VLM_MODEL}
+    LOG.info("思考档 who=%s 链=%s mode=%s 生效=%s 渠道=%s 支持=%s",
+             u.get("name"), chain, th["mode"], th["on"],
+             config.MASTER_VLM_MODEL if chain == "master" else config.VLM_MODEL_CHOICE, th["supported"])
+    return {"ok": True, "chain": chain, "thinking": th,
+            "model": config.master_model_bundle()["model"] if chain == "master" else config.VLM_MODEL}
 
 
 DESK_QUEUE = desk_queue.DeskQueue(slots=config.DESK_CONCURRENCY, max_pending=config.DESK_QUEUE_MAX)

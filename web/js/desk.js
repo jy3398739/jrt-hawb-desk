@@ -894,16 +894,17 @@ async function loadModels(){
        "主单其实换了模型"这件事在界面上完全隐形。 */
     $("#modelSelM").innerHTML = r.master ? modelOpts(r.presets, r.master.choice, r.master.model)
                                          : '<option value="">（服务端旧进程，重启后可见）</option>';
-    thinkOpts(r.thinking, r.presets);
+    thinkOpts($("#thinkSel"), r.thinking, "分单");
+    thinkOpts($("#thinkSelM"), r.master ? r.master.thinking : null, "主单");
   }catch(e){
     $("#modelSel").innerHTML = '<option value="">（服务端旧进程，重启后再试）</option>';
     $("#modelSelM").innerHTML = $("#modelSel").innerHTML;
     $("#thinkSel").innerHTML = '<option value="">（服务端旧进程，重启后再试）</option>';
+    $("#thinkSelM").innerHTML = $("#thinkSel").innerHTML;
   }
 }
 const THINK_MODE = {"": "跟随预设", "0": "关", "1": "开"};
-function thinkOpts(th){
-  const sel = $("#thinkSel");
+function thinkOpts(sel, th, who){
   if (!th){ sel.innerHTML = '<option value="">（服务端旧进程，重启后可见）</option>'; sel.disabled = true; return; }
   /* 档位值一律取自服务端这份回报：浏览器自己记一份的话，重启后 .env 说了算，下拉却停在旧档 */
   sel.innerHTML = ["", "0", "1"].map(v =>
@@ -911,22 +912,23 @@ function thinkOpts(th){
   /* 当前渠道不支持就置灰：能拨却什么都不改的开关，只会被人当成坏了（官方书生多收一个参数就 400） */
   sel.disabled = !th.supported;
   sel.title = th.supported
-    ? "当前渠道「" + (th.param || "") + "」生效。开思考更慢、多烧 reasoning token；跟随预设=各家用自己的默认档"
-    : "当前渠道不支持思考模式（它不接受这个参数），这个开关拨了也不发任何东西；换到 Qwen 才有用";
+    ? who + "链的思考档：当前渠道「" + (th.param || "") + "」生效。开思考更慢、多烧 reasoning token；跟随预设=各家用自己的默认档"
+    : who + "链当前渠道不支持思考模式（它不接受这个参数），这个开关拨了也不发任何东西；换到 Qwen 才有用";
 }
-async function setThinking(sel){
+async function setThinking(sel, chain){
   const v = sel.value;
+  const who = chain === "master" ? "主单" : "分单";
   sel.disabled = true;
   try{
     const r = await fetch(BASE + "/model/thinking", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify({thinking: v})});
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({thinking: v, chain: chain})});
     const j = await r.json().catch(() => ({detail:"返回不是 JSON（HTTP " + r.status + "）"}));
     if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
-    toast("思考档已设为「" + (THINK_MODE[v] || v) + "」" +
+    toast(who + "思考档已设为「" + (THINK_MODE[v] || v) + "」" +
           (j.thinking.supported ? (j.thinking.on ? "（开：单票更慢、多烧 reasoning token）" : "（关）")
                                : "（当前渠道不支持，切到 Qwen 才会生效）"), "ok");
   }catch(err){
-    toast("切换思考档失败：" + err.message, "bad");
+    toast("切换" + who + "思考档失败：" + err.message, "bad");
   }finally{
     loadModels();      // 以服务端实际值为准重画（失败了要退回原选项）
   }
@@ -963,7 +965,8 @@ async function switchModel(sel, chain){
 }
 $("#modelSel").addEventListener("change", e => switchModel(e.target, "hawb"));
 $("#modelSelM").addEventListener("change", e => switchModel(e.target, "master"));
-$("#thinkSel").addEventListener("change", e => setThinking(e.target));
+$("#thinkSel").addEventListener("change", e => setThinking(e.target, "hawb"));
+$("#thinkSelM").addEventListener("change", e => setThinking(e.target, "master"));
 async function extract(t){
   const fd = new FormData();
   fd.append("file", t.file, t.filename);
@@ -2198,6 +2201,7 @@ function applyRole(){
   $("#fModel").hidden = !admin;              // 模型下拉仅管理员
   $("#fModelM").hidden = !admin;             // 主单链那条也是
   $("#fThink").hidden = !admin;              // 思考档同样是改提取结果，跟模型一个门（后端也只认管理员会话）
+  $("#fThinkM").hidden = !admin;             // 主单链那一档同理（2026-10-19 拆成两个开关）
   const rv = $("#reviewer");                 // 复核人 = 登录身份，锁定不让手写（提交留痕即本人）
   rv.value = ME.name; rv.readOnly = true;
 }

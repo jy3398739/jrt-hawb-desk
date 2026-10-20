@@ -119,35 +119,53 @@ MODEL_PRESETS = {
 DEFAULT_MODEL_KEY = "qwen38-flash-bailian"
 
 # 思考模式开关（2026-10-10 用户要）："" = 跟随预设（= 现状，qwen 那档关着）/ "0" 关 / "1" 开。
-# 全局一个就够：它只对"预设里声明了参数"的渠道生效，不支持的渠道碰都不碰（见 thinking）。
+# 只对"预设里声明了参数"的渠道生效，不支持的渠道碰都不碰（见 thinking）。
 # 必须排在 resolve_model 与 _MODEL_INFO 之前：标签里要写"思考开/关"，而 resolve_model 在导入时就跑一次。
+# 2026-10-19 用户要拆：这一键从此只管**分单链**；主单链用下面那条 MASTER_MODEL_THINKING，各管各的。
 MODEL_THINKING = os.getenv("MODEL_THINKING", "").strip()
+# 主单链的思考档（三档同上）。空 = 跟随主单预设默认（qwen 那档是关）——**不继承分单那一档**：
+# 继承了的话一拨分单开关主单会跟着动，正是这次要拆掉的事。
+MASTER_MODEL_THINKING = os.getenv("MASTER_MODEL_THINKING", "").strip()
 
 
-def thinking(preset: dict | None = None) -> dict:
-    """当前思考档位 = {supported, param, on, mode}。
+def thinking(preset: dict | None = None, mode: str | None = None) -> dict:
+    """某条链当前思考档位 = {supported, param, on, mode}。mode 缺省用分单那条全局键。
     预设没声明 `thinking.param` 的渠道就是不支持：官方书生连 extra_body 都不接受，
     硬塞 enable_thinking 会直接 400 —— 所以"能不能开"由预设说，开关与标签都照它办事。"""
     p = _active_preset() if preset is None else preset
     th = p.get("thinking") or {}
     param = str(th.get("param") or "")
-    on = bool(th.get("default", False)) if MODEL_THINKING == "" else MODEL_THINKING == "1"
-    return {"supported": bool(param), "param": param, "on": bool(on and param), "mode": MODEL_THINKING}
+    m = MODEL_THINKING if mode is None else mode
+    on = bool(th.get("default", False)) if m == "" else m == "1"
+    return {"supported": bool(param), "param": param, "on": bool(on and param), "mode": m}
+
+
+def _checked_thinking(value, who: str):
+    v = str(value if value is not None else "").strip()
+    if v not in ("", "0", "1"):
+        raise ValueError(f"{who}思考档只能是 空（跟随预设）、0（关）或 1（开），收到 {value!r}")
+    return v
 
 
 def set_thinking(value) -> dict:
-    """运行时切思考档（审核台 POST /model/thinking）：本进程立即生效 + 写回 .env。
+    """运行时切分单链思考档（审核台 POST /model/thinking）：本进程立即生效 + 写回 .env。
     只认 ""/"0"/"1"；写回 .env 是必须的——只存内存的话重启就回默认，等于没有开关。"""
     global MODEL_THINKING
-    v = str(value if value is not None else "").strip()
-    if v not in ("", "0", "1"):
-        raise ValueError(f"thinking 只能是 空（跟随预设）、0（关）或 1（开），收到 {value!r}")
-    MODEL_THINKING = v
-    persist_model_choice(v, "MODEL_THINKING")
+    MODEL_THINKING = _checked_thinking(value, "分单")
+    persist_model_choice(MODEL_THINKING, "MODEL_THINKING")
     return thinking()
 
 
-def resolve_model(choice: str = "") -> dict:
+def set_master_thinking(value) -> dict:
+    """运行时切主单链思考档（POST /model/thinking 带 chain=master）：只写 MASTER_MODEL_THINKING，
+    分单那一键一个字节都不动——两条链的档位各存各的，重启后也不许互相顶掉。"""
+    global MASTER_MODEL_THINKING
+    MASTER_MODEL_THINKING = _checked_thinking(value, "主单")
+    persist_model_choice(MASTER_MODEL_THINKING, "MASTER_MODEL_THINKING")
+    return master_model_bundle()["thinking"]
+
+
+def resolve_model(choice: str = "", mode: str | None = None) -> dict:
     """选择（预设键或 org/模型 id，大小写不敏感）→ {choice, model, vision, label}。
     未知 id 按有视觉处理，维持本机制上线前的行为；确有纯文本模型可用 VLM_VISION=0 强制。"""
     c = (choice or "").strip()
@@ -160,8 +178,9 @@ def resolve_model(choice: str = "") -> dict:
     forced = os.getenv("VLM_VISION", "").strip()
     if forced in ("0", "1"):
         info["vision"] = forced == "1"      # 调试/新模型兜底：手动强制，不让它自己猜
-    # 标签里带上思考档：预设名字里写死"（已关思考）"的话，开关一开那句就成了谎话
-    th = thinking(preset or {})
+    # 标签里带上思考档：预设名字里写死"（已关思考）"的话，开关一开那句就成了谎话。
+    # mode 由调用方给：主单链的标签必须说主单自己那一档，不能拿分单的档来标。
+    th = thinking(preset or {}, mode)
     if th["supported"]:
         info["label"] = info["label"] + (" · 思考开" if th["on"] else " · 思考关")
     return info
@@ -186,11 +205,12 @@ def _active_preset() -> dict:
     return MODEL_PRESETS.get(str(VLM_MODEL_CHOICE).lower()) or {}
 
 
-def extra_body_for(preset: dict) -> dict:
-    """某个预设这次该随 create 发出去的额外参数。思考档由 `thinking(preset)` 决定参数名与真假；
-    没声明的渠道一个字都不加（各家开关写法互不通用，官方书生压根不接受 extra_body）。"""
+def extra_body_for(preset: dict, mode: str | None = None) -> dict:
+    """某个预设这次该随 create 发出去的额外参数。思考档由 `thinking(preset, mode)` 决定参数名与真假；
+    没声明的渠道一个字都不加（各家开关写法互不通用，官方书生压根不接受 extra_body）。
+    mode 缺省 = 分单链；主单链传 MASTER_MODEL_THINKING。"""
     eb = dict(preset.get("extra_body") or {})
-    th = thinking(preset)
+    th = thinking(preset, mode)
     if th["supported"]:
         eb[th["param"]] = th["on"]
     return eb
@@ -218,20 +238,23 @@ MASTER_VLM_MODEL = (DEFAULT_MASTER_MODEL_KEY if _raw_master_model is None
 
 
 def master_model_bundle() -> dict:
-    """主单链这次该用哪个模型/端点/参数。选择为空就沿用当前生效选择。"""
+    """主单链这次该用哪个模型/端点/参数。选择为空就沿用当前生效选择（模型），但**思考档永远用自己的**
+    MASTER_MODEL_THINKING——拆开之后主单不吃分单那一档，模型跟不跟是另一回事。"""
     if not MASTER_VLM_MODEL:
         return {"choice": VLM_MODEL_CHOICE, "model": VLM_MODEL, "vision": MODEL_VISION,
                 "base_url": vlm_base_url(), "api_key_env": _active_preset().get("api_key_env"),
-                "max_tokens": model_max_tokens(), "extra_body": model_extra_body(),
-                "thinking": thinking()}
-    info = resolve_model(MASTER_VLM_MODEL)
+                "max_tokens": model_max_tokens(),
+                "extra_body": extra_body_for(_active_preset(), MASTER_MODEL_THINKING),
+                "thinking": thinking(mode=MASTER_MODEL_THINKING)}
+    info = resolve_model(MASTER_VLM_MODEL, MASTER_MODEL_THINKING)
     preset = MODEL_PRESETS.get(str(info["choice"]).lower()) or {}
     return {"choice": info["choice"], "model": info["model"], "vision": info["vision"],
             "label": info.get("label") or preset.get("label", ""),
             "base_url": (preset.get("base_url") or MODELSCOPE_BASE_URL).strip(),
             "api_key_env": preset.get("api_key_env"),
             "max_tokens": max(VLM_MAX_TOKENS, int(preset.get("max_tokens", 0))),
-            "extra_body": extra_body_for(preset), "thinking": thinking(preset)}
+            "extra_body": extra_body_for(preset, MASTER_MODEL_THINKING),
+            "thinking": thinking(preset, MASTER_MODEL_THINKING)}
 
 
 
