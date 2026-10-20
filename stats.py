@@ -91,7 +91,7 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
         # 本功能之前的台账只存过字段名与哈希，没有值：算不了就别混进分母。
         lm, lh = _numbers(entry, staged)
         return {"stem": stem, "mawb": lm, "hawb": lh, "state": "submitted", "legacy": True, "total": None,
-                "doc": [], "inp": [], "comparable": 0, "fields": [],
+                "doc": [], "inp": [], "polished": [], "comparable": 0, "fields": [],
                 "model": qc.get("model") or staged.get("model") or "",
                 "uploader": qc.get("uploader") or "", "uploader_role": qc.get("uploader_role") or "",
                 "stager": "", "no_inputter_review": True, "inputter_self_submit": False,
@@ -101,21 +101,41 @@ def ticket_row(stem: str, qc: dict = None, staged: dict = None, entry: dict = No
     keys = [k for k in _keys() if _nonempty(model.get(k)) or _nonempty(final.get(k))]
     diff_all = set(store.field_diff({k: model.get(k) for k in keys},
                                     {k: final.get(k) for k in keys}))
+    # 规则号按「最后一次动过这一列的事件」记：先按优化、人之后又自己改过的那一列，
+    # 免记就作废了——它最后一次是人的决定，不是接受规则。
+    rules: dict = {}
+    for ev in (staged.get("events") or []):
+        pol = ev.get("polish") or {}
+        for k in (ev.get("edits") or {}):
+            if pol.get(k):
+                rules[k] = str(pol[k])
+            else:
+                rules.pop(k, None)
+    # 暂存之后到真正发出去之间又改的那些列同样是人的动作（那一档只可能由录入员/管理员做），
+    # 它们没有事件可查，就从免记里退回来。
+    late = set(store.field_diff(staged.get("air_final") or {}, final))
+    for k in late:
+        rules.pop(k, None)
+    polly = {k for k in rules if k in diff_all}
+    keys = [k for k in keys if k not in polly]
+    diff_all -= polly
     doc, inp = set(), set()
     if staged:
         for ev in staged.get("events") or []:
-            touched = set((ev.get("edits") or {}).keys())
+            touched = set((ev.get("edits") or {}).keys()) - polly
             if str(ev.get("role") or "") == "inputter":
                 inp |= touched
             else:
                 doc |= touched
-        inp |= set(store.field_diff(staged.get("air_final") or {}, final))
+        inp |= late
     else:
         doc = set(diff_all)
     nm, nh = _numbers(entry, staged)
     return {"stem": stem, "mawb": nm, "hawb": nh, "state": "submitted" if submitted else "staged",
             "legacy": False,
             "total": len(diff_all), "doc": sorted(doc), "inp": sorted(inp),
+            # 按规则优化那一档：既不在 total/doc/inp 里，也不许悄悄消失——它得能被数出来
+            "polished": sorted(polly), "polish_rules": {k: rules[k] for k in sorted(polly)},
             "comparable": len(keys), "fields": keys,
             "model": qc.get("model") or staged.get("model") or "",
             "model_choice": qc.get("model_choice") or staged.get("model_choice") or "",
@@ -174,6 +194,9 @@ _CN = {"stem": "票名", "state": "状态", "when": "解析时刻", "model": "�
        "clean": "零改动票数", "clean_rate": "一次通过率", "acc_field": "逐字段准确率",
        "acc_after_review": "复核后准确率（能不能对接看这个）", "edits_total": "改动列合计",
        "edits_doc": "制单员改的列", "edits_inp": "录入员改的列",
+       "edits_polished": "按规则优化的列（不算人工修正）",
+       "polish_by_rule": "按规则优化（逐规则）",
+       "polished": "按规则优化的列",
        "fields_comparable": "可比列合计", "unreviewed": "未经复核就发的张数"}
 
 
@@ -188,6 +211,13 @@ def summary(rows: list, group_by: str = None) -> dict:
     total = sum(int(r.get("total") or 0) for r in usable)
     doc = sum(len(r.get("doc") or []) for r in usable)
     inp = sum(len(r.get("inp") or []) for r in usable)
+    polish_by_rule: dict = {}
+    polished_total = 0
+    for r in usable:
+        rr = r.get("polish_rules") or {}
+        polished_total += len(rr)
+        for rule in rr.values():
+            polish_by_rule[rule] = polish_by_rule.get(rule, 0) + 1
     by_field: dict = {}
     for r in usable:
         for f in (r.get("doc") or []) + (r.get("inp") or []):
@@ -196,6 +226,9 @@ def summary(rows: list, group_by: str = None) -> dict:
             e["tickets"] += 1
     out = {"tickets": len(usable), "legacy": len(rows) - len(usable),
            "fields_comparable": fields, "edits_total": total, "edits_doc": doc, "edits_inp": inp,
+           # 按规则优化掉的列单独报：它们既不在 edits_total 里、也不在分母里，
+           # 不报就成了凭空少掉的数（谁看了都不知道少的是哪一挡）。
+           "edits_polished": polished_total, "polish_by_rule": polish_by_rule,
            "clean": sum(1 for r in usable if not r.get("total")),
            "clean_rate": (None if not usable
                           else round(sum(1 for r in usable if not r.get("total")) / len(usable), 4)),
@@ -239,7 +272,10 @@ def export_bytes(rows: list, summary: dict) -> bytes:
 
     import pandas as pd
 
-    head = pd.DataFrame([{"指标": _CN.get(k, k), "值": v}
+    head = pd.DataFrame([{"指标": _CN.get(k, k),
+                          # 逐规则那一项是个字典：摊成一行看得见的话，别在 Excel 里露出 Python 字面量
+                          "值": ("、".join(f"{rk} {rv} 列" for rk, rv in v.items()) or "无")
+                          if isinstance(v, dict) else v}
                          for k, v in summary.items() if not isinstance(v, list)])
     per = []
     for r in rows:
@@ -248,6 +284,7 @@ def export_bytes(rows: list, summary: dict) -> bytes:
                                      "no_inputter_review", "legacy")}
         one["制单员改的列"] = "、".join(r.get("doc") or [])
         one["录入员改的列"] = "、".join(r.get("inp") or [])
+        one["按规则优化的列"] = "、".join(r.get("polished") or [])
         per.append(_cn(one))
     fields = pd.DataFrame([_cn(e) for e in summary.get("by_field") or []])
     buf = io.BytesIO()

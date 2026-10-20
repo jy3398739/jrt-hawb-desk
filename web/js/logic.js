@@ -366,6 +366,26 @@ const L = {
     return L.chlogRow(list, v) != null;
   },
 
+  /* ── 逐格「优化」的三件纯形状事（判据一条都不在这儿，全在 polish.py 那张国别表） ──
+     服务端给回的是 [{field, from, to, rule, why}]，这里只把它收成按列名的表、
+     决定什么时候该多占一行、以及还剩几格能点。放 logic.js 是为了用 node 就能钉死，
+     不必等浏览器。 */
+  polishMap(rows){
+    const out = {};
+    (Array.isArray(rows) ? rows : []).forEach(r => {
+      if (r && r.field && String(r.to) !== String(r.from == null ? "" : r.from)) out[r.field] = r;
+    });
+    return out;
+  },
+  polishShows(face, sent){
+    return String(face == null ? "" : face) !== String(sent == null ? "" : sent);
+  },
+  polishCount(map, edit, locked){
+    if (locked) return 0;                    // 已交出去的票不给按：锁行那一档由服务端也挡一次
+    const e = edit || {};
+    return Object.keys(map || {}).filter(k => !(k in e)).length;
+  },
+
   /* ── 票面浏览的缩放档位 ────────────────────────────────────────────────
      内嵌阅读器只吃地址参数（view=FitH / view=Fit / zoom=数字），所以"下一档是什么"得我们自己算。
      坑在于：整页 = min(按宽, 按高)，票面栏比票更高时按宽就是那个最小值，FitH 与 Fit 算出同一个

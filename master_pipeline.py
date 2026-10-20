@@ -83,7 +83,8 @@ def _write(rec: dict) -> dict:
     return rec
 
 
-def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = None) -> dict:
+def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = None,
+                 polish_rules: dict = None) -> dict:
     """把主单 36 列的当前人工值存进这条主单缓存（**不发公司**）。
 
     与分单的 `store.stage_ticket` 同一套形态（快照基线 + 追加事件 + 服务器算差异），
@@ -99,9 +100,13 @@ def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = N
     last = rec.get("ams_final") if isinstance(rec.get("ams_final"), dict) else base
     now = _now()
     events = list(rec.get("events") or [])
+    diffs = store.field_diff(last, ams)
     events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
-                   "edits": store.field_diff(last, ams),
-                   "acked_flags": [str(x) for x in (acked_flags or [])]})
+                   "edits": diffs,
+                   "acked_flags": [str(x) for x in (acked_flags or [])],
+                   # 规则号只挂在真改过的列上：与分单 store.stage_ticket 同一条口径
+                   "polish": {str(k): str(v) for k, v in (polish_rules or {}).items()
+                              if k in diffs}})
     rec.update({"ams_model": base, "ams_final": ams, "events": events,
                 "edits": store.field_diff(base, ams),
                 # 顶上这一格是"此刻还确认着哪些红旗"：每暂存一次照这次的清单覆盖，

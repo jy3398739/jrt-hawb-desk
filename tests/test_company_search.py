@@ -185,7 +185,10 @@ def test_master_drafts_survive_refresh():
     for frag in ("MV.edit", "MV.acked", "MV.extraFlags", "MV.editBase"):
         assert frag in save, f"落盘要带上 {frag}：缺一样，恢复出来的就是半份工作"
     assert "L.draftEntry" in save and "L.draftPut" in save, "算式在 logic.js，desk.js 只做 localStorage 接线"
-    assert "mvSave()" in _fn(html, "mvTouch"), "改一列就落一次盘，不能等提交才存"
+    assert "mvSave()" in _fn(html, "mvWrite"), \
+        "改一列就落一次盘：v1.32.0 起主单改动只有 mvWrite 一个写入口（手打与点「优化」都从这儿出去）"
+    assert "mvWrite(" in _fn(html, "mvTouch"), \
+        "mvTouch 不许自己再算一遍 draftTouch：两份写入语义迟早会漂"
     assert "mvSave()" in _fn(html, "renderMain"), "点「确认无误/撤回」同样要落盘：确认状态也是工作"
 
     restore = _fn(html, "mvRestore")

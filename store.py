@@ -809,7 +809,8 @@ def load_staged(stem: str):
     return rec if isinstance(rec, dict) else None
 
 
-def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = None) -> dict:
+def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = None,
+                 polish_rules: dict = None) -> dict:
     """把这张票当前的人工核对结果存到服务器上，并记下"这一步是谁、改了哪几列"。
 
     三条口径是刻意的：
@@ -842,7 +843,11 @@ def stage_ticket(stem: str, air: dict, by: str, role: str, acked_flags: list = N
         edits = field_diff(last, air)
         events = list(prev.get("events") or [])
         events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
-                       "edits": edits, "acked_flags": [str(x) for x in (acked_flags or [])]})
+                       "edits": edits, "acked_flags": [str(x) for x in (acked_flags or [])],
+                       # 规则号只挂在真改过的那几列上：前端说"这格是按 POSTAL 规则改的"，
+                       # 值没变就不算发生过，留痕不能由请求凭空写（与"差异由服务器算"同一条铁律）
+                       "polish": {str(k): str(v) for k, v in (polish_rules or {}).items()
+                                  if k in edits}})
         mawb, hawb = str(air.get("MAWB_NO", "") or "").strip(), str(air.get("HAWB_NO", "") or "").strip()
         rec = {"stem": name, "source_name": qc.get("source_name") or name,
                "mawb": mawb, "hawb": hawb, "key": number_key(mawb, hawb),
@@ -886,7 +891,7 @@ def review_ticket(stem: str, by: str, role: str) -> dict:
         now = datetime.datetime.now().isoformat(timespec="seconds")
         events = list(prev.get("events") or [])
         events.append({"by": str(by or ""), "role": str(role or ""), "at": now,
-                       "edits": {}, "kind": "review", "acked_flags": []})
+                       "edits": {}, "kind": "review", "acked_flags": [], "polish": {}})
         rec = dict(prev)
         rec.update({"stem": name,
                     "source_name": prev.get("source_name") or qc.get("source_name") or name,

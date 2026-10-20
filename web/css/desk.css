@@ -281,7 +281,13 @@ tr.emptyrow td.v textarea{background:var(--c-warn-bg)}
   font-family:var(--mono);font-size:var(--f-sm);font-weight:var(--w-semi);padding:2px 7px;border-radius:var(--r-sm)}
 .t-flag{color:var(--c-bad-text)}.t-soft{color:var(--c-warn-text)}
 .t-flag:hover,.t-soft:hover{background:var(--c-accent-glow)}
-.t-edit{font-family:var(--mono);font-size:var(--f-sm);color:var(--c-accent)}
+.t-edit,.t-polish{font-family:var(--mono);font-size:var(--f-sm);color:var(--c-accent)}
+/* 逐格「优化」那一行：票面原值 + 依据排在输入框上面，两行一样时整块收起来不占地方。
+   颜色只用令牌，且不给票面行配状态色——那是给人读的原值，不是"这里错了"的标记。 */
+.poline:empty{display:none}
+.poline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:3px}
+.pf,.pw{font-size:var(--f-sm);color:var(--c-text-2)}
+.pf{font-family:var(--mono)}
 .t-mut{font-family:var(--mono);font-size:var(--f-sm);color:var(--c-text-2)}
 .bar{width:104px;height:6px;border-radius:3px;background:var(--c-surface-3);overflow:hidden;flex:none}
 .bar i{display:block;height:100%;width:0;background:var(--c-ok);transition:width var(--dur) var(--ez-std)}
@@ -477,7 +483,7 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .chlogcur{font-size:var(--f-xs);color:var(--c-accent);background:var(--c-accent-soft);
   border:1px solid var(--c-accent-line);border-radius:999px;padding:1px 8px}
 .chlogitem{margin-top:4px;font-size:var(--f-md);color:var(--c-text-2);line-height:1.5}
-/* 统计窗口里是一张看板（六卡 + 左条形图 + 右明细表），所以窗口给到接近原型那个 1380px；
+/* 统计窗口里是一张看板（七卡 + 左条形图 + 右明细表），所以窗口给到接近原型那个 1380px；
    正文自己滚，标题行放不下就换行（起止日期 + 分组 + 刷新 + 导出 + 关闭）。 */
 .statsbox{width:min(1360px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}
 .statsbox .t{font-size:var(--f-base);flex-wrap:wrap;row-gap:6px}
@@ -491,7 +497,7 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 
 /* ── 解析正确率看板（交接原型 accuracy-report-redesign.html）──────────────────────────
    原版三块纵向平铺：关键数字不突出、「无留痕」满屏刷屏、改动字段长文本换行。这一版是
-   「上面六张卡速读 → 左边条形图定位最该修的列 → 右边高密度表查单据」。
+   「上面七张卡速读 → 左边条形图定位最该修的列 → 右边高密度表查单据」。
    原型那套 --bg/--ink/--accent 变量名与值都不是本仓库的（色值只有 tokens.css 一个来源，
    老守卫会扫），所以下面一律映射到已有令牌；行高与今日归档共用 --dv-row，两页并排看才是一套房。 */
 
@@ -506,8 +512,8 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
 .stscope.broken{border-color:var(--c-bad-line);background:var(--c-bad-bg)}
 .stscope .bad{color:var(--c-bad-text);font-weight:var(--w-semi)}
 
-/* 六张 KPI 卡。grid 默认把每张拉到同一行高，所以后三张没有进度条也不会矮半截。 */
-.stkpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:12px}
+/* 七张 KPI 卡。grid 默认把每张拉到同一行高，所以后四张没有进度条也不会矮半截。 */
+.stkpis{display:grid;grid-template-columns:repeat(7,1fr);gap:12px;margin-bottom:12px}
 .stkpi{position:relative;display:flex;flex-direction:column;background:var(--c-surface);
   border:1px solid var(--c-line-soft);border-radius:var(--r-lg);padding:13px 15px 11px;
   overflow:clip;box-shadow:var(--sh-panel)}
@@ -682,7 +688,7 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 .btn.bad:disabled{opacity:.5;cursor:not-allowed}
 .btn.bad:not(:disabled){color:var(--c-bad-text);border-color:var(--c-bad-line);background:var(--c-bad-bg)}
 .btn.bad:not(:disabled):hover{border-color:var(--c-bad-text);color:var(--c-bad-text)}
-/* 首屏入场：六张卡按 0.04s 一档步进淡入，随后两栏与口径条跟上。这个动画只挂在骨架上，
+/* 首屏入场：七张卡按 0.04s 一档步进淡入，随后两栏与口径条跟上。这个动画只挂在骨架上，
    明细 tbody 由 renderStatsRows 单独重画——挂到行身上的话，每点一次分段筛选整表就闪一遍。 */
 .stkpi,.stpanel,.stscope{animation:stFade var(--dur-slow) both}
 .stkpi:nth-child(1){animation-delay:.02s}
@@ -691,13 +697,14 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
 .stkpi:nth-child(4){animation-delay:.14s}
 .stkpi:nth-child(5){animation-delay:.18s}
 .stkpi:nth-child(6){animation-delay:.22s}
-.stmain .stpanel{animation-delay:.24s}
+.stkpi:nth-child(7){animation-delay:.26s}
+.stmain .stpanel{animation-delay:.30s}
 @keyframes stFade{from{opacity:0}to{opacity:1}}
-/* 窄窗口（≤1100px）：六张卡折成每行三张、左右两栏堆叠。这一页是浮层窗口，
+/* 窄窗口（≤1100px）：七张卡折成每行三张、左右两栏堆叠。这一页是浮层窗口，
    窗口一窄，320px 的左栏会把右栏挤到只剩几百像素——堆叠不是为好看，是为了还能用。
    堆叠那一栏必须写 minmax(0,1fr)：grid 里的 1fr 等于 minmax(auto,1fr)，auto 的下限是内容最小宽，
    而明细表带着 min-width:980px——光写 1fr 的话这一栏死活不肯窄于 980px，整块从窗口里溢出去，
-   "横向滚动"滚的就成了整扇窗而不是表格（六张卡留在左边、表在右边，两截对不上）。 */
+   "横向滚动"滚的就成了整扇窗而不是表格（七张卡留在左边、表在右边，两截对不上）。 */
 @media (max-width:1100px){
   .stkpis{grid-template-columns:repeat(3,1fr)}
   .stmain{grid-template-columns:minmax(0,1fr)}
@@ -839,7 +846,7 @@ body[data-density=cozy] .dvci{min-height:var(--dv-row-cozy)}
      display:none 兜住，它是功能不是装饰，关掉就等于"点了没反应"。 */
   #dayBox tbody tr.dvin{animation:none}
   .dvci,.dvfold,.dvchev svg{transition:none}
-  /* 看板那两处：六张卡的步进淡入与条形的生长都停掉。条形的关键帧 from/to 两头都写了，
+  /* 看板那两处：七张卡的步进淡入与条形的生长都停掉。条形的关键帧 from/to 两头都写了，
      静态态就是满格，所以关掉动画不会把条子留在 0 上（原型那种只写 to 的会，整块图变空白）。 */
   .stkpi,.stpanel,.stscope{animation:none}
   .stbfill{animation:none}

@@ -4,8 +4,28 @@
 """
 import re
 
+import polish
 from codes import TEL_COUNTRY_CODES, TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax, split_ids
 from master_fields import MASTER_LIMIT50
+
+# 挂旗只判这两类。**识别号那一格不按国别形状判**：它从 v1.12.0 起同时装海关号与各国本土税号，
+# 意大利收货人给中国 USCI 是正解——2026-10-20 加过一版形状判据，被真夹具咬回三条，
+# `_id_cell_warns` 的注释里本来就写着"故意不按形状再拦一道"（用例见 test_country_flags 那条守卫）。
+# STATE 那一格有「优化」按钮可点、不必再挨报；TEL/FAX 由区号↔国家那条一致方管。
+_COUNTRY_COLS = ("POSTAL", "COUNTRY")
+
+
+def _country_warns(d: dict, prefixes: tuple, hs_col: str = "") -> list:
+    """国别旗只出声、不动值：读的是 polish 那一张表，与「优化」按钮共用一份判据。"""
+    warns = []
+    for pfx in prefixes:
+        country = str(d.get(pfx + "_INFO_COUNTRY", "") or "")
+        for suf in _COUNTRY_COLS:
+            col = f"{pfx}_INFO_{suf}"
+            warns.extend(polish.shape_warns(col, d.get(col, ""), country))
+    if hs_col:
+        warns.extend(polish.hs_warns(hs_col, d.get(hs_col, "")))
+    return warns
 
 def _alnum_upper(v) -> str:
     """税号/电话比对用：去掉所有分隔符再比，票面 00.280.273/0001-37 与 00280273000137 是同一个号。"""
@@ -120,6 +140,9 @@ def validate_raw(d: dict, sent: dict | None = None) -> list:
         warns.extend(_id_cell_warns(k, d.get(k, ""),
                                     d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
 
+    # 7) 按国别的格式旗（邮编位数/识别号形状/国家认不出/HS 不足 6 位）——只报不改
+    warns.extend(_country_warns(d, ("SHIPPER", "CONSIGNEE"), "GOODS_HS_CODE"))
+
     return warns
 
 
@@ -139,15 +162,16 @@ def validate_air(d: dict) -> list:
         k = pfx + "_INFO_EORI"
         warns.extend(_id_cell_warns(k, d.get(k, ""),
                                     d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
+    # 国别旗同 L2：人改过或点过优化的值，按当前值重新判一遍
+    warns.extend(_country_warns(d, ("SHIPPER", "CONSIGNEE"), "GOODS_HS_CODE"))
     return warns
 
 
 # ── 主单（MAWB）侧：公司 AMS_RECORD 是另一套列面，所以是另一张判据表 ──────────────
 # 判据与分单同源（区号↔国家、EORI 形态、单号格式、限长），只是作用在公司列名上。
-_MASTER_GROUPS = (("SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_TEL"),
-                  ("CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_TEL"),
-                  ("NOTIFY_INFO_COUNTRY", "NOTIFY_INFO_TEL"))
-_MASTER_EORI = ("SHIPPER_INFO_EORI", "CONSIGNEE_INFO_EORI", "NOTIFY_INFO_EORI")
+_MASTER_PARTIES = ("SHIPPER", "CONSIGNEE", "NOTIFY")
+_MASTER_GROUPS = tuple((p + "_INFO_COUNTRY", p + "_INFO_TEL") for p in _MASTER_PARTIES)
+_MASTER_EORI = tuple(p + "_INFO_EORI" for p in _MASTER_PARTIES)
 _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
 
 
@@ -206,6 +230,9 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
         if v and not _eori_cell_ok(v):
             warns.append(f"{k} 形态异常: {v!r}（这一格放税号：两位国家字母开头的号码、"
                          "纯数字税号或 18 位 USCI；多个号用 / 隔开，别写标签词或整句话）")
+
+    # 国别旗与分单同一张表、同一处判据；主单多一个通知人
+    warns.extend(_country_warns(d, _MASTER_PARTIES, "GOODS_INFO_HSCODE"))
 
     if transcript:
         text = transcript.get("full_text") or " ".join(

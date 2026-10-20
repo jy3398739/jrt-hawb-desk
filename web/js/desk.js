@@ -315,6 +315,50 @@ function setEdit(t, k, v){
 function editedList(t){
   return Object.keys(t.airE).map(k => "air." + k);
 }
+/* 只报"现在还真是那条规则改出来的值"的列：人按完优化又自己改过一次的，那一列就是人工改动，
+   别替它认下那条规则（留痕只能记发生过的事，与服务端"规则号只挂真改动的列"同一条口径）。
+   t.polishW 里存的是 {规则号, 当时按出来的值}：服务端第二次扫就不会再报这一格（幂等），
+   所以不能反过来靠 t.polish 去认它。 */
+function polishSent(t){
+  const out = {}, w = t.polishW || {};
+  for (const k in w){
+    if (k in t.airE && String(t.airE[k]) === String(w[k].to)) out[k] = w[k].rule;
+  }
+  return out;
+}
+/* 并列两行里"票面"那一行：只有发出值与票面那份不一样时才多占一行（一样就别占地方）。
+   上行永远是解析出来那份（人核对的就是它），下面那个框照旧是要发出去的值、照旧能手改。
+   「优化」只在还没被人工改过、这张票还没交出去的时候出现——按下去就是人的一个决定，
+   所以不替人多按一次、更不做整票一键（60 格一次改完，人就再也不看原值了）。 */
+function polishHtml(face, sent, po, edited, locked, rec){
+  const parts = [];
+  if (L.polishShows(face, sent) && String(face).trim())
+    parts.push(`<span class="pf">票面：${esc(face)}</span>`);   // 空着的那一格不必印一行「票面：」
+  if (po && !edited && !locked)
+    parts.push(`<button class="btn sm g" type="button" data-polish="${esc(po.field)}"`
+      + ` title="按目的国写法把这一格换成「${esc(po.to)}」：${esc(po.why)}">优化</button>`
+      + `<span class="pw">${esc(po.why)}</span>`);
+  else if (rec && String(sent) === String(rec.to))
+    parts.push(`<span class="pw" title="规则号 ${esc(rec.rule)}（暂存时按它留痕）">已按规则优化</span>`);
+  return parts.join("");
+}
+function polishInner(t, r){
+  return polishHtml(txt(t.air, r.k), airVal(t, r.k), (t.polish || {})[r.k],
+                    r.k in t.airE, !!t.locked, (t.polishW || {})[r.k]);
+}
+async function polishScan(t){
+  if (!t) return;
+  t.polishDone = true;      // 先置位：扫不成（服务端 400/网络断）也不能每次重画再打一枪
+  try{
+    const r = await fetch(BASE + "/polish", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({chain: "hawb", fields: reviewed(t)})});
+    if (!r.ok) return;
+    const j = await r.json();
+    t.polish = L.polishMap(j.rows);
+    render();
+  }catch(e){ /* 扫不到就当没有可优化的格子：核对本身不受影响 */ }
+}
 function reviewed(t){
   const base = Object.assign({}, t.air), box = t.airE;
   for (const k in box) base[k] = NUM[k] !== undefined ? toNum(k, box[k]) : box[k];
@@ -328,6 +372,7 @@ function payloadFor(t, who){
     acked_flags: (t.ackF || []).slice(),
     acked_empty: (t.ackE || []).slice(),
     edited_fields: editedList(t),
+    polish_rules: polishSent(t),
     raw_original: t.raw, air_original: t.air,
     air_reviewed: reviewed(t),
   };
@@ -1019,7 +1064,8 @@ async function runQueue(){
       const j = await extract(t);
       Object.assign(t, {state:"done", stem:j.stem, channel:j.channel, elapsed:j.elapsed,
                         qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ackE:[],
-                        todoBase:null, ll:j.transcript || null});
+                        todoBase:null, ll:j.transcript || null,
+                        polish:{}, polishW:{}, polishDone:false});   // 新的一份票面：可优化的格子重扫
       if (S.sel === t.filename) S.sel = t.stem;
       saveDraft(t);
       hintLocate();          // 第一次解析成功时提一次「点字段名能定位」，之后不再啰嗦
@@ -1657,7 +1703,7 @@ function orphanTable(t, ef){
 function fieldRowHtml(t, r, hide){
   return `<tr id="f-${r.k}" class="${rowCls(r, t)}" data-hov="${r.k}" data-todo="${r.st.todo ? 1 : 0}"${hide ? " hidden" : ""}>
       <td class="k loc"><button type="button" class="kbtn" data-jump-field="${r.k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(r.lab)}</span><span class="ky">${esc(r.k)}</span></button></td>
-      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air">${control(t, r.k)}${flagLines(r)}${edgeGripHtml()}</td>
+      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air"><div class="poline">${polishInner(t, r)}</div>${control(t, r.k)}${flagLines(r)}${edgeGripHtml()}</td>
       <td class="s" data-st="${r.k}">${statusCell(t, r)}</td></tr>`;
 }
 /* 三态提交按钮。红旗那一档与"跳过空栏"是两件事，界面上不许混成一颗按钮：
@@ -1763,7 +1809,7 @@ function renderMain(){
       const miss = missed.includes(k);
       rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
-        <td class="c v${k in MV.edit ? " edited" : ""}"><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${edgeGripHtml()}</td>
+        <td class="c v${k in MV.edit ? " edited" : ""}"><div class="poline">${mvPolishInner(k, v)}</div><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
           : (v ? (BACK.has(k) ? `<span class="badge same" title="资料里这一格与本机上次发给公司的值相同，多半是自己回填的：它不能当独立证据">本机回填</span>`
@@ -1786,6 +1832,7 @@ function renderMain(){
           <div class="meta">${st} · 模型 ${esc(rec.model || "—")} · ${rec.elapsed || 0}s
             ${fid ? ` · 保真 ${fid.passed}/${fid.checked} 列有资料出处` : ""}
             ${Object.keys(MV.edit).length ? ` · 已改 ${Object.keys(MV.edit).length} 列` : ""}
+            ${L.polishCount(MV.polish, MV.edit, MV.locked) ? ` · 可优化 ${L.polishCount(MV.polish, MV.edit, MV.locked)} 列（点格子里的「优化」才改值）` : ""}
             ${MV.submitted ? ` · 已回传 ${esc(MV.submitted.at)}` : ""}</div></div>
         <span class="sp"></span>
         <button class="btn sm" id="mvReparse">重新解析</button>
@@ -1826,6 +1873,25 @@ function renderMain(){
     }));
     $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
     $("#mvReparse").addEventListener("click", mvReparse);
+    /* 打开这张主单扫一次可优化的列（解析没完不扫：那会儿 36 列还没落下来）。
+       主单表整张重画，所以「优化」那颗按钮挂在 #mstHawbCard 这一层的委托上、只挂一次
+       （分单侧"点了没反应"那个坑，同一族，不在这儿再犯一次）。 */
+    if (!MV.polishDone) mvPolishScan();
+    const card = $("#mstHawbCard");
+    if (card && !card._polishWired){
+      card._polishWired = true;
+      card.addEventListener("click", e => {
+        const b = e.target.closest("[data-polish]");
+        if (!b || !MV) return;
+        const k = b.dataset.polish, po = (MV.polish || {})[k];
+        if (!po || k in MV.edit || MV.locked) return;
+        mvWrite(k, po.to);
+        MV.polishW = MV.polishW || {};
+        MV.polishW[k] = {rule: po.rule, to: po.to};
+        render();
+        toast("「" + mvLabel(k) + "」已换成 " + po.to + " —— " + po.why + "（可还原；暂存时按规则号留痕）", "ok");
+      });
+    }
     /* 解析中那一档没有底部按钮（mvParsingEmpty），这几颗的接线必须先认存在再挂——
        裸挂在 null 上会把整场 render 炸掉，票面栏就停在上一张票的画面里（浏览器里才看得见）。 */
     const mst = $("#mvStage"); if (mst) mst.addEventListener("click", mvStage);
@@ -1893,6 +1959,7 @@ function renderMain(){
       <button class="t-flag" type="button" data-jump-first="flag" id="cFlag">红旗 ${ef.length}</button>
       <button class="t-soft" type="button" data-jump-first="empty" id="cEmpty">空值 ${nSoft}</button>
       <span class="t-edit" id="cEdit">已改 ${Object.keys(t.airE).length}</span>
+      <span class="t-polish" id="cPolish" title="按目的国写法可以改的那几格：只在格子上点「优化」才改值，系统不自动动你的票面">可优化 ${L.polishCount(t.polish, t.airE, t.locked)} 格</span>
       <button class="btn sm" id="jumpFirst" type="button">跳到首个待办</button>
       <label><input type="checkbox" id="onlyTodo"${DESK.onlyTodo ? " checked" : ""}> 只看待核对</label>
       <span class="bar" aria-hidden="true"><i id="barFill"></i></span>
@@ -1918,6 +1985,9 @@ function renderMain(){
   growAll($("#main").querySelectorAll("textarea"));
   $("#barFill").style.width = pr.pct + "%";    // 宽度只能在这儿写：模板里不许出现内联样式（守卫盯着）
   drawAnchors();                                // 确认一条红旗，票面上那个常驻锚点就要当场没
+  /* 打开一张票就扫一次可优化的格子。挂在这儿而不是 refreshChrome：那个函数只在改格子时跑，
+     初次渲染根本不经过它——浏览器实测过，挂在里面的结果是永远 0 格。 */
+  if (!t.polishDone) polishScan(t);
 }
 /* 吸顶高度是量出来的，不是抄下来的：顶栏在 1020-1460px 会折成两排、待办条会随红旗多少换行，
    写死一次就在折行那天压住第一行字段（--todoH 有过这个教训，--hdh 从前干脆只是个静态令牌）。
@@ -1946,6 +2016,7 @@ function refreshChrome(t){
   setTxt("#cFlag", "红旗 " + ef.length);
   setTxt("#cEmpty", "空值 " + rows.filter(r => r.st.s === "empty").length);
   setTxt("#cEdit", "已改 " + Object.keys(t.airE).length);
+  setTxt("#cPolish", "可优化 " + L.polishCount(t.polish, t.airE, t.locked) + " 格");
   setTxt("#progTxt", pr.done + "/" + pr.total);
   const bar = $("#barFill"); if (bar) bar.style.width = pr.pct + "%";
   drawSubmitCtl(t);
@@ -1960,6 +2031,8 @@ function refreshRow(t, k){
     tr.querySelector("[data-st]").innerHTML = statusCell(t, r);
     const fx = tr.querySelector('[data-cell="air"] .flags');
     if (fx) fx.outerHTML = flagLines(r);       // 旗面原文跟着改：确认掉的那条要当场从红转灰
+    const pl = tr.querySelector('[data-cell="air"] .poline');
+    if (pl) pl.innerHTML = polishInner(t, r);  // 票面/发出两行也跟着这一格重画：手改一次就该出现或消失
     tr.querySelector('[data-cell="air"]').classList.toggle("edited", k in t.airE);
   }
   const row = document.querySelector(`.row[data-i="${S.tickets.indexOf(t)}"] .st`);
@@ -2016,12 +2089,25 @@ function wireMain(t){
        委托只挂一次，整页重画、局部重画都不影响它。 */
     $("#main").addEventListener("click", e => {
       const b = e.target.closest("[data-ack],[data-unack],[data-ackf],[data-unackf]," +
-                                "[data-acke],[data-une],[data-restore],[data-fold],[data-gack]");
+                                "[data-acke],[data-une],[data-restore],[data-fold],[data-gack]," +
+                                "[data-polish]");
       if (!b) return;
       const t = current(); if (!t) return;
       const d = b.dataset;
       let msg = "";
-      if (d.restore !== undefined){ delete t.airE[d.restore]; }
+      if (d.polish !== undefined){
+        /* 「优化」＝走人工改值那一条链（setEdit → 已改 → 暂存逐列 diff → 提交重算红旗），
+           只是额外记下"是哪条规则把值换成这个的"。按钮在每次重画的新节点上，
+           所以必须待在这条委托里，不能逐节点挂（2026-10-16 那个"点了没反应"就是这个坑）。 */
+        const po = (t.polish || {})[d.polish];
+        if (!po || d.polish in t.airE || t.locked) return;
+        setEdit(t, d.polish, po.to);
+        t.polishW = t.polishW || {};
+        t.polishW[d.polish] = {rule: po.rule, to: po.to};
+        refreshRow(t, d.polish);
+        msg = "「" + d.polish + "」已换成 " + po.to + " —— " + po.why + "（可还原；暂存时按规则号留痕）";
+      }
+      else if (d.restore !== undefined){ delete t.airE[d.restore]; }
       else if (d.fold !== undefined){ if (FOLD.has(d.fold)) FOLD.delete(d.fold); else FOLD.add(d.fold); }
       else{
         t.ackF = t.ackF || []; t.ackE = t.ackE || [];
@@ -2660,17 +2746,23 @@ function mvRestore(rec){
 /* 换解析记录的唯一入口：重解析、轮询、提交后都走这里，绕开它就等于把刚恢复的草稿弄丢。 */
 function mvSetRec(rec){
   if (!MV) return;
+  if (MV.rec && MV.rec.ams !== rec.ams) MV.polishDone = false;   // 36 列换了一份：可优化的那些要重扫
   MV.rec = rec;
   mvRestore(rec);
   mvSave();
 }
+/* 主单改一格只有这一个写入口：手打与点「优化」都从这儿出去，
+   否则两条路会写出两份 MV.edit 语义（分单侧同一个道理在 setEdit）。 */
+function mvWrite(k, v){
+  const m = L.draftTouch(MV.edit, MV.editBase, MV.conflicts, k, v, (MV.rec.ams || {})[k]);
+  MV.edit = m.edit; MV.editBase = m.editBase; MV.conflicts = m.conflicts;
+  mvSave();
+}
 function mvTouch(inp){
   const k = inp.dataset.mk;
-  const m = L.draftTouch(MV.edit, MV.editBase, MV.conflicts, k, inp.value, (MV.rec.ams || {})[k]);
-  MV.edit = m.edit; MV.editBase = m.editBase; MV.conflicts = m.conflicts;
+  mvWrite(k, inp.value);
   inp.closest("td").classList.toggle("edited", k in MV.edit);
   autoGrow(inp);
-  mvSave();
   const msg = $("#mvMsg");
   if (msg) msg.textContent = Object.keys(MV.edit).length
     ? "已改 " + Object.keys(MV.edit).length + " 列（提交时服务端按当前值重算红旗）" : "";
@@ -2701,7 +2793,33 @@ function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
    挂着，看上去就像新票已经解析完了（2026-10-15 现场）。旧票的改动不受影响：mvSave 逐键落了盘。 */
 function mvShell(mawb){
   return {mawb: mawb, order: {}, rec: {state: "parsing"}, editBase: {}, edit: {}, acked: [],
-          extraFlags: [], conflicts: [], localDiff: [], staged: null, locked: "", submitted: null};
+          extraFlags: [], conflicts: [], localDiff: [], staged: null, locked: "", submitted: null,
+          polish: {}, polishW: {}, polishDone: false};
+}
+/* 主单侧的并列两行与整票扫描：与分单同一套判据（服务端那张国别表），只是列面是 36 列那份。
+   "票面"那一行取的是这条主单最新一次解析出来的值（rec.ams），改过的列永远在它下面那行。 */
+function mvPolishInner(k, v){
+  const ams = (MV && MV.rec && MV.rec.ams) || {};
+  const face = ams[k] == null ? "" : String(ams[k]);
+  return polishHtml(face, v, ((MV && MV.polish) || {})[k],
+                    k in ((MV && MV.edit) || {}), !!(MV && MV.locked),
+                    ((MV && MV.polishW) || {})[k]);
+}
+function mvPolishSent(){
+  const out = {}, w = (MV && MV.polishW) || {}, edit = (MV && MV.edit) || {};
+  for (const k in w){
+    if (k in edit && String(edit[k]) === String(w[k].to)) out[k] = w[k].rule;
+  }
+  return out;
+}
+function mvPolishScan(){
+  if (!MV || !MV.rec || MV.rec.state !== "done") return;
+  MV.polishDone = true;      // 与分单同一档：失败不重打，免得每次重画都发一枪
+  fetch(BASE + "/polish", {method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({chain: "master", fields: mvValues()})})
+    .then(r => r.ok ? r.json() : {rows: []})
+    .then(j => { MV.polish = L.polishMap(j.rows); render(); })
+    .catch(() => {});
 }
 /* 主单暂存：把这 36 列存进服务器上的这条主单记录，并在公司那边占个位（状态 0，可反复改）。
    与分单同一个道理——从前 MV.edit 只在浏览器里，换台机器就什么都没交出去。 */
@@ -2710,7 +2828,8 @@ async function mvStage(){
   try{
     const r = await fetch(BASE + "/master/stage", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({mawb: MV.mawb, ams: mvValues(), acked_flags: MV.acked})});
+      body: JSON.stringify({mawb: MV.mawb, ams: mvValues(), acked_flags: MV.acked,
+                            polish_rules: mvPolishSent()})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.ok === false){
       const d = j.detail;
@@ -2750,7 +2869,7 @@ async function mvSubmit(){
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};
-      MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.conflicts = [];
+      MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.conflicts = []; MV.polishW = {};
       mstDraftClear(MV.mawb);                  // 已回传公司：草稿再留着，下次打开同一主单会把交过的改动重新盖上来
       mvSetRec(Object.assign({}, MV.rec, {ams: mvValues()}));
       MV.msg = ""; toast("主单 " + MV.mawb + " 已回传公司（" + (j.action || "ok") + "）", "ok");
@@ -3154,7 +3273,8 @@ function stTagCell(list, label){
     + (tg.more ? `<span class="sttag more">+${tg.more}</span>` : "")
     + "</span>";
 }
-/* 六张卡的顺序、语义色、单位与那句灰色解释语都按交接文档 §3.2 钉在这儿。
+/* 七张卡的顺序、语义色、单位与那句灰色解释语都按交接文档 §3.2 钉在这儿
+   （第七张是 v1.32.0 加的「按规则优化」：人点的是规则、不是纠正模型，所以它不能并进上面那两档）。
    值一律取服务器算好的那一份，这里只管摆——同一套算术写两遍迟早给出两个百分比。 */
 const ST_KPI = [
   {k: "acc_field", lb: "逐字段准确率", ds: "模型本身读得准不准", rate: true, v: "blue", bar: "blue"},
@@ -3162,6 +3282,7 @@ const ST_KPI = [
   {k: "clean_rate", lb: "一次通过率", ds: "一张没改的票占比", rate: true, v: "amber", bar: "amber"},
   {k: "edits_doc", lb: "制单员改的列", ds: "人修正模型的字段数", u: " 列", v: "", bar: ""},
   {k: "edits_inp", lb: "录入员改的列", ds: "录入环节的二次改动", u: " 列", v: "green", bar: ""},
+  {k: "edits_polished", lb: "按规则优化", ds: "点「优化」接受的写法，不算人修正模型", u: " 列", v: "", bar: ""},
   {k: "unreviewed", lb: "未复核就发出", ds: "未经录入员复核", u: " 张", v: "red", bar: ""}];
 function statsQS(){
   /* 只拼查询串，URL 前缀留在调用点上写死带 BASE —— 页面挂在 /hawb/ 下，
@@ -3186,8 +3307,8 @@ async function loadStats(){
   }
 }
 function renderStats(){
-  /* 看板骨架：口径条 → 六张卡 → 左条形图 + 右明细表。只有这一层播入场动画，
-     明细 tbody 交给 renderStatsRows 单独重画——否则每点一次分段筛选，六张卡就跟着淡入一遍。 */
+  /* 看板骨架：口径条 → 七张卡 → 左条形图 + 右明细表。只有这一层播入场动画，
+     明细 tbody 交给 renderStatsRows 单独重画——否则每点一次分段筛选，七张卡就跟着淡入一遍。 */
   const s = ST.summary, box = $("#stBox");
   const cnt = L.statsCounts(ST.rows);
   const cl = L.statsClosure(s, ST.rows);
@@ -3199,6 +3320,10 @@ function renderStats(){
     + `<span>可比 <b>${s.fields_comparable || 0}</b> 列</span>`
     + `<span>历史无逐字段留痕 <b>${s.legacy || 0}</b> 张</span>`
     + `<span class="note">（无留痕单据不进入准确率分母，仅在下方明细备查）</span>`
+    /* 按规则优化的列同样从「可比」里走掉了：不在这儿说一句，人会觉得模型少读了几列。
+       为 0 时不出这一对字，免得一张没按过的窗口上多一句无关的话。 */
+    + (s.edits_polished ? `<span>按规则优化 <b>${s.edits_polished}</b> 列</span>`
+        + `<span class="note">（这一档既不算人修正、也不进分母）</span>` : "")
     + (ok ? "" : `<span class="bad">口径与明细对不上：可算 ${s.tickets || 0} + 无留痕 ${s.legacy || 0}`
         + ` ≠ 明细 ${ST.rows.length} 行，可比列合计 ${s.fields_comparable || 0}。`
         + `下面的百分比先别用，刷新一次看看。</span>`)
@@ -3259,7 +3384,7 @@ function renderStats(){
       + s.groups.map(g => "<tr>" + ks.map(c => `<td>${esc(String(g[c]))}</td>`).join("") + "</tr>").join("")
       + "</tbody></table></div></div>";
   }
-  html += '<p class="stfoot"><b>读法：</b>上面六张卡速读准确率与人的工作量，左边条形图定位「最该修的列」，'
+  html += '<p class="stfoot"><b>读法：</b>上面七张卡速读准确率与人的工作量，左边条形图定位「最该修的列」，'
     + '右边明细用「有改动 / 无留痕」分段切换，<b>无留痕行自动弱化</b>而不是满屏刷屏。'
     + '两个数不能混：<b>逐字段准确率</b>问模型读得准不准；<b>复核后准确率</b>问录入员还剩多少活'
     + '——能不能把提取结果直接喂给平台，看后者。没暂存记录就直发的票，改动全记在制单员档'
@@ -3290,7 +3415,7 @@ function stPaint(bars){
     bf[i].style.animationDelay = (0.05 + i * 0.07).toFixed(2) + "s";   // 0.07s 一档依次长出来
   });
 }
-/* 明细 tbody 单独重画：换分段只换这一段，六张卡与条形图都不重建，所以入场动画不会重播。
+/* 明细 tbody 单独重画：换分段只换这一段，七张卡与条形图都不重建，所以入场动画不会重播。
    行底色三档（有改动铺暖色 / 无留痕弱化 / 其余正常）由 L.statsSeg 的归属决定，与筛选同一个判据。 */
 function renderStatsRows(){
   const tb = $("#stRows");
@@ -3567,7 +3692,7 @@ $("#stGo").addEventListener("click", loadStats);
 $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });
 ["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));
 /* 分段筛选只重画 tbody。委托挂在 #stBox 上：innerHTML 换掉的是它的孩子，委托点自己不动。
-   要是这里调 renderStats()，六张卡与条形图会跟着重建，入场动画每点一次筛选就重播一遍。 */
+   要是这里调 renderStats()，七张卡与条形图会跟着重建，入场动画每点一次筛选就重播一遍。 */
 $("#stBox").addEventListener("click", e => {
   const b = e.target.closest("[data-sf]"); if (!b) return;
   ST.seg = b.dataset.sf;

@@ -20,6 +20,9 @@
   POST /extract            需登录会话；multipart 字段 file=分单文件；一律按原名落盘（L0 归档+四层结果）
   POST /submit             需登录会话；body={"tickets":[...] }；制单员提交=回传公司(现 mock)+进索引的唯一出口，缺主/分单号拒绝
   POST /stage              需登录会话；body={"tickets":[...] }；核对结果存服务器 + 公司占位(hawb2，状态 0)，缺号只存本机
+                           每张票可带 polish_rules={列:规则号}：人按「优化」改的那几格，留痕只挂真改动的列
+  POST /polish             需登录会话；body={"chain":"hawb|master","fields":{列:值}}；
+                           返回这些格「将要发出去的值」与规则依据（判据全在 polish 那张国别表，这里不另写）
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
   POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器 + 公司占位(mawb2，状态 0)
@@ -54,8 +57,10 @@ import config
 import desk_queue
 import fieldspec
 import jobs
+import master_fields
 import master_pipeline
 import metrics
+import polish
 import purge
 import stats
 import store
@@ -361,6 +366,7 @@ class MasterSubmitBody(BaseModel):
     reviewer_role: str = ""      # 一律由服务端按会话覆写：请求里写什么都不认
     ams: dict = {}
     acked_flags: list = []
+    polish_rules: dict = {}      # {列: 规则号}：人按「优化」改过的那几格，留痕只挂真改动的列
 
 
 @app.post("/master/stage")
@@ -373,7 +379,8 @@ def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
     公司那一发失败不回滚本机这份，原因随响应带回去（见 _company_stage）。"""
     try:
         rec = master_pipeline.stage_master(body.mawb, body.ams, str(user.get("name") or ""),
-                                           str(user.get("role") or ""), body.acked_flags)
+                                           str(user.get("role") or ""), body.acked_flags,
+                                           body.polish_rules)
     except ValueError as e:
         raise HTTPException(400, str(e))
     company = {"ok": False, "skipped": "没有主单号"}
@@ -628,6 +635,40 @@ def _company_stage(saved: dict, user: dict) -> dict:
     return {"ok": True, "mode": res.get("mode"), "action": res.get("action")}
 
 
+class PolishBody(BaseModel):
+    chain: str = "hawb"
+    fields: dict = {}
+
+
+@app.post("/polish")
+def polish_cells(body: PolishBody, user: dict = Depends(current_user)):
+    """逐格「优化」的算法出口：返回这些格**将要发出去的值**与依据，供核对区并列两行。
+
+    判据一条都不在这儿写：全在 `polish` 那张国别表里，这里只做门禁、形状校验与列面白名单
+    （白名单取两条链各自的列面真源，不再抄一份列名）。前端一次拉整票、点某一格只写回那一格，
+    写回走的仍是现有人工改值那条链，所以暂存逐列 diff、提交重算红旗、台账「改 N 列」照旧。
+    """
+    if body.chain not in ("hawb", "master"):
+        raise HTTPException(400, "chain 只能是 hawb / master")
+    cols = fieldspec.desk_keys() if body.chain == "hawb" else list(master_fields.MASTER_COLS)
+    allowed = set(polish.actionable_columns(cols))
+    fields = body.fields if isinstance(body.fields, dict) else None
+    if fields is None:
+        raise HTTPException(400, "fields 要是一份列名→值的字典")
+    if len(fields) > 96:
+        # 一次就一张票：列面 38 / 36 列，96 留了一倍余量。**别拿 len(cols) 当上限**——
+        # 老票的 air 里还留着 v1.12.0 删掉的 `*_INFO_TAX_ID`，那种票会连自己的列数都超（隔离浏览器实测）。
+        raise HTTPException(400, "fields 太多：一次最多扫一张票，别把台账发过来")
+    for value in fields.values():
+        if isinstance(value, (dict, list)) or (value is not None and not isinstance(value, (str, int, float))):
+            raise HTTPException(400, "fields 的值只能是文本或数字")
+    rows = polish.preview({str(k): ("" if v is None else str(v)) for k, v in fields.items()},
+                          chain=body.chain)
+    LOG.info("优化扫描 who=%s(%s) 链=%s 可优化=%d 列",
+             user.get("name"), user.get("role"), body.chain, len(rows))
+    return {"ok": True, "chain": body.chain, "rows": rows}
+
+
 @app.post("/stage")
 def stage(body: StageBody, user: dict = Depends(current_user)):
     """暂存：核对结果存到服务器（留痕、给同事复核），并在公司那边**占个位**（状态 0，可反复改）。
@@ -653,7 +694,8 @@ def stage(body: StageBody, user: dict = Depends(current_user)):
             raise HTTPException(400, f"这张票没有可存的核对内容：{stem}")
         try:
             saved = store.stage_ticket(stem, rec, str(user.get("name") or ""),
-                                       str(user.get("role") or ""), tk.get("acked_flags"))
+                                       str(user.get("role") or ""), tk.get("acked_flags"),
+                                       tk.get("polish_rules"))
         except ValueError as e:
             raise HTTPException(400, str(e))
         out.append({"stem": saved["stem"], "hawb": saved["hawb"], "edited": len(saved["edits"]),

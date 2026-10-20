@@ -177,23 +177,27 @@ def test_the_board_stays_a_window_and_keeps_every_real_control():
     assert '$("#btnStats").hidden = !admin' in js, "入口只对管理员可见（与服务端门禁同一口径）"
 
 
-def test_exactly_the_three_rate_cards_declare_a_progress_bar():
-    """前三张是百分比、后三张是计数，进度条只属于百分比那三张（§3.2）。
+def test_seven_cards_with_the_three_rate_ones_declaring_a_progress_bar():
+    """前三张是百分比、后四张是计数，进度条只属于百分比那三张（§3.2）。
     这条必须在源码上钉住 KPI 表里的 bar 标记：浏览器实测就是这么发现第一张卡的条子整个没生成的
-    ——bar 写成了空串，模板里 `c.bar ? …` 直接判假，蓝条连 DOM 都没进，而六张卡的数值全对，
+    ——bar 写成了空串，模板里 `c.bar ? …` 直接判假，蓝条连 DOM 都没进，而七张卡的数值全对，
     光看数字永远发现不了。"""
     js = _js()
     tbl = js[js.index("const ST_KPI = ["):js.index("function statsQS(")]
     rows = [r for r in tbl.splitlines() if re.search(r'\{k: "', r)]
-    assert len(rows) == 6, "KPI 表该是六行一行一张卡，读到 %d 行" % len(rows)
+    assert len(rows) == 7, "KPI 表该是七行一行一张卡，读到 %d 行" % len(rows)
     for r in rows[:3]:
         assert re.search(r'bar: "(blue|green|amber)"', r), "百分比卡少了进度条标记：" + r.strip()[:80]
         assert "rate: true" in r, "百分比卡要标 rate，否则单位会被当成「列/张」那种后缀"
     for r in rows[3:]:
         assert re.search(r'bar: ""', r), "计数卡不该有进度条：" + r.strip()[:80]
     assert [m.group(1) for m in re.finditer(r'\{k: "([\w_]+)"', tbl)] == \
-        ["acc_field", "acc_after_review", "clean_rate", "edits_doc", "edits_inp", "unreviewed"], \
-        "六张卡取的数不是 §3.2 那六个（顺序与口径钉死：换成 edits_total 就把「未复核就发出」这一张悄悄丢了）"
+        ["acc_field", "acc_after_review", "clean_rate", "edits_doc", "edits_inp",
+         "edits_polished", "unreviewed"], (
+        "七张卡取的数不是 §3.2 那六个加「按规则优化」那一档（顺序与口径钉死：换成 edits_total "
+        "就把「未复核就发出」这一张悄悄丢了）")
+    pol = [r for r in rows if "edits_polished" in r][0]
+    assert 'u: " 列"' in pol, "按规则优化那一档的单位是列，不是张：" + pol.strip()[:80]
     body = _fn(_jsCode(), "renderStats")
     assert "c.rate ? pctParts(raw)" in body, \
         "百分比卡没走 pctParts：要么把 0.9615 原样摆出来，要么给计数卡也拼上百分号"
@@ -262,25 +266,25 @@ def test_bars_grow_with_scalex_and_stay_visible_when_motion_is_reduced():
 
 def test_the_entry_animation_plays_once_and_not_on_every_segment_switch():
     """§5.5 首屏动画只在挂载时播一次；§4.3 分段筛选属于内容更新，不播入场。
-    做法与今日归档同一个：骨架（口径条/六卡/两栏）与明细 tbody 是两个函数，
+    做法与今日归档同一个：骨架（口径条/七张卡/两栏）与明细 tbody 是两个函数，
     换分段只重画 tbody。合成一个函数的话，每点一次筛选整页就淡入一遍。"""
     js, css = _js(), _css()
-    assert "function renderStatsRows(" in js, "明细要能单独重画，否则换分段必然连六张卡一起重建"
+    assert "function renderStatsRows(" in js, "明细要能单独重画，否则换分段必然连七张卡一起重建"
     seg = _after(js, '$("#stBox").addEventListener')
     assert "renderStatsRows(" in seg and "renderStats()" not in seg, \
-        "分段那一下调了整页重画：六张卡会跟着重播淡入"
-    assert re.search(r"\.stkpi[^\n]*\{animation:stFade", css), "六张卡的入场淡入没接上"
+        "分段那一下调了整页重画：七张卡会跟着重播淡入"
+    assert re.search(r"\.stkpi[^\n]*\{animation:stFade", css), "七张卡的入场淡入没接上"
     assert not re.search(r"#stRows[^\n]*\{[^\n]*animation", css), \
         "明细行身上挂了入场动画：换一次筛选就闪一遍，正是原型第 5 条坑点"
     delays = re.findall(r"\.stkpi:nth-child\(\d\)\{animation-delay:\.(\d+)s\}", css)
-    assert len(delays) == 6, "六张卡要按序步进淡入（交接文档给的是 0.04s 一档）"
+    assert len(delays) == 7, "七张卡要按序步进淡入（交接文档给的是 0.04s 一档）"
     steps = [int(d) for d in delays]
     assert steps == sorted(set(steps)), "步进延迟不是严格递增的：两张卡同时淡入，看着就像一起闪了一下"
     assert len(set(b - a for a, b in zip(steps, steps[1:]))) == 1, \
         "步进不是等距的（交接文档 §4.3 给的是 0.04s 一档，不等距会看着一顿一顿）"
     body = js[js.index("function renderStats("):js.index("function stPaint(")]
     assert re.search(r'c\.bar \? `<div class="sttrack', body), \
-        "进度条没按 c.bar 判：后三张计数卡会多出一条空轨道，六张卡的内容就不齐平了"
+        "进度条没按 c.bar 判：后四张计数卡会多出一条空轨道，七张卡的内容就不齐平了"
 
 
 def test_no_trace_rows_are_weakened_not_removed():
@@ -344,12 +348,12 @@ def test_narrow_windows_stack_the_two_columns_instead_of_squeezing_them():
     堆叠之后那一栏必须写 minmax(0,1fr)：grid 里的 1fr 等于 minmax(auto,1fr)，而 auto 的下限是
     内容的最小宽度——明细表带着 min-width:980px，于是这一栏死活不肯窄于 980px，整块从窗口里溢出去
     （浏览器实测：窗口 538px、窗口宽 483px，那一栏却算出 1042px）。结果"横滚"滚的是整扇窗而不是表格：
-    六张卡留在左边、明细表在右边，两截对不上。面板自己也要 min-width:0，否则它作为 grid 项同样撑开。"""
+    七张卡留在左边、明细表在右边，两截对不上。面板自己也要 min-width:0，否则它作为 grid 项同样撑开。"""
     css = _css()
     m = re.search(r"@media \(max-width:1100px\)\{(.*?)\n\}", css, re.S)
     assert m, "没有 1100px 这一档"
     inside = m.group(1)
-    assert re.search(r"\.stkpis\{grid-template-columns:repeat\(3,1fr\)\}", inside), "窄窗口下六张卡该折成每行三张"
+    assert re.search(r"\.stkpis\{grid-template-columns:repeat\(3,1fr\)\}", inside), "窄窗口下七张卡该折成每行三张"
     assert re.search(r"\.stmain\{grid-template-columns:minmax\(0,1fr\)\}", inside), \
         "堆叠那一栏要写 minmax(0,1fr)：光写 1fr 会被表格的 min-width 顶到 980px，整块溢出窗口"
     assert re.search(r"\.stpanel\{[^}]*min-width:0", css), \
@@ -394,7 +398,7 @@ def test_widths_and_delays_are_written_from_js_because_inline_style_is_banned():
     assert re.search(r"\.style\.width\s*=", js), "进度条/条形的宽度要由 JS 写回，不是模板里的内联值"
     paint = _fn(js, "stPaint")
     assert re.search(r"fills\[fi\]\.style\.width\s*=", paint), \
-        "KPI 那三条进度条的宽度没人写回：六张卡的数字都对、条子全是空的，光看数看不出来"
+        "KPI 那三条进度条的宽度没人写回：七张卡的数字都对、条子全是空的，光看数看不出来"
     assert re.search(r"bf\[i\]\.style\.width\s*=", paint), \
         "条形图的比例宽度没人写回：每根都会顶到满格，条形图当场失去意义"
     assert re.search(r"bf\[i\]\.style\.animationDelay\s*=", paint), "生长延迟要按序号由 JS 写回"
@@ -403,7 +407,7 @@ def test_widths_and_delays_are_written_from_js_because_inline_style_is_banned():
 
 def test_the_render_never_recomputes_the_server_arithmetic():
     """准确率只有 stats.py 一处算（test_stats.py 也钉着）。改版最容易顺手犯的错是
-    在前端把六张卡的百分比重算一遍、或把 by_field 的 edits 加起来当合计——两边迟早对不上。
+    在前端把七张卡的百分比重算一遍、或把 by_field 的 edits 加起来当合计——两边迟早对不上。
     前端只许格式化（pct）与数行（logic.js 里那三个纯函数）。"""
     js = _js()
     body = _fn(js, "renderStats") + _fn(js, "renderStatsRows")
