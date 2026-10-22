@@ -385,6 +385,14 @@ PURGED_LEDGER = Path(os.getenv("PURGED_LEDGER", str(BASE_DIR / "output" / "purge
 # 上次自动清理跑成什么样（一份小 json）：定时器是独立进程，web 进程既不知道它跑没跑、
 # 也不知道它失败过。不写在盘上，面板就只能对管理员静默失败。
 PURGE_RUN_STATE = Path(os.getenv("PURGE_RUN_STATE", str(BASE_DIR / "output" / "purge_last_run.json")))
+# 规则留言板：录入员把「这个国家这一格该怎么填」说下来的一本台账（设计见 docs/留言板-design.md）。
+# 它只**采集**，不改变任何一格的发出值——要生效必须有人落成代码。让没过人的一段自由文本
+# 决定发去公司系统的数据，出错时谁都拦不住（v1.32.0 那颗「优化」按钮定的就是这条线）。
+BOARD_FILE = Path(os.getenv("BOARD_FILE", str(BASE_DIR / "output" / "board.json")))
+# 开不开这扇门**由配置说，不由机器说**：判据若长在 hostname/端口上，那台改了端口功能就
+# 当场"消失"，而且这个开关不在 .env 里，运维查不出来。默认关——公司那台 .env 写 `BOARD=1`
+# 才有，VM 那台不写就等于没这个功能（六条路由一律 404，而不是 403）。
+BOARD = os.getenv("BOARD", "0").strip() == "1"
 
 # === 行为参数 ===
 VLM_MAX_TOKENS = int(os.getenv("VLM_MAX_TOKENS", "8192"))

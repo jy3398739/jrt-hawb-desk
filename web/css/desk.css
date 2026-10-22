@@ -833,6 +833,63 @@ body[data-density=cozy] .dvci{min-height:var(--dv-row-cozy)}
 .dvatt:focus-visible{outline:2px solid var(--c-focus);outline-offset:1px;border-radius:var(--r-sm)}
 .dvdash{color:var(--c-text-3)}
 
+/* ── 规则留言板（v1.33.0）：一本台账 + 一张浮层 ────────────────────────────────
+   刻意朴素：这一页是拿来查"谁说过什么、后来怎么定的"，不是拿来读的。四档徽章一律
+   文字档色（--c-*-text）压在状态底（--c-*-bg）上——与清理面板同一个规矩，状态填充色当字色
+   过不了 AA（守卫也会拦）。 */
+.boardbox{width:min(1080px,100%);max-width:100%;padding:0;max-height:90vh;display:flex;flex-direction:column}
+.boardbox .t{font-size:var(--f-base);flex-wrap:wrap;row-gap:6px}
+.board-post{padding:10px 16px 12px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
+.board-post textarea{width:100%;box-sizing:border-box;border:1px solid var(--c-line);border-radius:var(--r-md);
+  padding:7px 9px;font:inherit;font-size:var(--f-md);line-height:1.5;background:var(--c-surface);resize:vertical}
+.board-post textarea:focus{outline:2px solid var(--c-focus);border-color:var(--c-accent-line)}
+.board-opts{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px}
+.board-opts select{max-width:280px}
+.btk{font-family:var(--mono);color:var(--c-text-3)}
+.board-rule{margin:9px 0 0;line-height:1.5}
+.board-seg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:11px 16px 6px}
+/* 计数常驻在按钮上、取服务器那份 counts：筛完之后再数一遍就是第二份判据。 */
+.board-seg .dvchip .c{font-family:var(--mono);font-variant-numeric:tabular-nums;margin-left:5px;color:var(--c-text-3)}
+.board-seg .dvchip.on .c{color:var(--c-inverse)}
+.board-body{overflow:auto;padding:2px 16px 14px}
+.brow{border:1px solid var(--c-line-soft);border-radius:var(--r-lg);padding:9px 12px;margin-bottom:8px;
+  background:var(--c-surface)}
+.brow:hover{border-color:var(--c-line)}
+.bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bwho{font-size:var(--f-md);font-weight:var(--w-semi);color:var(--c-text-1)}
+.brole,.bat{font-size:var(--f-xs);color:var(--c-text-3)}
+.bat{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.bstat{margin-left:auto;font-size:var(--f-xs);padding:1px 7px;border-radius:var(--r-sm);white-space:nowrap}
+.bs-open{background:var(--c-neutral);color:var(--c-text-2)}
+.bs-accepted{background:var(--c-ok-bg);color:var(--c-ok-text)}
+.bs-rejected{background:var(--c-bad-bg);color:var(--c-bad-text)}
+.bs-parked{background:var(--c-warn-bg);color:var(--c-warn-text)}
+.bs-gone{background:var(--c-surface-3);color:var(--c-text-3)}
+.btext{margin:6px 0 0;font-size:var(--f-md);color:var(--c-text-1);line-height:1.55;
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.btags{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px}
+.bchip{font-size:var(--f-xs);padding:1px 7px;border-radius:var(--r-sm);background:var(--c-accent-soft);
+  color:var(--c-accent);border:1px solid var(--c-accent-line)}
+.btags .btn{margin-left:2px}
+.bnote{margin-top:6px;font-size:var(--f-sm);color:var(--c-text-2);line-height:1.5}
+.bnote b{font-weight:var(--w-semi);color:var(--c-text-1)}
+.bnote.bnone{color:var(--c-text-3)}
+.bmore{display:block;font-size:var(--f-xs);color:var(--c-text-3)}
+.bhist{margin-top:4px;font-size:var(--f-xs);color:var(--c-text-3)}
+.bacts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+/* 撤回过的行：还在、还读得出来，但一眼要看得出它不算待办——这是"不销毁"在界面上的样子。 */
+.brow.bgone{background:var(--c-surface-2)}
+.brow.bgone .btext{color:var(--c-text-3)}
+.bform{margin-top:9px;padding-top:9px;border-top:1px dashed var(--c-line-strong)}
+.bform textarea{width:100%;box-sizing:border-box;border:1px solid var(--c-line);border-radius:var(--r-md);
+  padding:6px 8px;font:inherit;font-size:var(--f-md);background:var(--c-surface)}
+.bform-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.bform-row .f{flex-direction:column;align-items:flex-start;gap:3px}
+.bform-row .f.wide{flex:1;min-width:240px}
+.bform-acts{display:flex;align-items:center;gap:9px;margin-top:7px;flex-wrap:wrap}
+/* 非安全上下文（公司那台是 http://内网域名:801）里唯一的复制后路：藏起来的 textarea 供 select()+copy()。 */
+.bclip{position:fixed;left:-9999px;top:0;opacity:0}
+
 /* 会动的东西点名关掉（不用 *{animation:none!important} 那种大锤：它把该留的反馈也一起砸了）。
    留着的两处是"换色"不是"位移"——点字段名之后那个框还在闪、跳过去的那一行还在黄，
    关掉它们等于把功能关掉，制单员就不知道自己点到哪儿了。 */

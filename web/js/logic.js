@@ -128,7 +128,42 @@ const L = {
             pending: s.pending, failed: s.failed, flags: s.flags, voided: s.voided};
   },
 
+  /* ── 规则留言板：四档怎么读、一行属于哪一档、各档几条、筛出来的是不是那几条 ──────────
+     判据只有这一处：面板上的计数取服务器算好的那份（board.listing），这里只负责"画"与"筛"，
+     两边都按同一个 seg 走，否则会出现「待看 1」旁边列着 2 行那种最难发现的错。 */
+  boardSeg(r){
+    const x = r || {}, four = ["open", "accepted", "rejected", "parked"];
+    if (x.retracted) return "gone";                 // 撤回过的行自成一档，不再跟着原来的判定走
+    const s = x.status || "open";
+    return four.indexOf(s) < 0 ? "open" : s;        // 认不出的值落回待看：宁可多看一条，别把人的留言画没了
+  },
+  /* 四档的名字是说给同事听的，别露英文：面板上出现 undefined 就是"这功能坏了"的样子。 */
+  boardLabel(s){
+    return ({open:"待看", accepted:"已收", rejected:"不采纳", parked:"先放一放", gone:"已撤回"})[s] || "待看";
+  },
+  boardCounts(rows, viewer){
+    const all = rows || [], c = {all: 0, open: 0, accepted: 0, rejected: 0, parked: 0, gone: 0, mine: 0};
+    const who = viewer || "";
+    all.forEach(r => {
+      const seg = L.boardSeg(r);
+      if (seg === "gone"){ c.gone += 1; return; }   // 已撤回的不占任何待办口径
+      c.all += 1;
+      c[seg] = (c[seg] || 0) + 1;
+      if (who && (r || {}).by === who) c.mine += 1;
+    });
+    return c;
+  },
+  /* 认不出的档退回"整个本子都给你"：退回空表会让人以为这本里真的一条没有。 */
+  boardFilter(rows, f, viewer){
+    const all = rows || [];
+    if (["all", "open", "accepted", "rejected", "parked", "gone", "mine"].indexOf(f) < 0) return all.slice();
+    if (f === "all") return all.filter(r => L.boardSeg(r) !== "gone");
+    if (f === "mine") return all.filter(r => L.boardSeg(r) !== "gone" && (r || {}).by === (viewer || ""));
+    return all.filter(r => L.boardSeg(r) === f);
+  },
+
   /* 提交记录那一格只有 240px：整串 2026-10-10T09:20:00 等宽排下来会把操作人姓名挤掉。
+
      同一年里月日时分足够认票，秒与年留在悬停提示里。认不出的形状原样返回（"mock" 这种
      测试值不该被吃掉），空的还是空的。 */
   shortTime(v){

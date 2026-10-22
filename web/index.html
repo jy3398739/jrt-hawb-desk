@@ -20,6 +20,11 @@
     <button class="btn sm" id="viewDay" type="button" role="tab" aria-selected="false">今日归档</button>
   </span>
   <button class="btn sm" id="btnMawb" hidden title="跳到本页的「主单检索 · 公司系统」卡片：按主单号取回主单原生资料与名下分单，并可开主单/分单原件">主单检索</button>
+  <!-- 规则留言：三角色都看得见的一颗入口（v1.33.0）。不收进「设置」——那颗整颗对非管理员是隐藏的，
+       而手上长着规则的人正是制单员与录入员。徽标是服务器算好的「待看」条数（前端一个都不自己数）。
+       这台没开留言板（VM 那台不写 BOARD=1）时它压根不出现：/health 的 board 为假就藏着，
+       看着像"没这功能"而不是"没权限"。 -->
+  <button class="btn sm" id="btnBoard" hidden aria-haspopup="dialog" aria-expanded="false" title="把你知道的填法规则写下来：哪个国家邮编带横杠、哪格该填什么号。只收集，不改任何一格发出去的值；管理员会逐条定性">规则留言<span class="pcnt" id="boardCnt"></span></button>
   <!-- 设置：管理员专属的六样从前平铺在顶栏上，1620px 窗口实测要 2326px——视图切换被挤到
        2036px 处，管理员就此找不到今日归档（2026-10-12 用户报）。这里只是把入口收纳：
        三节里每颗点开的还是原来那三张窗口，门禁与状态一律不动（真门在服务端 require_admin）。
@@ -179,6 +184,32 @@
   <div class="card chlogbox">
     <div class="t">更新说明<span class="sp"></span><button class="btn sm gh" id="chlogClose" type="button">关闭</button></div>
     <div class="chloglist" id="chlogList"></div>
+  </div>
+</div>
+
+<!-- 规则留言板（v1.33.0）：录入员与制单员把知道的填法规则写下来，管理员逐条定性。
+     它只采集、不生效——这一格发出去什么值，永远由代码里的规则表决定，不由这里的话决定
+     （设计：docs/留言板-design.md）。浮层走全站同一套 .gate 骨架：Esc 与焦点归还自动管上。 -->
+<div class="gate" id="boardWin" hidden>
+  <div class="card boardbox">
+    <div class="t">规则留言<span class="sp"></span><span class="hint" id="boardStatus" role="status" aria-live="polite"></span>
+      <button class="btn sm gh" id="boardClose" type="button">关闭</button></div>
+    <div class="board-post">
+      <textarea id="boardText" rows="3" maxlength="2000" aria-label="留言正文"
+                placeholder="把规则写清楚：哪个国家、哪一栏、票面印成什么样、公司系统要什么写法。想不起是哪一列就别填。"></textarea>
+      <div class="board-opts">
+        <label class="f">国家<input id="boardCountry" type="text" size="6" maxlength="160"
+               aria-label="国家（可留空）" placeholder="BR"></label>
+        <label class="f">哪一列<select id="boardColumn" aria-label="哪一列（可留空）"><option value="">不指定</option></select></label>
+        <label class="f cb"><input id="boardTicket" type="checkbox" aria-label="挂当前这张票">
+               <span>挂当前这张票<span class="btk" id="boardTicketNo"></span></span></label>
+        <button class="btn sm pri" id="boardGo" type="button">提交这条</button>
+      </div>
+      <p class="hint board-rule">这里收的是规则，不改任何一格发出去的值。管理员标成「已收」的意思是这条已经进了代码，
+        会写明哪条规则或哪个版本；只是认同但这一轮不动的写「先放一放」。</p>
+    </div>
+    <div class="board-seg" id="boardSegs" role="group" aria-label="按判定筛选"></div>
+    <div class="board-body" id="boardList"></div>
   </div>
 </div>
 

@@ -925,6 +925,10 @@ async function probe(){
       (stale.length ? " · <b class='svc-bad'>服务端代码改了没重启（" + esc(stale.join("、")) +
         "），票面浏览等功能不生效：关掉服务窗口，重跑 4_启动HTTP服务.bat</b>" : "");
     if (stale.length) toast("提取服务还是改动前的旧进程：关掉服务窗口重跑 4_启动HTTP服务.bat，票面浏览才会生效", "bad");
+    /* 留言板开没开只有服务端知道（.env 里那一行），所以入口那颗跟着 /health 走：
+       没开的那台连入口都不给，而不是点进去吃一句 404。 */
+    boardVisible(r.board === true);
+    if (r.board === true) boardLoad(true);
   }catch(e){
     $("#svcDot").className = "dot bad";
     $("#svcTxt").textContent = "连不上提取服务：先跑 4_启动HTTP服务.bat，再从 http://127.0.0.1:8000/ 打开本页";
@@ -2420,7 +2424,8 @@ $("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说
    焦点还给打开它的按钮，否则下一次 Tab 要从页面顶上重走一遍。
    登录遮罩 #gate 不在内：真正的门在服务端（未登录什么接口都调不动），但"Esc 一掀就露出页面"
    看着像门禁失效，这个错觉不给。 */
-const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct", chlogWin: "#btnChlog"};
+const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct",
+                   chlogWin: "#btnChlog", boardWin: "#btnBoard"};
 function closeTopGate(){
   const open = [...document.querySelectorAll(".gate:not(#gate)")].filter(g => !g.hidden);
   if (!open.length) return false;
@@ -2428,6 +2433,7 @@ function closeTopGate(){
   top.hidden = true;
   if (top.id === "purgeWin") PURGE.armed = false;
   if (top.id === "setWin") closeSet();
+  if (top.id === "boardWin") $("#btnBoard").setAttribute("aria-expanded", "false");
   /* 焦点要落在看得见的那颗入口上：子窗口的入口（统计/清理/账号）此刻藏在已经收起来的设置面板里，
      焦点给它等于丢失；退一步落到顶栏「设置」，键盘用户还能继续。 */
   const sel = GATE_BACK[top.id], entry = sel ? $(sel) : null;
@@ -2449,6 +2455,312 @@ $("#acAdd").addEventListener("click", async () => {
   if (!n){ acctErr("请填写账号名"); return; }
   await saveAcct(n, p, role); $("#acName").value = ""; $("#acPass").value = "";
 });
+/* ── 规则留言板（v1.33.0）：谁在什么时候说了什么、后来怎么定的 ─────────────────
+   这本台账改不了任何一格发出去的值：留言要生效只能落成代码（docs/留言板-design.md §6）。
+   界面一律照服务器那份画——状态、计数、谁判的，一个都不在这儿自己算第二遍。 */
+const BOARD = {items: [], counts: {}, me: "", cols: {}, seg: "all", ui: {mode: "", id: 0}, busy: false, off: false};
+
+function boardColLab(k){ return BOARD.cols[k] || k; }
+
+function boardBadge(){
+  /* 数取 GET /board 响应里的 counts（服务器算的）。读不到就不留一个假数在那儿——
+     顶栏那颗徽标是这一版唯一的"通知"，它错了比没有更糟。 */
+  const n = (BOARD.counts || {}).open || 0;
+  $("#boardCnt").textContent = n ? " " + n : "";
+}
+
+function boardVisible(on){
+  /* 这台没开留言板（VM 那台不写 BOARD=1）就当没这功能：入口不出现，而不是点了报权限不足。
+     这一句不进 applyRole()：那颗整层是对非管理员隐藏的，而留言的入口恰恰要给非管理员用。 */
+  BOARD.off = !on;
+  $("#btnBoard").hidden = !on;
+  if (!on){ BOARD.items = []; BOARD.counts = {}; boardBadge(); }
+}
+
+function boardTicketNow(){
+  /* 挂的是"此刻屏幕上这张票"的三个号，发出去那一刻就定死：留言说的是当时看到的票面，
+     哪天票被清掉，这句话也不能跟着变（服务端不校验票还在不在，就是为这个）。 */
+  const t = current();
+  if (!t) return null;
+  return {stem: t.stem || "", mawb: airVal(t, "MAWB_NO") || t.mawb || "",
+          hawb: airVal(t, "HAWB_NO") || t.hawb || ""};
+}
+
+function boardTicketHint(){
+  const t = boardTicketNow(), box = $("#boardTicket");
+  box.disabled = !t;
+  $("#boardTicketNo").textContent = t ? " · " + (t.hawb || t.mawb || t.stem) : " · 现在没有打开的票";
+}
+
+async function boardLoad(quiet){
+  const list = $("#boardList");
+  if (!quiet && !$("#boardWin").hidden) list.innerHTML = '<div class="empty">正在读这本台账…</div>';
+  try{
+    const r = await fetch(BASE + "/board");
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    BOARD.items = j.items || []; BOARD.counts = j.counts || {}; BOARD.me = j.me || "";
+    /* 下拉那份名单来自服务器：它和 POST 挡人那份是同一个函数算出来的，
+       在这儿抄一份迟早比服务端宽或窄（表现成"选得出来、提交报 400"）。 */
+    BOARD.cols = {};
+    const sel = $("#boardColumn"), keep = sel.value;
+    sel.length = 1;
+    (j.columns || []).forEach(p => {
+      BOARD.cols[p[0]] = p[1];
+      const o = document.createElement("option");
+      o.value = p[0]; o.textContent = p[1] + " · " + p[0];
+      sel.appendChild(o);
+    });
+    sel.value = keep;
+    renderBoard(BOARD); boardBadge();
+  }catch(e){
+    /* 整本读不到就明说读不到：留着上一批的话，人会把一次没成功的读过去当成"他们还没判"。 */
+    BOARD.items = []; BOARD.counts = {}; boardBadge();
+    list.innerHTML = `<div class="empty empty-err">读留言板失败：${esc(e.message || e)}</div>`;
+    $("#boardSegs").innerHTML = ""; $("#boardStatus").textContent = "";
+  }
+}
+
+function boardSegBtns(B){
+  const seg = [["all", "全部"], ["open", "待看"], ["accepted", "已收"], ["rejected", "不采纳"],
+               ["parked", "先放一放"], ["mine", "我发的"], ["gone", "已撤回"]];
+  return seg.map(s => `<button type="button" class="dvchip${B.seg === s[0] ? " on" : ""}" data-bseg="${s[0]}"`
+    + ` aria-pressed="${B.seg === s[0] ? "true" : "false"}">${s[1]}`
+    + `<span class="c">${(B.counts || {})[s[0]] || 0}</span></button>`).join("");
+}
+
+function boardRow(r){
+  const seg = L.boardSeg(r), gone = seg === "gone", mine = r.by === BOARD.me;
+  const admin = !!ME && ME.role === "admin";
+  const tg = r.tags || {}, tk = r.ticket || {};
+  const chips = [];
+  if (tg.country) chips.push('<span class="bchip">' + esc("国家 " + tg.country) + "</span>");
+  if (tg.column) chips.push('<span class="bchip" title="' + esc(tg.column) + '">' + esc(boardColLab(tg.column)) + "</span>");
+  const link = (tk.stem || tk.hawb)
+    ? `<button class="btn sm gh" type="button" data-bt="${esc(tk.stem || "")}"`
+      + ` title="${esc("点开这张票：" + ((tk.mawb ? tk.mawb + " / " : "") + (tk.hawb || tk.stem)))}">`
+      + `挂 ${esc(tk.hawb || tk.stem)}</button>` : "";
+  const dec = (r.decisions || []);
+  const note = gone ? "" : (dec.length
+    ? `<div class="bnote"><b>${esc(L.boardLabel(r.status))}</b> · ${esc(r.decided_by || "?")} ${esc(L.shortTime(r.decided_at || ""))}`
+      + (r.ref ? ` · ${esc(r.ref)}` : "") + (r.note ? `<br>「${esc(r.note)}」` : "")
+      + (dec.length > 1 ? `<span class="bmore">此前还判过 ${dec.length - 1} 次，历次的话都在「复制这条」里</span>` : "")
+      + "</div>"
+    : '<div class="bnote bnone">还没人定性</div>');
+  const hist = [];
+  if ((r.revised || []).length) hist.push("改过 " + r.revised.length + " 次（原话在「复制这条」里）");
+  if (gone) hist.push("撤回于 " + L.shortTime(r.retracted.at || "") + " · " + (r.retracted.by || ""));
+  const editing = BOARD.ui.mode === "text" && BOARD.ui.id === r.id;
+  const deciding = BOARD.ui.mode === "decide" && BOARD.ui.id === r.id;
+  const acts = ['<button class="btn sm gh" type="button" data-bcopy="' + esc(r.id) + '">复制这条</button>'];
+  if (mine && !gone){
+    acts.push('<button class="btn sm gh" type="button" data-bedit="' + esc(r.id) + '">'
+      + (editing ? "收起" : "改这句") + "</button>");
+    acts.push('<button class="btn sm gh" type="button" data-bretract="' + esc(r.id) + '">撤回</button>');
+  }
+  if (admin && !gone){
+    acts.push('<button class="btn sm" type="button" data-bdecide="' + esc(r.id) + '">'
+      + (deciding ? "收起" : "改判定") + "</button>");
+    acts.push('<button class="btn sm bad" type="button" data-bdel="' + esc(r.id) + '">硬删</button>');
+  }
+  return `<div class="brow${gone ? " bgone" : ""}" data-id="${esc(r.id)}">`
+    + `<div class="bhead"><b class="bwho">${esc(r.by)}</b>`
+    + `<span class="brole">${esc(L.roleCn(r.role) || "")}</span>`
+    + `<span class="bat" title="${esc(r.at || "")}">${esc(L.shortTime(r.at || ""))}</span>`
+    + `<span class="bstat bs-${esc(seg)}">${esc(L.boardLabel(seg))}</span></div>`
+    + `<div class="btext">${esc(r.text)}</div>`
+    + (chips.length || link ? `<div class="btags">${chips.join("")}${link}</div>` : "")
+    + note
+    + (hist.length ? `<div class="bhist">${esc(hist.join(" · "))}</div>` : "")
+    + `<div class="bacts">${acts.join("")}</div>`
+    + (editing ? boardTextEdit(r) : "") + (deciding ? boardDecideForm(r) : "")
+    + "</div>";
+}
+
+function boardTextEdit(r){
+  return '<div class="bform"><textarea id="bEdit" rows="3" maxlength="2000" aria-label="改这句">'
+    + esc(r.text) + '</textarea><div class="bform-acts">'
+    + '<button class="btn sm pri" type="button" data-bsavetext="' + esc(r.id) + '">保存</button>'
+    + '<button class="btn sm gh" type="button" data-bcancel="1">取消</button>'
+    + '<span class="hint">改完旧那句不删，进这一条的历次修改里。</span></div></div>';
+}
+
+function boardDecideForm(r){
+  const opts = [["open", "待看"], ["accepted", "已收"], ["rejected", "不采纳"], ["parked", "先放一放"]];
+  return '<div class="bform"><div class="bform-row">'
+    + '<label class="f">定为<select id="bStat" aria-label="定为哪一档">'
+    + opts.map(o => `<option value="${o[0]}"${r.status === o[0] ? " selected" : ""}>${o[1]}</option>`).join("")
+    + "</select></label>"
+    + '<label class="f wide">为什么<input id="bNote" type="text" maxlength="200" aria-label="为什么（必填）" placeholder="不写这句，明年同一件事还会再被提一遍"></label>'
+    + '<label class="f">规则号或版本<input id="bRef" type="text" maxlength="60" aria-label="规则号或版本号" placeholder="已收才填：polish.POSTAL 或 v1.33.0"></label>'
+    + "</div><div class=\"bform-acts\">"
+    + '<button class="btn sm pri" type="button" data-bsavedecide="' + esc(r.id) + '">记下这次判定</button>'
+    + '<button class="btn sm gh" type="button" data-bcancel="1">取消</button>'
+    + '<span class="hint">「已收」= 这条已经进了代码；只是认同但这一轮不动的写「先放一放」。改判不覆盖上一次的话。</span>'
+    + "</div></div>";
+}
+
+function renderBoard(B){
+  $("#boardSegs").innerHTML = boardSegBtns(B);
+  const list = $("#boardList");
+  const c = B.counts || {};
+  $("#boardStatus").textContent = "这本里 " + (c.all || 0) + " 条 · 待看 " + (c.open || 0)
+    + " · 已撤回 " + (c.gone || 0) + " 条不计进上面这些数";
+  /* 三种空态说得开：这台没开 / 开了没人提过 / 你筛的那档这阵子没有——三者该做的动作不一样。 */
+  if (B.off){
+    list.innerHTML = '<div class="empty">这台服务器没开留言板（<b>.env</b> 里 <b>BOARD</b> 没写 1）。'
+      + "顶栏这颗本不该出现，出现就说明它刚才还开着。</div>";
+    return;
+  }
+  if (!(B.items || []).length){
+    list.innerHTML = '<div class="empty">还没人提过规则。想到哪一格该怎么填就写一句——'
+      + "哪一栏、哪个国家、票面上印成什么样、公司系统要什么写法，写不全也没关系，先记下来。"
+      + '<span class="sub">这儿只收集，不会改动任何一格发出去的值；管理员定性成「已收」才会落成代码。</span></div>';
+    return;
+  }
+  const rows = L.boardFilter(B.items, B.seg, B.me);
+  if (!rows.length){
+    list.innerHTML = '<div class="empty">你筛的这一档现在没有留言。整本（不含已撤回）共 ' + esc(c.all || 0)
+      + " 条，换一档看看。</div>";
+    return;
+  }
+  list.innerHTML = rows.map(boardRow).join("");
+  const ed = list.querySelector("#bEdit"), nt = list.querySelector("#bNote");
+  if (BOARD.ui.id && ed) ed.focus(); else if (BOARD.ui.id && nt) nt.focus();
+}
+
+function boardCopyText(it){
+  /* 剪贴板那份是可粘贴文本、不是 HTML：这里一个字符都不转义，转了会把 &quot; 原样带进正文。
+     历次判定的话全带上——业主拿回去的要是只有最后一句，"当初为什么收"就还是查不回。 */
+  const r = it || {}, tg = r.tags || {}, tk = r.ticket || {}, out = [];
+  out.push("board#" + r.id, r.by, L.shortTime(r.at || ""), r.text);
+  if (tg.country) out.push("国家 " + tg.country);
+  if (tg.column) out.push(boardColLab(tg.column) + "（" + tg.column + "）");
+  if (tk.hawb || tk.stem) out.push("挂 " + (tk.hawb || tk.stem));
+  out.push("判定：" + L.boardLabel(L.boardSeg(r)) + (r.ref ? " → " + r.ref : ""));
+  (r.decisions || []).forEach(d => out.push("判定 " + L.boardLabel(d.status)
+    + (d.ref ? " → " + d.ref : "") + "（" + (d.by || "?") + " " + L.shortTime(d.at || "")
+    + "「" + (d.note || "") + "」）"));
+  (r.revised || []).forEach(v => out.push("原话 " + (v.by || "?") + " " + L.shortTime(v.at || "")
+    + "「" + (v.text || "") + "」"));
+  if (r.retracted) out.push("已撤回：" + (r.retracted.by || "?") + " " + L.shortTime(r.retracted.at || ""));
+  return out.filter(Boolean).join(" · ");
+}
+
+async function boardSend(method, path, body, okMsg){
+  if (BOARD.busy) return null;
+  BOARD.busy = true;
+  try{
+    const r = await fetch(BASE + path, {method: method, headers: {"Content-Type": "application/json"},
+                                       body: JSON.stringify(body || {})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    BOARD.ui = {mode: "", id: 0};
+    await boardLoad(true);                      // 画的是服务器刚回的那一份，不猜、不乐观更新
+    if (okMsg) toast(okMsg, "ok");
+    return j.item;
+  }catch(e){
+    toast("没记上：" + (e.message || e), "bad");
+    await boardLoad(true);                      // 挡下的那句也是结果：把服务器上那份重新读回来
+    BOARD.ui = {mode: "", id: 0};
+    renderBoard(BOARD);
+    return null;
+  }finally{ BOARD.busy = false; }
+}
+
+function boardOpen(){
+  openGate("boardWin");
+  $("#btnBoard").setAttribute("aria-expanded", "true");
+  boardTicketHint();
+  boardLoad();
+}
+function boardClose(){
+  $("#boardWin").hidden = true;
+  $("#btnBoard").setAttribute("aria-expanded", "false");
+  $("#btnBoard").focus();
+  BOARD.ui = {mode: "", id: 0};
+}
+$("#btnBoard").addEventListener("click", () => { $("#boardWin").hidden ? boardOpen() : boardClose(); });
+$("#boardClose").addEventListener("click", boardClose);
+$("#boardSegs").addEventListener("click", e => {
+  const b = e.target.closest("[data-bseg]");
+  if (!b) return;
+  BOARD.seg = b.dataset.bseg;
+  BOARD.ui = {mode: "", id: 0};
+  renderBoard(BOARD);                            // 换档不重新拉数：整本一直在手上
+});
+$("#boardGo").addEventListener("click", async () => {
+  const text = $("#boardText").value.trim();
+  if (!text){ toast("想说什么先写下来：这一条还是空的，记不了", "bad"); $("#boardText").focus(); return; }
+  const tags = {}, country = $("#boardCountry").value.trim(), col = $("#boardColumn").value;
+  if (country) tags.country = country;
+  if (col) tags.column = col;
+  const body = {text: text, tags: tags, ticket: $("#boardTicket").checked ? (boardTicketNow() || {}) : {}};
+  const it = await boardSend("POST", "/board", body, "");
+  if (!it) return;
+  toast("已记下 · board#" + it.id, "ok");
+  $("#boardText").value = ""; $("#boardCountry").value = ""; $("#boardColumn").value = "";
+  $("#boardTicket").checked = false;
+});
+$("#boardList").addEventListener("click", async e => {
+  const hit = k => e.target.closest("[data-" + k + "]");
+  const idOf = (k) => Number(hit(k).dataset[k]);
+  const cp = hit("bcopy"), ed = hit("bedit"), dc = hit("bdecide"), cancel = hit("bcancel"),
+        st = hit("bsavetext"), sd = hit("bsavedecide"), rt = hit("bretract"),
+        dl = hit("bdel"), tk = hit("bt");
+  if (cp){
+    const it = BOARD.items.find(x => x.id === idOf("bcopy"));
+    if (it) boardClipboard(boardCopyText(it));
+    return;
+  }
+  if (cancel){ BOARD.ui = {mode: "", id: 0}; renderBoard(BOARD); return; }
+  if (ed){ BOARD.ui = {mode: "text", id: idOf("bedit")}; renderBoard(BOARD); return; }
+  if (dc){ BOARD.ui = {mode: "decide", id: idOf("bdecide")}; renderBoard(BOARD); return; }
+  if (st){ await boardSend("PATCH", "/board/" + idOf("bsavetext"), {text: $("#bEdit").value}, "已改这一句"); return; }
+  if (sd){
+    const note = $("#bNote").value.trim();
+    if (!note){ toast("要改判定得写一句为什么", "bad"); $("#bNote").focus(); return; }
+    await boardSend("PATCH", "/board/" + idOf("bsavedecide"),
+                    {status: $("#bStat").value, note: note, ref: $("#bRef").value.trim()}, "已记下判定");
+    return;
+  }
+  if (rt){
+    const n = idOf("bretract");
+    if (!confirm("撤回这条？撤回不是删：这本台账里会留一行灰的，之后不能再改。")) return;
+    await boardSend("POST", "/board/" + n + "/retract", null, "已撤回，灰行还在这本里");
+    return;
+  }
+  if (dl){
+    const n = idOf("bdel");
+    if (!confirm("硬删 board#" + n + "？这一条会从这本台账里整个消失，界面上查不回来（只有服务端日志记着谁删的）。\n"
+      + "日常「这条不同意」请用「不采纳」——留着，明年同一个人再提时能指着它说为什么不做。")) return;
+    await boardSend("DELETE", "/board/" + n, null, "已硬删 board#" + n);
+    return;
+  }
+  if (tk){
+    const stem = tk.dataset.bt;
+    if (!stem){ toast("这条只记了个票名，服务器上没有它了", "bad"); return; }
+    boardClose();
+    setView("desk");
+    openHouse(stem);       // 打不开时 openHouse 自己会说"打开这张分单失败"，那就正好是"这张票不在了"
+  }
+});
+function boardClipboard(text){
+  /* 公司那台是 http://内网域名:801，非安全上下文里 navigator.clipboard 根本不存在，
+     所以"复制这条"必须留一条 execCommand 的后路，不能只写现代那套。 */
+  const ok = () => toast("这条复制好了，贴给我就行", "ok");
+  const legacy = () => {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.className = "bclip";
+    document.body.appendChild(ta); ta.select();
+    let done = false;
+    try{ done = document.execCommand("copy"); }catch(e){ done = false; }
+    ta.remove();
+    if (done) ok(); else prompt("这台浏览器不让网页写剪贴板，手动复制这一段:", text);
+  };
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(ok, legacy);
+  else legacy();
+}
 $("#acctList").addEventListener("click", async e => {
   const pw = e.target.closest("[data-pw]"), del = e.target.closest("[data-del]");
   if (pw){

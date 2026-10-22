@@ -23,6 +23,11 @@
                            每张票可带 polish_rules={列:规则号}：人按「优化」改的那几格，留痕只挂真改动的列
   POST /polish             需登录会话；body={"chain":"hawb|master","fields":{列:值}}；
                            返回这些格「将要发出去的值」与规则依据（判据全在 polish 那张国别表，这里不另写）
+  GET  /board              需登录会话；规则留言板整本 + 计数（仅 .env 里 BOARD=1 的机器；没开一律 404）
+  POST /board              需登录会话；body={"text","tags":{country,column},"ticket":{stem,mawb,hawb}}；署名取会话
+  PATCH /board/{id}        本人改 text / 管理员改判定(status+note，ref 选填)；其余键按角色忽略
+  POST /board/{id}/retract 本人撤回（留灰行不删，幂等）
+  DELETE /board/{id}       仅管理员硬删（只留给误发与含个人信息两种）
   GET  /company/mawb       需登录会话(任意角色)；?mawb=主单号 → 主单+名下分单(带本机原件 stem)+pending(本机暂存、公司还不认识的票)，并自动起主单解析；?force=1 重解析
   GET  /master/{mawb}      需登录会话(任意角色)；主单解析记录（状态/36 列/红旗/L1/暂存的人工值与事件）
   POST /master/stage       需登录会话；body={"mawb","ams","acked_flags"}；36 列核对结果存服务器 + 公司占位(mawb2，状态 0)
@@ -52,6 +57,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.gzip import GZipMiddleware
 
 import auth
+import board
 import company_api
 import config
 import desk_queue
@@ -297,6 +303,8 @@ def health():
             # 跑的是哪一版：commit 在服务器上是空串（只收 tar 推的文件、没有仓库），
             # 那就看 built_at（源码最新 mtime）与 started_at（进程启动）——前者晚于后者就是忘了重启。
             "commit": config.git_commit(), "built_at": _stamp(_BUILT_AT), "started_at": _stamp(_BOOT),
+            # 留言板开没开：两台机器跑同一份代码，差的是 .env 里那一行。不开页面也该看得见。
+            "board": bool(config.BOARD),
             # 队列实况：排队/在解析几张、几个槽位——"卡住了吗"第一眼就能判断
             "queue": DESK_QUEUE.stats(),
             "stale_files": _stale_files()}
@@ -667,6 +675,124 @@ def polish_cells(body: PolishBody, user: dict = Depends(current_user)):
     LOG.info("优化扫描 who=%s(%s) 链=%s 可优化=%d 列",
              user.get("name"), user.get("role"), body.chain, len(rows))
     return {"ok": True, "chain": body.chain, "rows": rows}
+
+
+# ── 规则留言板：只采集，不生效（设计见 docs/留言板-design.md）───────────────────────
+class BoardPostBody(BaseModel):
+    text: str = ""
+    tags: dict = {}
+    ticket: dict = {}
+
+
+class BoardPatchBody(BaseModel):
+    text: str | None = None     # None 而不是 ""："" 是"把这句改成空"，那该被拒；漏发字段不能当改文
+    status: str = ""
+    note: str = ""
+    ref: str = ""
+
+
+def _board_gate(role: str, need_admin: bool = False) -> None:
+    """两道门分开：开关（这台到底有没有这功能）与角色（这一步谁能做）。
+
+    开关没开一律 404 而不是 403：「没权限」会让人以为功能在、去磨入口，而这台机器上它就是不存在
+    （VM 公网那台不写 `BOARD=1`）。403 只用于"这台有这东西，但不是你能动的"。"""
+    if not config.BOARD:
+        raise HTTPException(404, "这台服务器没开留言板")
+    if need_admin and role != "admin":
+        raise HTTPException(403, "判定由管理员来定：你提的我们会看，先放着不动的也会写清为什么")
+
+
+@app.get("/board")
+def board_list(user: dict = Depends(current_user)):
+    """整本台账 + 计数。**计数由服务器算**：前端再数一遍就是第二份判据，迟早与按钮上的数不一致。
+
+    `columns` 一并给出：前端那个「哪一列」下拉要的名单与 `POST` 挡人的白名单必须是同一份，
+    否则就会长成"界面选得出来、提交报 400"那种最难查的偏差。"""
+    _board_gate(str(user.get("role") or ""))
+    return {"ok": True, "columns": board.column_options(), **board.listing(str(user.get("name") or ""))}
+
+
+@app.post("/board")
+def board_add(body: BoardPostBody, user: dict = Depends(current_user)):
+    """提一条规则。署名与角色只认会话——请求里写什么都不认，否则这本台账可以被伪造是谁说的。"""
+    _board_gate(str(user.get("role") or ""))
+    try:
+        item = board.add(body.text, str(user.get("name") or ""), str(user.get("role") or ""),
+                         body.tags, body.ticket)
+    except TypeError:
+        raise HTTPException(400, "tags / ticket 得是对象")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    LOG.info("留言板新增 who=%s(%s) id=%s 列=%s 挂票=%s", user.get("name"), user.get("role"),
+             item["id"], item["tags"].get("column") or "—", item["ticket"].get("stem") or "—")
+    return {"ok": True, "item": item}
+
+
+@app.patch("/board/{item_id}")
+def board_patch(item_id: int, body: BoardPatchBody, user: dict = Depends(current_user)):
+    """一条路由，能改哪几个键**由角色决定**：本人改正文、管理员改判定，其余直接忽略。
+
+    响应回的是实际生效的那一份，前端照它画——不乐观更新，界面显示的一直是服务器上那份。"""
+    name, role = str(user.get("name") or ""), str(user.get("role") or "")
+    _board_gate(role)
+    if body.status:
+        _board_gate(role, True)                 # 判定这一档只有管理员能碰（403 那句要说清谁来定）
+        act = "decide"
+    elif body.text is not None:
+        it = board.get(item_id)
+        if not it:
+            raise HTTPException(404, "没有这条留言")
+        if it["by"] != name:
+            raise HTTPException(403, "只有本人能改自己写的那句：改了别人说的话，就说不清是谁的规则了")
+        act = "revise"
+    else:
+        raise HTTPException(400, "没有要改的东西")
+    try:
+        if act == "decide":
+            out = board.decide(item_id, body.status, body.note, by=name, ref=body.ref)
+        else:
+            out = board.revise(item_id, body.text, by=name)
+    except KeyError:
+        raise HTTPException(404, "没有这条留言")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    LOG.info("留言板 id=%s %s by=%s 判定=%s", item_id, act, name, out["status"])
+    return {"ok": True, "item": out}
+
+
+@app.post("/board/{item_id}/retract")
+def board_retract(item_id: int, user: dict = Depends(current_user)):
+    """本人撤回：留一条灰行，不进任何计数，但还能翻出来。管理员也不替他撤。"""
+    _board_gate(str(user.get("role") or ""))
+    it = board.get(item_id)
+    if not it:
+        raise HTTPException(404, "没有这条留言")
+    if it["by"] != str(user.get("name") or ""):
+        raise HTTPException(403, "撤回是本人的动作")
+    try:
+        out = board.retract(item_id, by=str(user.get("name") or ""))
+    except KeyError:
+        raise HTTPException(404, "没有这条留言")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    LOG.info("留言板撤回 id=%s by=%s", item_id, user.get("name"))
+    return {"ok": True, "item": out}
+
+
+@app.delete("/board/{item_id}")
+def board_delete(item_id: int, user: dict = Depends(current_user)):
+    """硬删。只留给误发与含个人信息（客户电话邮箱写进正文了）两种——日常"这条不同意"走 `不采纳`，
+    删了就没人知道曾经说过。谁删的、删的哪条进服务端日志，这本台账里不再留痕。"""
+    role = str(user.get("role") or "")
+    _board_gate(role)
+    if role != "admin":
+        # 这一句要说中"你其实想干什么"：不同意就走不采纳，套一句「判定由管理员来定」是答非所问。
+        raise HTTPException(403, "硬删只有管理员能做。日常「这条不同意」请用「不采纳」——"
+                                 "留着那条，明年同一个人再提时能指着它说为什么不做")
+    if not board.remove(item_id):
+        raise HTTPException(404, "没有这条留言")
+    LOG.warning("留言板硬删 id=%s by=%s", item_id, user.get("name"))
+    return {"ok": True}
 
 
 @app.post("/stage")
