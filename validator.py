@@ -5,7 +5,7 @@
 import re
 
 import polish
-from codes import TEL_COUNTRY_CODES, TAX_LABEL_RE, TAX_PREFIX_RE, clean_tax, split_ids
+from codes import ORIGIN_CITY_NAME, TEL_COUNTRY_CODES, TAX_LABEL_RE, clean_tax, split_ids
 from master_fields import MASTER_LIMIT50
 
 # 挂旗只判这两类。**识别号那一格不按国别形状判**：它从 v1.12.0 起同时装海关号与各国本土税号，
@@ -43,22 +43,23 @@ _CN_VALUES = ("CN", "CHINA", "中国")
 def _id_cell_warns(col: str, value: str, country: str = "", tel: str = "") -> list:
     """识别号格的形态判据，L2 与 L3 共用一份（列面并成一格之后，两处再各写一套必然走偏）。
 
-    只报这四条，各有各的来处：与电话同值=电话栏吞了税号（串栏）；混进标签=模型把 `VAT#`
-    连着抄（L3 会摘，但报出来让复核的人看得见）；CN 不是 18 位=多半被截断；过短=不像是号。
+    只报这三条，各有各的来处：与电话同值=电话栏吞了税号（串栏）；CN 不是 18 位=多半被截断；
+    过短=不像是号。从前还有第四条「混进了标签」，2026-10-23 业主定案标签词要跟着号一起发出去
+    （`CNPJ00280273000137`），那条就正反颠倒了，撤掉。位数一律按去掉标签词的本体数。
     这里**故意不按形状再拦一道**：这一格现在装的是各国自己的税号，英国 VAT 就常是
     9 位纯数字，按形状拦会把对的挡掉（票面查无此号的毛病由保真回查管）。"""
     warns, cu, up_c = [], _alnum_upper(tel), str(country or "").strip().upper()
     for seg in split_ids(value):
-        v = _alnum_upper(seg)
-        if not v:
+        # 比位数、比电话都按**号码本体**：2026-10-23 起发出值把票面标签词留在前面
+        # （CNPJ00280273000137），那四个字母不是位数的一部分，也不是号本身的一部分。
+        core = _alnum_upper(clean_tax(seg))
+        if not core:
             continue
-        if v == cu and cu:
+        if core == cu and cu:
             warns.append(f"{col} 与电话同值，疑似电话栏吞了税号: {seg!r}")
-        elif TAX_PREFIX_RE.match(seg):
-            warns.append(f"{col} 混进了标签，只填号码本身（航空口径已自动摘掉）: {seg!r}")
-        elif up_c in _CN_VALUES and len(v) != 18:
-            warns.append(f"{col} 中国 USCI 应为 18 位，现 {len(v)} 位: {seg!r}")
-        elif len(v) < 8:
+        elif up_c in _CN_VALUES and len(core) != 18:
+            warns.append(f"{col} 中国 USCI 应为 18 位，现 {len(core)} 位: {seg!r}")
+        elif len(core) < 8:
             warns.append(f"{col} 形态异常(过短): {seg!r}")
     return warns
 
@@ -147,16 +148,17 @@ def validate_raw(d: dict, sent: dict | None = None) -> list:
 
 
 def validate_air(d: dict) -> list:
-    """L3 航空口径校验：城市名必须已被映射成 IATA 三字码。"""
+    """L3 航空口径校验：航路栏与到达港必须已被映射成 IATA 三字码；起运港按城市全名发。"""
     warns = []
-    for k in ("TO1", "TO2", "TO3"):
+    for k in ("TO1", "TO2", "TO3", "DEST_NAME"):
         v = str(d.get(k, "")).strip()
         if v and not re.fullmatch(r"[A-Z]{3}", v):
             warns.append(f"{k} 未转成 IATA 三字码: {v!r}（码表缺项，需补 CITY_IATA）")
-    for k in ("ORIGIN_NAME", "DEST_NAME"):
-        v = str(d.get(k, "")).strip()
-        if v and not re.fullmatch(r"[A-Z]{3}", v):
-            warns.append(f"{k} 未转成 IATA 三字码: {v!r}（码表缺项，需补 CITY_IATA）")
+    # 起运港这一格 2026-10-23 起发城市全名（北京→BEIJING），所以放行映射表里那几个值。
+    # 判据读 `codes.ORIGIN_CITY_NAME` 同一张表，别在这里手抄一遍 "BEIJING"——抄了就会走偏。
+    v = str(d.get("ORIGIN_NAME", "")).strip()
+    if v and not re.fullmatch(r"[A-Z]{3}", v) and v not in set(ORIGIN_CITY_NAME.values()):
+        warns.append(f"ORIGIN_NAME 未转成 IATA 三字码或城市全名: {v!r}（码表缺项，需补 CITY_IATA）")
     # 识别号格：人工在审核台改过的那一格也归 L3 口径管（税号今天就在这一格里）
     for pfx in ("SHIPPER", "CONSIGNEE"):
         k = pfx + "_INFO_EORI"

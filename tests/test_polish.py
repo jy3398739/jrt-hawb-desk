@@ -7,7 +7,7 @@
 
 两条硬界线由用例钉住，别让后人松口：
 ① 只碰子列，`*_INFO` 整串与公司名/地址/城市一律不进（照抄口径见 [[feedback-transcribed-fields-not-rebuilt]]，
-   城市留全称是 2026-10-15 的定案，三字码化只在发货人侧由 to_air 干）；
+   收发货人城市都留票面全称：收货人侧 2026-10-15 定案，发货人侧 2026-10-23 跟上，to_air 不再转三字码）；
 ② 要猜的不做：HS 补零、韩国 6 位邮编补横杠（新制 5 位、旧制 6 位都见过，横杠位置推不出来）、
    德国邦名（没有两字母码）——这些只挂旗，旗在 validator 那边。
 """
@@ -110,20 +110,14 @@ def test_state_is_accent_insensitive_and_stays_put_when_unlisted():
         "美国没有 Sao Paulo 这个州：拿错国家不许乱映射"
 
 
-# ── 识别号那一格：只在整格恰好一个号时补官方标点 ────────────────────────────────
-def test_brazilian_id_gets_its_official_punctuation():
-    assert _one("CONSIGNEE_INFO_EORI", "00280273000137", "BR") == "00.280.273/0001-37"
-    assert _one("CONSIGNEE_INFO_EORI", "12345678901", "BR") == "123.456.789-01"
-
-
-def test_id_cell_with_several_numbers_or_a_label_is_left_alone():
-    assert _one("CONSIGNEE_INFO_EORI", "00280273000137 / 12345678901", "BR") is None, \
-        "一格装多个号时切分靠分隔符，补标点会把两坨搅在一起"
-    assert _one("CONSIGNEE_INFO_EORI", "CNPJ 00280273000137", "BR") is None, \
-        "号里混着标签词，补标点等于替人做清洗决定"
-    assert _one("CONSIGNEE_INFO_EORI", "00.280.273/0001-37", "BR") is None
-    assert _one("CONSIGNEE_INFO_EORI", "12345678901", "DE") is None, \
-        "位数只在巴西那两条形状上点火，别的国家别猜"
+# ── 识别号那一格：不再往回补标点（2026-10-23 业主定案）──────────────────────────
+def test_the_id_cell_is_never_punctuated_back():
+    """从前「优化」会把裸 CNPJ 补成 00.280.273/0001-37；业主定案这一格发「标签词+连写号码」，
+    补点补斜杠正好反着走，人一按就把要发的样子改坏，所以整条规则撤掉。"""
+    for value in ("00280273000137", "12345678901", "CNPJ00280273000137",
+                  "00.280.273/0001-37", "00280273000137 / 12345678901"):
+        assert _one("CONSIGNEE_INFO_EORI", value, "BR") is None, \
+            f"识别号格不该再有点「优化」补标点：{value!r}"
 
 
 # ── 不可见字符与非 ASCII 连字符（U+2010 那一族坑） ──────────────────────────────

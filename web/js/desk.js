@@ -153,20 +153,31 @@ function checks(k, l2, l3){
     if (a && !/^[A-Z]{2}$/.test(a)) out.push(["国家要 ISO 两位码", "warn"]);
     if (!a && g(l2)) out.push(["票面有国家却没转出码：码表缺项", "warn"]);
   }
-  if (["ORIGIN_NAME","DEST_NAME","TO1","TO2","TO3"].includes(k)){
+  if (["DEST_NAME","TO1","TO2","TO3"].includes(k)){
     if (a && !/^[A-Z0-9]{3}$/.test(a)) out.push(["城市要三字码：补码表或改票面名", "warn"]);
     if (!a && g(l2)) out.push(["票面有城市却没映射出三字码", "warn"]);
   }
+  if (k === "ORIGIN_NAME"){
+    /* 起运港这一格 2026-10-23 起发城市全名（票面九种印法一律 BEIJING），三字码判据不再套在它头上。
+       这条提示只兜"既不是三字码、也不像个全大写城市名"的原样串——那是码表缺项、没归一出来。 */
+    if (a && !/^[A-Z0-9]{3}$/.test(a) && !/^[A-Z][A-Z .'-]{2,}$/.test(a))
+      out.push(["这一格没归一：既不是三字码也不是城市名", "warn"]);
+    if (!a && g(l2)) out.push(["票面有起运港却没归一出来", "warn"]);
+  }
   if (/_TEL$|_FAX$/.test(k)){
-    if (a && !/^\+\d{6,}$/.test(a.replace(/[\s().-]/g, ""))) out.push(["电话/传真未归一成 +数字", "warn"]);
+    /* 2026-10-23 定案：不再要求国际冠码 +。票面印了 + 就留着，没印就不给加，
+       所以这里只兜"这一串根本不像号码本体"，不再兜"少了个 +"。 */
+    if (a && !/^\+?\d{6,}$/.test(a.replace(/[\s().-]/g, ""))) out.push(["电话/传真不像号码本体", "warn"]);
   }
   if (k.endsWith("_EORI")){
     /* 识别号只剩这一格：海关号与税号同住，一格可能用 " / " 装两个号，所以逐段判
-       （分隔符两侧必须带空格——CNPJ 自己就含斜杠）。 */
+       （分隔符两侧必须带空格——CNPJ 自己就含斜杠）。
+       「混进了标签」那条从前要提示，是因为 L3 会替人摘掉；2026-10-23 起标签词连在号码前面
+       一起发（CNPJ00280273000137），它是正解，提示撤掉。位数按去掉标签词的本体数，
+       与后端 codes.clean_tax 同一条口径——那四个字母不是位数的组成部分。 */
     const segs = a.split(/\s+\/\s+/).filter(s => s);
-    if (segs.some(s => /^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]/.test(s)))
-      out.push(["识别号混进了标签，只填号码本身", "warn"]);
-    if (segs.some(s => s.replace(/[^0-9A-Za-z]/g, "").length < 8))
+    const core = s => s.replace(/^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]*/, "");
+    if (segs.some(s => core(s).replace(/[^0-9A-Za-z]/g, "").length < 8))
       out.push(["识别号过短，疑似截断", "warn"]);
   }
   if (k === "CREATE_TIME"){
@@ -198,8 +209,7 @@ function flagNote(f){
 }
 
 /* 缺号类红旗按"当前值"动态判定：制单员手填主/分单号后，那条"XX_NO 缺失/均为空"就该消，
-   否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。
-   识别号"混进了标签（航空口径已自动摘掉）"同理：值已被系统洗干净且未被人工改掉，纯提示不该卡提交。 */
+   否则会出现"号已填却仍被判需复核、提交点不动"。保真/误填等其它红旗不受此影响。 */
 function awbFilled(t){
   const rev = reviewed(t);
   return { MAWB_NO: String(rev.MAWB_NO || "").trim() !== "",

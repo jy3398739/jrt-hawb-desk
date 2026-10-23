@@ -68,7 +68,8 @@ def test_prompt_sends_tax_into_the_eori_cell():
 
 
 def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
-    """模型把 USCI/CNPJ 留在地址里：L3 摘干净地址，号进同主体的 EORI 格。"""
+    """模型把 USCI/CNPJ 留在地址里：L3 摘干净地址，号进同主体的 EORI 格。
+    2026-10-23 业主定案：票面那个标签词跟着号一起走，连写在前面（`USCI9112…`）。"""
     l2d = l2(MAWB_NO="999-30825351", HAWB_NO="TSN10359645",
              SHIPPER_INFO_COMP_NAME="PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
              SHIPPER_INFO_COMP_ADDRESS="NO 21 HONGYUAN ROAD, TIANJIN 300385 CN, "
@@ -77,7 +78,8 @@ def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
              SHIPPER_INFO_POSTAL="300385", SHIPPER_INFO_TEL="+862258388999 USCI: " + USCI)
     l3 = to_air.to_air(l2d)
     assert l3["SHIPPER_INFO_TEL"] == "+862258388999", l3["SHIPPER_INFO_TEL"]
-    assert l3["SHIPPER_INFO_EORI"] == USCI, "税号要落在 EORI 格，不是消失"
+    assert l3["SHIPPER_INFO_EORI"] == "USCI" + USCI, "税号要落在 EORI 格，不是消失"
+    assert l3["SHIPPER_INFO_CITY"] == "TIANJIN", "发货人城市留票面拼音，不再转 TSN"
     assert USCI not in l3["SHIPPER_INFO_COMP_ADDRESS"], l3["SHIPPER_INFO_COMP_ADDRESS"]
     # 这份 L2 没给整串，出口就得是空的——以前这里是"重拼后的串里不许再挂着没归位的号"，
     # 现在整串不拼了，号在照抄串里出现本来就是票面印的，该管的只剩地址那一格。
@@ -100,18 +102,117 @@ def test_l3_keeps_both_the_eori_and_the_tax_number_in_one_cell():
     assert l3["CONSIGNEE_INFO_EORI"] == "IT03268900267", "同一个号不该在同一格里写两遍"
 
 
-def test_l3_strips_the_ticket_label_off_the_number_before_filing_it():
-    """票面把 'VAT#769638661' 整格印出来：号码本身进 EORI，标签留在原地会被形态检查当异常。"""
-    assert codes.clean_tax("VAT#769638661") == "769638661"
+def test_the_label_stays_out_of_the_comparators_and_in_front_of_the_number():
+    """2026-10-23 业主定案：发出去的那一格是「票面标签词 + 连写号码」，中间不留分隔符，
+    号码本体的点/斜杠/横线也去掉。
+
+    但 `clean_tax` 保持原义（摘掉标签只留号码）——保真回查（`fidelity.find_missing_tax`）和主单
+    那条反向红旗都拿它把标签与号码分开比对，改它等于同时把两处判据搅浑。所以留标签是新函数
+    `id_cell`，只用在三处产出发出值的地方；这一条用例钉的就是"两个函数不许并成一个"。"""
+    assert codes.clean_tax("VAT#769638661") == "769638661", "比对用的那一半不许跟着口径变"
     assert codes.clean_tax("TAX ID 123456789") == "123456789"
     assert codes.clean_tax("PL7010468168") == "PL7010468168", "两位国家码开头的是号码本身"
     assert codes.clean_tax("00.280.273/0001-37") == "00.280.273/0001-37"
+    for src, want in (
+        ("CNPJ: 00.280.273/0001-37", "CNPJ00280273000137"),
+        ("USCI 911201117706402073", "USCI911201117706402073"),
+        ("统一社会信用代码：911201165751476360", "USCI911201165751476360"),
+        ("VAT NO. 769638661", "VATNO769638661"),
+        ("TAX ID 123456789", "TAXID123456789"),
+        ("GST IN 07AAACP1234C1Z5", "GSTIN07AAACP1234C1Z5"),
+        ("VAT#769638661", "VAT769638661"),
+        ("SE5563646560", "SE5563646560"),
+        ("IT 03268900267", "IT03268900267"),
+        ("00280273000137", "00280273000137"),
+        ("VAT NO", ""),
+        ("", ""),
+    ):
+        got = codes.id_cell(src)
+        assert got == want, f"id_cell({src!r}) -> {got!r}，期望 {want!r}"
+
+
+def test_l3_files_the_label_the_model_copied_into_the_cell():
+    """票面把 'VAT#769638661' 整格印出来，模型连着标签抄进 `_EORI`：标签词留着，冒号井号去掉。"""
     l2d = l2(HAWB_NO="TAO-7268550",
              CONSIGNEE_INFO_COMP_NAME="BIG METAL LTD",
              CONSIGNEE_INFO_COMP_ADDRESS="OCCUPATIONAL ROAD 1, LONDON SE17 3BE GB",
              CONSIGNEE_INFO_CITTY="LONDON", CONSIGNEE_INFO_COUNTRY="GB",
              CONSIGNEE_INFO_EORI="VAT#769638661")
-    assert to_air.to_air(l2d)["CONSIGNEE_INFO_EORI"] == "769638661"
+    assert to_air.to_air(l2d)["CONSIGNEE_INFO_EORI"] == "VAT769638661"
+
+
+def test_the_same_number_in_two_label_spellings_is_still_one_number():
+    """EORI 格里模型写 'VAT#769638661'，页底 customs 区那格印 'VAT NO. 769638661'：同一个号、
+    两种标签写法。去重必须按**号码本体**比——按整串比会拼成 'VAT769638661 / VATNO769638661'，
+    公司那边看着像两个号。这一条是变异测试逼出来的：发出值带标签之后，老的去重比法就漏了。"""
+    l2d = l2(HAWB_NO="TAO-7268551",
+             CONSIGNEE_INFO_COMP_NAME="BIG METAL LTD",
+             CONSIGNEE_INFO_COMP_ADDRESS="OCCUPATIONAL ROAD 1, VAT NO. 769638661, LONDON SE17 3BE GB",
+             CONSIGNEE_INFO_CITTY="LONDON", CONSIGNEE_INFO_COUNTRY="GB",
+             CONSIGNEE_INFO_EORI="VAT#769638661")
+    air = to_air.to_air(l2d)
+    assert air["CONSIGNEE_INFO_EORI"] == "VAT769638661", air["CONSIGNEE_INFO_EORI"]
+
+
+def _desk_checks(k, l2, l3):
+    """把 desk.js 里那份**手抄**的即时提示判据真跑一遍（不是 grep 字符串）。
+    它只用在核对区那一格下面那行字上，注释里写着"与后端 validator 同口径"——
+    后端改口径而这一份没跟着改，界面上就会出现反着走的提示，而这只有浏览器能看见。"""
+    import json
+    import shutil
+    import subprocess
+    from pathlib import Path
+    if not shutil.which("node"):
+        raise AssertionError("机器上没有 node：前端判据断言跑不了，别当成通过")
+    logic_js = str(Path(__file__).resolve().parent.parent / "web" / "js" / "logic.js")
+    src = ("const L = require(%s);\nconst NUM = {};\nconst toNum = () => null;\n" % json.dumps(logic_js))
+    src += web_src.fn(web_src.part("js/desk.js"), "function checks") + "\n"
+    src += "console.log(JSON.stringify(checks(%s, %s, %s)));" % (
+        json.dumps(k), json.dumps(l2), json.dumps(l3))
+    r = subprocess.run(["node", "-e", src], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    assert r.returncode == 0, "node 跑 desk.js 的 checks 失败：%s" % (r.stderr.strip() or r.stdout.strip())
+    return [w for w, _kind in json.loads(r.stdout.strip())]
+
+
+def test_the_desk_inline_hints_follow_the_new_caliber():
+    """四格提示都要跟着口径走：起运港城市全名、电话不再强制 +、识别号带标签，
+    各自都不许再挨一条反着走的提示；而"没归一出来"这类老毛病还得照样出声。"""
+    assert not [w for w in _desk_checks("ORIGIN_NAME", "BEIJING CAPITAL INTERNATIONAL APT", "BEIJING")], \
+        "北京票下面还挂着三字码提示"
+    assert [w for w in _desk_checks("DEST_NAME", "WARSAW", "WARSAW")], "到达港没转成三字码还得报"
+    assert not [w for w in _desk_checks("SHIPPER_INFO_CITY", "QINGDAO", "QINGDAO")], \
+        "发货人城市留票面拼音是定案，不该被提示"
+    assert not [w for w in _desk_checks("CONSIGNEE_INFO_TEL", "'8613944484042", "8613944484042")], \
+        "票面没有 + 就不该再要求 +"
+    assert not [w for w in _desk_checks("CONSIGNEE_INFO_EORI", "CNPJ: 00280273000137",
+                                       "CNPJ00280273000137")], "带标签是新口径"
+    assert [w for w in _desk_checks("CONSIGNEE_INFO_EORI", "", "VAT123")], "本体过短还得报"
+    assert [w for w in _desk_checks("CONSIGNEE_INFO_EORI", "", "VAT1234567")], \
+        "位数要按去掉标签词的本体数：七个数字的号不该因为前面挂了 VAT 就够格"
+    assert [w for w in _desk_checks("CONSIGNEE_INFO_TEL", "", "abc")], "不像电话的还得报"
+
+
+def test_a_label_in_the_id_cell_is_no_longer_a_red_flag():
+    """从前「混进了标签」要报旗，因为 L3 会替人把它摘掉；现在标签就是要发的内容，
+    留着那条等于每张带 CNPJ 的票白挨一旗。"""
+    air = l2(CONSIGNEE_INFO_EORI="CNPJ00280273000137", CONSIGNEE_INFO_COUNTRY="BR")
+    assert not [w for w in validator.validate_air(air) if "混进了标签" in w], \
+        validator.validate_air(air)
+
+
+def test_the_digit_count_checks_ignore_the_label_letters():
+    """位数与「过短」都按号码本体判：USCI 那四个字母不是位数的组成部分，
+    不然 `USCI911201117706402073` 会被报成 22 位，而电话吞了税号那条也会跟着失灵。"""
+    ok = l2(SHIPPER_INFO_EORI="USCI" + USCI, SHIPPER_INFO_COUNTRY="CN")
+    assert not [w for w in validator.validate_air(ok) if "应为 18 位" in w], validator.validate_air(ok)
+    cut = l2(SHIPPER_INFO_EORI="USCI91120111770640207", SHIPPER_INFO_COUNTRY="CN")
+    assert any("应为 18 位" in w for w in validator.validate_air(cut)), "17 位还得报"
+    tiny = l2(SHIPPER_INFO_EORI="VAT12345", SHIPPER_INFO_COUNTRY="GB")
+    assert any("过短" in w for w in validator.validate_air(tiny)), "本体过短还得报"
+    dup = l2(CONSIGNEE_INFO_TEL="+559240091129", CONSIGNEE_INFO_COUNTRY="BR",
+             CONSIGNEE_INFO_EORI="CNPJ559240091129")
+    assert any("与电话同值" in w for w in validator.validate_air(dup)), "带标签也要认出那是电话"
 
 
 def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
@@ -126,7 +227,7 @@ def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
              SHIPPER_INFO_CITY="BEIJING", SHIPPER_INFO_COUNTRY="CN",
              SHIPPER_INFO_TEL="+861065766886")
     l3 = to_air.to_air(l2d)
-    assert l3["SHIPPER_INFO_EORI"] == "91110105562078969J", l3["SHIPPER_INFO_EORI"]
+    assert l3["SHIPPER_INFO_EORI"] == "USCI91110105562078969J", l3["SHIPPER_INFO_EORI"]
     assert l3["SHIPPER_INFO_TEL"] == "+861065766886", l3["SHIPPER_INFO_TEL"]
     assert l3["SHIPPER_INFO"] == l2d["SHIPPER_INFO"], \
         f"整串被动过了：{l3['SHIPPER_INFO']!r}"
@@ -208,7 +309,8 @@ def test_fidelity_checks_each_number_in_a_joined_eori_cell():
 
 def test_validator_reads_tax_shape_out_of_the_eori_cell():
     """EORI 格现在一格装多个号：形态检查要按 ' / ' 拆开逐段判，
-    截断的 USCI、串进电话栏的号、混进来的标签都得照样报出来。"""
+    截断的 USCI、串进电话栏的号、短到不像号的都得照样报出来。
+    2026-10-23 起「混进了标签」那条撤了——标签词现在是要发的内容，不是毛病。"""
     def w(air):
         return [x for x in validator.validate_air(air) if "EORI" in x]
     ok = {"SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_EORI": USCI, "SHIPPER_INFO_TEL": "+862258388999"}
@@ -222,8 +324,8 @@ def test_validator_reads_tax_shape_out_of_the_eori_cell():
         "过短税号只在 CN 分支判长度等于没判"
     both = {"SHIPPER_INFO_COUNTRY": "IT", "SHIPPER_INFO_EORI": "IT13055460961 / " + USCI}
     assert not w(both), "两个号拼一格都得认：" + str(w(both))
-    assert any("混进了标签" in x for x in validator.validate_air(
-        {"CONSIGNEE_INFO_COUNTRY": "GB", "CONSIGNEE_INFO_EORI": "VAT#769638661"}))
+    glued = {"CONSIGNEE_INFO_COUNTRY": "GB", "CONSIGNEE_INFO_EORI": "VAT769638661"}
+    assert not w(glued), "标签词连在号码前面是新口径，不该报：" + str(w(glued))
 
 
 def test_legacy_air_records_lose_nothing_on_submit():

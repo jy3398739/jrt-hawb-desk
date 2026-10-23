@@ -10,11 +10,13 @@
   · 墨西哥 32 个联邦实体的 clave（JL/JAL、MS/MOS、CL 与 DF 几种写法都在流传，
     没拿到可信全表之前不塞进来——表少几格只是不动，表错一格就是静默改数据）；
   · 剥掉邮编前的国别前缀（`SE-114 33` 那个 `SE-` 是内容不是格式）；
-  · 整串 `*_INFO`、公司名、详细地址、城市：一个字都不碰（照抄口径与"收货人城市留全称"是定案，
-    见 tests/test_polish.py 里那两条越界守卫）。
+  · 整串 `*_INFO`、公司名、详细地址、城市：一个字都不碰（照抄口径与"收发货人城市都留票面写法"
+    是定案，见 tests/test_polish.py 里那两条越界守卫）。
 
-`to_air()` 与这里的分工（2026-10-20 对着代码核过）：国家转两字母码、电话取首个号码去符号、
-识别号摘标签，都是 `to_air` 在提交时干的；`POSTAL`/`STATE`/识别号标点它不碰，归这里。
+`to_air()` 与这里的分工（2026-10-23 对着代码重新核过）：国家转两字母码、电话取首个号码去符号、
+起运港归一成城市全名、识别号把票面标签词连在号码前面，都是 `to_air` 在提交时干的；
+`POSTAL`/`STATE` 的国别写法归这里，识别号那一格现在两边都不动（从前 to_air 摘标签、
+这里补标点，两条都被 2026-10-23 那一档定案撤掉了）。
 两边叠起来才是"将要发出去的那一版"，所以 `preview()` 先过 `to_air` 再过本模块，
 点优化写回的值 = 真正发出去的值，不会出现"点了还是发另一版"。
 """
@@ -123,26 +125,11 @@ def _state(value: str, cc: str):
     return (code, "STATE_ABBR", f"{cc} 的州/省官方写法是 {code}")
 
 
-# ── 识别号那一格的官方标点：整格恰好一个号才补 ──────────────────────────────────
-_ID_PUNCT = {
-    "BR": [(r"(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})", r"\1.\2.\3/\4-\5", "巴西 CNPJ"),
-           (r"(\d{3})(\d{3})(\d{3})(\d{2})", r"\1.\2.\3-\4", "巴西 CPF")],
-}
-
-
-def _id_punct(value: str, cc: str):
-    digits = re.sub(r"\D", "", value)
-    if not digits or re.search(r"[A-Za-z]", value) or re.search(r"\s|\d{1,3}[/.]", value):
-        return None                      # 混了标签词/多个号/已有标点 → 交给人，不猜
-    for rx, tpl, label in _ID_PUNCT.get(cc, ()):
-        m = re.fullmatch(rx, digits)
-        if m:
-            to = m.expand(tpl)
-            return None if to == value else (to, "ID_PUNCT", f"{label} 的官方写法带点与斜横杠")
-    return None
-
-
-_RULES = (("POSTAL", _postal), ("STATE", _state), ("EORI", _id_punct))
+# ── 识别号那一格：只清字符，不再往号上补官方标点 ────────────────────────────────
+# 从前有一条「整格恰好一个裸号就按国别补点与斜杠」（巴西 CNPJ/CPF）。2026-10-23 业主定案
+# 这一格发「票面标签词 + 连写号码」（CNPJ00280273000137），补标点正好反着走——人一按就把
+# 要发的样子拆回带标点，所以整条撤掉。号码本体长什么样是票面说了算，不是形状表说了算。
+_RULES = (("POSTAL", _postal), ("STATE", _state))
 
 
 def one(field: str, value: str, country: str = ""):

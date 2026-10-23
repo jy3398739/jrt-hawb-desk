@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """第一遍原文口径 JSON -> 第二遍航空口径 JSON。
-复用 codes.py 的 parse_party / COUNTRY_ISO2 / lookup_city / iata_place。
+复用 codes.py 的 parse_party / COUNTRY_ISO2 / iata_place / origin_place / id_cell。
 发货人/收货人的 *_INFO 整串不在归一之列：那一列只许是票面那一格的照抄串（2026-10-14 业主定案）。
 """
 import re
@@ -57,8 +57,6 @@ def _first_phone(t: str) -> str:
 _NUMCLS = r"\d\s\-()/.‐-―−­"
 _PHONE_TOKEN = re.compile(r"\+?[\d][" + _NUMCLS + r"]{4,}\d")
 _PHONE_LEAD = re.compile(r"^(?:TE|TEL|LTE|FAX|PHONE|MOB|CELL)\b[:.\s]*\+?[\d][" + _NUMCLS + r"]{3,}\d", re.I)
-# Excel 里用前导 ' 强制文本，票面因此把国际冠码 + 弄丢了（如 '8613944484042）
-_APOS_INTL = re.compile(r"^['‘`]\s*\d")
 
 
 def _clean_phone(val: str) -> str:
@@ -73,15 +71,9 @@ def _clean_phone(val: str) -> str:
     m = _PHONE_TOKEN.search(s)
     if not m:
         return ""
-    out = re.sub(r"[^+\d]", "", m.group(0))
-    digits = re.sub(r"\D", "", out)
-    # 前导 ' 强制文本的号码：按已知国际区号把 + 补回来
-    if _APOS_INTL.match(s) and not out.startswith("+") \
-            and len(digits) >= 10 and not digits.startswith("0"):
-        for cc in sorted(codes.TEL_COUNTRY_CODES, key=len, reverse=True):
-            if digits.startswith(cc):
-                return "+" + digits
-    return out
+    # 票面有 + 就留着，没有就不给加：从前这里按已知区号替票面补一个 +（Excel 前导 ' 把冠码吃掉那一档），
+    # 2026-10-23 业主定案取消——那个 + 是我们造的，不是抄的。
+    return re.sub(r"[^+\d]", "", m.group(0))
 
 
 
@@ -153,8 +145,9 @@ def _pull_tax(addr: str, tax: str, taken: set) -> tuple:
     if not m:
         return addr, tax
     cleaned = re.sub(r"\s{2,}", " ", addr[:m.start()] + " " + addr[m.end():]).strip(" ,;/")
-    val = codes.clean_tax(m.group(2))
-    return cleaned, tax or ("" if _alnum0(val) in taken else val)
+    val = codes.id_cell(m.group(0))
+    # 去重按号码本体比：发出值现在带标签词，拿整串比会漏判（'CNPJ559240091129' 对不上电话那格）
+    return cleaned, tax or ("" if _alnum0(codes.clean_tax(val)) in taken else val)
 
 
 def to_air(d: dict) -> dict:
@@ -163,7 +156,7 @@ def to_air(d: dict) -> dict:
     out.pop("_error", None)
     out.pop("_file", None)
 
-    out["ORIGIN_NAME"] = codes.iata_place(d.get("ORIGIN_NAME", ""))
+    out["ORIGIN_NAME"] = codes.origin_place(d.get("ORIGIN_NAME", ""))
     out["DEST_NAME"] = codes.iata_place(d.get("DEST_NAME", ""))
     # 航路：L2 可能照抄票面城市名（To3 格印 MANAUS），L3 必须落到三字码；已是三字码则原样
     for k in ("TO1", "TO2", "TO3"):
@@ -187,12 +180,12 @@ def to_air(d: dict) -> dict:
         # 全往这里并（2026-10-10 定案，`*_INFO_TAX_ID` 两列已删）。模型三种毛病都要兜住：
         # 连着标签一起抄（"VAT#769638661"）、把号留在地址或整串里、同一主体给两个号。
         # 同一个号不许在同一格里出现两遍——所以已知的 EORI 段也算 taken，地址里再出现只清列不重拼。
-        ids = [codes.clean_tax(x) for x in codes.split_ids(eori0)]
-        legacy = codes.clean_tax(d.get(pfx + "_INFO_TAX_ID", ""))   # 老 raw 重算时还带着这一列
+        ids = [codes.id_cell(x) for x in codes.split_ids(eori0)]
+        legacy = codes.id_cell(d.get(pfx + "_INFO_TAX_ID", ""))   # 老 raw 重算时还带着这一列
         if legacy:
             ids.append(legacy)
-        taken = {_alnum0(x) for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", ""))} | \
-            {_alnum0(x) for x in ids}
+        taken = {_alnum0(codes.clean_tax(x))
+                 for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", "")) + tuple(ids)}
         addr, pulled = _pull_tax(addr, "", taken)
         if not pulled:      # 只留在整串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
             _, pulled = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
@@ -221,15 +214,16 @@ def to_air(d: dict) -> dict:
         street = _drop_phone_segs(street)
         country2 = country_to_iso2(country0 or pp["country"])
 
-        city_code = codes.lookup_city(city0) or city0
         tel = _clean_phone(_first_phone(tel0) or pp["tel"])
         fax = _clean_phone(_first_phone(fax0) or pp["fax"])
 
         out[pfx + "_INFO_COUNTRY"] = country2
-        # 收货人城市留票面全称（2026-10-15 业主定案「收货人城市要全称，不要三字码」）：
-        # 公司那一格要的是城市名，转成机场码等于让人在核对区把 CHENNAI 手动改回去。
-        # 起运港/目的港/航路那几列仍是三字码，别跟着改；发货人城市这次没动，等业主表态。
-        out[city_key] = city0 if pfx == "CONSIGNEE" else city_code
+        # 收发货人城市都留票面写法（收货人 2026-10-15、发货人 2026-10-23 业主定案）：公司那一格要的
+        # 是城市名，转成三字码等于让人在核对区把 BEIJING/CHENNAI 手动改回去。代价写明白：转码从前
+        # 顺手掩盖了城市格里的脏值，以后模型抄成 "BEIJING  CN" 就发 "BEIJING  CN"，核对区靠人眼。
+        # 三字码仍只管这三处：到达港 DEST_NAME 与航路 TO1/TO2/TO3；起运港按城市全名发
+        # （codes.ORIGIN_CITY_NAME），别把这四列混成一个口径。
+        out[city_key] = city0
         out[pfx + "_INFO_COMP_ADDRESS"] = street
         out[pfx + "_INFO_TEL"] = tel
         out[pfx + "_INFO_FAX"] = fax

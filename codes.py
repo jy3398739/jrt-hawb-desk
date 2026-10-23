@@ -36,7 +36,9 @@ TAX_PREFIX_RE = re.compile(r"^(?:USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*ID|TAX\s*N
 
 def clean_tax(v) -> str:
     """税号归一：去空白、转大写、摘掉模型连标签一起抄进来的前缀（票面 'VAT#769638661' → 号码本身）。
-    CNPJ/RFC 带点斜横线是号码的一部分，保留；只摘开头的标签词。"""
+    CNPJ/RFC 带点斜横线是号码的一部分，保留；只摘开头的标签词。
+    这一条是**比对**用的口径（保真回查、主单反向红旗都要把标签和号分开比），不是发出值；
+    发出值走 `id_cell`（2026-10-23 业主定案：标签词留在前面连写）。两个并成一个就会同时坏掉两处判据。"""
     out = re.sub(r"\s+", "", str(v or "")).upper()
     for _ in range(2):
         stripped = TAX_PREFIX_RE.sub("", out, count=1)
@@ -44,6 +46,32 @@ def clean_tax(v) -> str:
             break
         out = stripped
     return out
+
+
+# 中文标签发不进公司那一格（列面是 ASCII），映成票面英文里最常见的那个词
+_ID_LABEL_CN = {"统一社会信用代码": "USCI"}
+
+
+def id_cell(v) -> str:
+    """识别号格（`*_INFO_EORI`）的**发出值**：票面标签词留在前面，与号码之间不留分隔符，
+    号码本体的点/斜杠/横线也去掉——'CNPJ: 00.280.273/0001-37' → 'CNPJ00280273000137'，
+    'VAT#769638661' → 'VAT769638661'，'TAX ID 123456789' → 'TAXID123456789'。
+
+    三条边界：两位国家字母开头的是号码本身（SE5563646560 原样），票面没印标签就不硬造，
+    光剩一个标签词而号没抄到就留空（发个 'VAT' 出去比留着像号更坏）。
+    可以反复喂：暂存读回来的已经是拼好的那串，再归一必须原样。"""
+    s = re.sub(r"\s+", " ", str(v or "").strip().upper())
+    if not s:
+        return ""
+    m = TAX_PREFIX_RE.match(s)
+    label = ""
+    if m:
+        head = re.sub(r"[^A-Z一-鿿]", "", m.group(0))
+        label = _ID_LABEL_CN.get(head, head)
+    core = re.sub(r"[^0-9A-Z]", "", s[m.end():] if m else s)
+    if label and not re.search(r"\d", core):
+        return ""
+    return label + core
 
 # 一格装多个识别号的分隔符：**两侧必须带空格**。巴西 CNPJ 自己就含斜杠
 # （07.454.234/0001-10），用裸斜杠当隔符会把一个号码切成两段、再拼回去永久坏掉。
@@ -211,6 +239,17 @@ def iata_place(v):
     if not v:
         return ""
     return lookup_city(v) or v
+
+# 2026-10-23 业主定案：分单「起运港」这一格发城市全名，落进北京的三种码一律写成 BEIJING
+# （BJS 城市码 / PEK 首都 / PKX 大兴；从前票面印 PEK 因为"已是三字码"原样漏了过去）。
+# 射程只有这一格：到达港与航路 TO1/TO2/TO3 仍是三字码，业主没点它们，别跟着改。
+ORIGIN_CITY_NAME = {"BJS": "BEIJING", "PEK": "BEIJING", "PKX": "BEIJING"}
+
+
+def origin_place(v):
+    """起运港发出值：先归一（票面九种印法都落到 BJS），再把北京的码换成城市全名。"""
+    code = iata_place(v)
+    return ORIGIN_CITY_NAME.get(code, code)
 
 def fmt_mawb(v):
     """主单号规范化（后8位中间不加空格）:

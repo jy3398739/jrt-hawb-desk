@@ -9,12 +9,14 @@ import validator
 import vlm_extract
 
 # 缺陷1：票面"电话+联系人+CNPJ"挤同一格，整行照抄后剥字母会拼成 26 位怪物号（PEK1642839）
-# 缺陷4：Excel 前导单引号强制文本，LibreOffice 把 ' 印进 PDF 文字层，L3 丢 +（AE20260916）
+# 缺陷4（2026-10-23 撤销）：Excel 前导单引号被 LibreOffice 印进 PDF 文字层，票面因此丢了 +
+#   （AE20260916）。当年 L3 按已知区号把 + 补了回来；业主定案这一档取消——票面没有 + 就不给加，
+#   补出来的那个 + 是我们造的，不是抄的。
 # L1 改走文字层后引入：排版连字符 U+2010 曾被当作号码断点，+86‐022‐60359588 只剩 60359588
 PHONE_CASES = [
     ("+559240091129 Carla Os CNPJ: 00280273000137", "+559240091129"),
-    ("'8613944484042", "+8613944484042"),
-    ("'905428542609", "+905428542609"),
+    ("'8613944484042", "8613944484042"),
+    ("'905428542609", "905428542609"),
     ("+86-13311099286", "+8613311099286"),          # L3 口径去连字符（32 单基线无一含 -）
     ("TEL:+86-13311099286", "+8613311099286"),
     ("+46 (0)70 31 76 762", "+46703176762"),        # 欧标干线 0 不是号码的一部分
@@ -102,11 +104,10 @@ def test_l3_invents_no_whole_string_when_the_model_left_it_empty():
     assert l3["CONSIGNEE_INFO_COUNTRY"] == "GB", l3["CONSIGNEE_INFO_COUNTRY"]
 
 
-def test_consignee_city_keeps_the_ticket_name():
-    """收货人城市留票面全称（2026-10-15 业主定案「收货人城市要全称，不要三字码」）：
-    公司那一格要的是城市名，转成机场码等于让人在核对区把 CHENNAI 手动改回去。
-    起运港/目的港/航路那几列仍是三字码，别跟着改；发货人城市这次没动——业主只点了收货人，
-    要不要同样留全称等他表态，所以这里把发货人仍转码这件事一并钉住。"""
+def test_both_party_cities_keep_the_ticket_spelling():
+    """收发货人城市都留票面写法：收货人侧是 2026-10-15 定案（「收货人城市要全称，不要三字码」），
+    发货人侧 2026-10-23 跟上（业主：发货人不用打三字母缩写，写原版里的拼音就可以）。
+    三字码只剩这三处：到达港 DEST_NAME、航路 TO1/TO2/TO3；起运港按城市全名发（见上面那两条）。"""
     l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2d.update({
         "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261003",
@@ -119,8 +120,8 @@ def test_consignee_city_keeps_the_ticket_name():
     l3 = to_air.to_air(l2d)
     assert l3["CONSIGNEE_INFO_CITTY"] == "LONDON", \
         f"收货人城市被转成了三字码：{l3['CONSIGNEE_INFO_CITTY']!r}"
-    assert l3["SHIPPER_INFO_CITY"] == "TAO", \
-        f"发货人城市现仍转码（有意的不对称）：{l3['SHIPPER_INFO_CITY']!r}"
+    assert l3["SHIPPER_INFO_CITY"] == "QINGDAO", \
+        f"发货人城市还在转码：{l3['SHIPPER_INFO_CITY']!r}"
 
 
 def test_prompt_asks_for_a_transcribed_party_string():
@@ -267,3 +268,72 @@ def test_validator_warns_on_missing_awb_numbers():
     assert any("均为空" in x for x in w) and not any("MAWB_NO 缺失" in x for x in w), w
     # HAWB 栏误填 3 位承运人前缀号（那是主单号）
     assert any("误填主单号" in x for x in validator.validate_raw(dict(base, HAWB_NO="02043605590")))
+
+
+# ── 2026-10-23 业主定案：起运港这一格发城市全名，发货人城市发票面拼音 ─────────────────
+# 北京在票面上有九种印法（都是从 L3 夹具里抄来的原文），从前一律转成 BJS；现在一律 BEIJING。
+# 其余城市照旧三字码——业主只点了北京这一档，别自作主张把整列换成全名。
+ORIGIN_CASES = [
+    ("BEIJING", "BEIJING"),
+    ("BEIJING CAPITAL INTERNATIONAL APT", "BEIJING"),
+    ("BEIJINGCAPITALINTERNATIONALAPT", "BEIJING"),        # 文字层粘连
+    ("BEIJING,CHINA", "BEIJING"),
+    ("BEIJINGCHINA", "BEIJING"),
+    ("BEIJING(PEKING)", "BEIJING"),
+    ("BEIJINGSHOUDUINTERNATIONALAPT", "BEIJING"),          # 拼音直译
+    ("PEK", "BEIJING"),                                    # 从前"已是三字码"原样漏过去
+    ("PEK-PEKING", "BEIJING"),
+    ("PKX", "BEIJING"),                                    # 大兴
+    ("QINGDAO", "TAO"),
+    ("QINGDAOJIAODONGINTERNATIONALAPT", "TAO"),
+    ("SHENYANGTAOXIANINTERNATIONALAPT", "SHE"),
+    ("WEIHAI,CHINA", "WEH"),
+    ("ZHENGZHOU", "CGO"),
+    ("", ""),
+]
+
+
+def test_the_origin_cell_sends_beijing_as_a_city_name():
+    for src, want in ORIGIN_CASES:
+        got = codes.origin_place(src)
+        assert got == want, f"origin_place({src!r}) -> {got!r}，期望 {want!r}"
+
+
+def test_only_the_origin_column_stops_being_a_code():
+    """射程就这一格：到达港印 BEIJING 仍要转成 BJS，航路栏照旧三字码，
+    否则「统一」会变成整列改口径，把没点名的那几列一起带走。"""
+    d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    d.update({"ORIGIN_NAME": "BEIJING CAPITAL INTERNATIONAL APT", "DEST_NAME": "BEIJING",
+              "TO1": "PEK", "TO2": "MANAUS"})
+    air = to_air.to_air(d)
+    assert air["ORIGIN_NAME"] == "BEIJING"
+    assert air["DEST_NAME"] == "BJS", "到达港还在三字码口径上，别跟着起运港改"
+    assert air["TO1"] == "PEK" and air["TO2"] == "MAO", "航路栏仍是三字码"
+
+
+def test_the_shipper_city_is_the_spelling_on_the_ticket():
+    """2026-10-23 业主定案：发货人城市也不用三字码，票面拼音怎么印怎么发（与收货人城市同一条口径）。
+    代价写在这里：转码从前顺手掩盖了城市格里的脏值，以后模型抄成什么样就发什么样。"""
+    d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    d.update({"SHIPPER_INFO_COMP_NAME": "BEIJING SHUNYI CO LTD",
+              "SHIPPER_INFO_COMP_ADDRESS": "ROOM 101, BEIJING, 101300, CHINA",
+              "SHIPPER_INFO_CITY": "BEIJING", "SHIPPER_INFO_COUNTRY": "CN",
+              "CONSIGNEE_INFO_COMP_NAME": "ACME SP Z O O",
+              "CONSIGNEE_INFO_COMP_ADDRESS": "UL. MARSZALKOWSKA 1, WARSAW, 00-001, POLAND",
+              "CONSIGNEE_INFO_CITTY": "WARSAW", "CONSIGNEE_INFO_COUNTRY": "PL"})
+    air = to_air.to_air(d)
+    assert air["SHIPPER_INFO_CITY"] == "BEIJING", "发货人城市还在转三字码"
+    assert air["CONSIGNEE_INFO_CITTY"] == "WARSAW"
+
+
+def test_beijing_in_the_origin_cell_is_not_a_missing_code_anymore():
+    """红旗那条判据得跟着口径走：放行 BEIJING，但到达港没落成三字码仍要出声——
+    不改这条，每张北京票都白挨一个「未转成 IATA 三字码」的假旗。"""
+    ok = {k: "" for k in codes.TARGET_KEYS_OUT}
+    ok.update({"ORIGIN_NAME": "BEIJING", "DEST_NAME": "WAW", "TO1": "WAW"})
+    assert not [w for w in validator.validate_air(ok) if "未转成" in w], validator.validate_air(ok)
+    bad = dict(ok, DEST_NAME="WARSAW")
+    assert any("DEST_NAME 未转成" in w for w in validator.validate_air(bad))
+    odd = dict(ok, ORIGIN_NAME="BEIJINGG")
+    assert any("ORIGIN_NAME 未转成" in w for w in validator.validate_air(odd)), "拼错的还得报"
+

@@ -191,7 +191,7 @@ def test_recheck_recomputes_l3_and_backfills_new_columns():
             "老结果要补齐新列；L2 是照抄口径，号仍在地址串里"
         assert not [k for r in (raw, air) for k in r if k.endswith("_TAX_ID")], \
             "已删的税号列不该被重算造出来"
-        assert air["SHIPPER_INFO_EORI"] == "9111010880211232X4", air
+        assert air["SHIPPER_INFO_EORI"] == "USCI9111010880211232X4", air   # 标签词连写在前面（2026-10-23）
         assert "USCI" not in air["SHIPPER_INFO_COMP_ADDRESS"], air["SHIPPER_INFO_COMP_ADDRESS"]
 
 

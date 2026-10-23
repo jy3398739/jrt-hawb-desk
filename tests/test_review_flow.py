@@ -522,7 +522,7 @@ def test_a_flag_attaches_to_every_column_it_names():
     把两格的列名都写进旗面了——一条谁也不点、界面上又没有 chip 的旗就是没人能确认的死旗。"""
     ks = _keys38()
     got = lambda f: web_src.logic("L.flagKeys(f, ks)", f=f, ks=ks)
-    assert got("L3 SHIPPER_INFO_EORI 混进了标签，只填号码本身（航空口径已自动摘掉）: 'VAT 123'") \
+    assert got("L3 SHIPPER_INFO_EORI 中国 USCI 应为 18 位，现 21 位: 'USCI9112011177064020731'") \
         == ["SHIPPER_INFO_EORI"], "L3 前缀不该把这一列顶掉"
     assert got("L3 CONSIGNEE_INFO_EORI 形态异常(过短): '123'") == ["CONSIGNEE_INFO_EORI"]
     assert got("L3 SHIPPER_INFO_EORI 与电话同值，疑似电话栏吞了税号: '00280273000137'") \
