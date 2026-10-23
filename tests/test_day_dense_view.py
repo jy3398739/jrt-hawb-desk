@@ -323,3 +323,56 @@ def test_reduced_motion_covers_the_new_animations():
     body = "\n".join(blk)
     assert ".dvci" in body and "dvin" in body, "台账那两处新动效没进降级名单"
     assert "!important" not in body, "别用大锤关动画"
+
+
+# ── 折叠与散行要分得开（2026-10-23 业主按截图定的）────────────────────────────
+# 截图里的两挡：SK20261005A/B 那种主单行就在本列表里的分单（点主单箭头能收放），
+# 和 235-98106912 那种主单根本不在视图里的散行（没得折叠）。从前两种都画树形缩进连线，
+# 看上去全是谁的子项。改法：连线只留给能折叠的；散行与主单行平齐。
+# 「未提交」在第二列自己的格子里，两种行共享同一条列边界——第一列的缩进差别不许带歪它。
+def test_foldable_keys_only_count_masters_present_in_the_view():
+    got = web_src.logic("L.foldableKeys(rows)", rows=list(ROWS) + [
+        {"kind": "hawb", "mawb": "235-98106912", "stem": "D1", "flags": 0,
+         "submitted": None, "failed": False, "voided": None},
+        {"kind": "hawb", "mawb": "99995764373", "stem": "D2", "flags": 0,
+         "submitted": None, "failed": False, "voided": None}])
+    assert got == {"99995764373": True, "07455430340": True}, \
+        f"只收主单行在场的号（横杠归一与聚簇同一把尺子）：{got}"
+
+
+def _dvrow_run():
+    """把 desk.js 的 dvRowHtml 整颗切出来用 node 真跑——钉行为不钉字符串。
+    桩只补它引用的环境：esc/常量/voidCell（操作格另有用例管），L 用真 logic.js。"""
+    import json as _json
+    import subprocess
+    body = web_src.fn(web_src.part("js/desk.js"), "function dvRowHtml")
+    src = ("const L = require(%s);\n" % _json.dumps(str(web_src.ROOT / "js" / "logic.js"))
+           + "const esc = s => String(s == null ? '' : s);\n"
+           + "const DV = {collapsed: new Set()};\nconst DV_CHEV_SVG = '';\n"
+           + "const DV_FLAG_SVG = '';\nconst KIND_CN = {};\nconst BASE = '';\n"
+           + "const voidCell = () => '';\n" + body + "\n")
+
+    def run(row, mkeys):
+        r = subprocess.run(["node", "-e", src + "console.log(JSON.stringify(dvRowHtml(%s, {}, false, %s)));"
+                            % (_json.dumps(row), _json.dumps(mkeys))],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        assert r.returncode == 0, "node 跑 dvRowHtml 失败：" + (r.stderr.strip() or r.stdout.strip())
+        return r.stdout.strip()
+    return run
+
+
+def test_the_tree_indent_only_goes_to_subs_whose_master_is_in_the_view():
+    run = _dvrow_run()
+    child = {"kind": "hawb", "mawb": "074-55430340", "stem": "B9", "flags": 0,
+             "submitted": None, "failed": False, "voided": None, "has_original": True}
+    orphan = {"kind": "hawb", "mawb": "235-98106912", "stem": "D9", "flags": 0,
+              "submitted": None, "failed": False, "voided": None, "has_original": True}
+    master = {"kind": "mawb", "mawb": "074-55430340", "stem": "", "flags": 0,
+              "submitted": None, "failed": False, "voided": None, "filled": 3, "cols_total": 36}
+    keys = {"07455430340": True}
+    assert "dvdoc dvind" in run(child, keys), "主单在视图里：保留树形缩进连线"
+    assert "dvdoc dvind" not in run(orphan, keys), "主单不在视图里：不许画连线冒充子项"
+    assert "dvind" not in run(master, keys).split("<td")[1], "主单行自己不带分单缩进"
+    for row in (child, orphan, master):
+        tds = run(row, keys).split("<td")
+        assert "dvst" in tds[2], "状态必须在第二列自己的格子里（两种行同列 ⇒ 未提交对齐不动）"

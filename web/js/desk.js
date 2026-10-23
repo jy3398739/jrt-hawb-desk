@@ -3497,7 +3497,7 @@ function voidCell(r){
   return '<button class="btn sm gh" type="button" data-void="' + esc(k) +
          '" title="从台账与统计里收起来，随时能恢复；票面原件、暂存与提交台账一律不动">作废</button>';
 }
-function dvRowHtml(r, subs, fade){
+function dvRowHtml(r, subs, fade, mkeys){
   const m = r.kind === "mawb", pk = L.dayKey(r), closed = DV.collapsed.has(pk);
   const no = m ? (r.mawb || "没取到主单号") : (r.hawb || r.stem || "没取到分单号");
   /* 箭头排在最前面，而且必须是真按钮：伪链接协议那种写法键盘到不了、读屏器也念不出来。
@@ -3512,7 +3512,11 @@ function dvRowHtml(r, subs, fade){
       + `<button type="button" class="dvno m" data-mopen="${esc(r.mawb)}"`
       + ` title="回工作台按这个主单号检索并打开核对区">${esc(no)}</button>`
       + `<span class="dvfold">分单 ${subs[pk] || 0} 已折叠</span></span>`
-    : `<span class="dvdoc dvind"><span class="dvk s">分单</span>`
+    /* 树形缩进连线只画给「主单行就在本列表里」的分单（2026-10-23 业主按截图定的）：
+       主单不在视图里的散行没有得折叠，画上线等于谎称它是谁的子项，让它与主单行平齐。
+       连线长在第一列；「未提交」在第二列自己的格子里，两种行共享同一条列边界——
+       缩进差别不会带歪状态列的对齐。 */
+    : `<span class="dvdoc${mkeys[L.normNo(r.mawb)] ? " dvind" : ""}"><span class="dvk s">分单</span>`
       + (r.has_original
         ? `<button type="button" class="dvno s" data-open="${esc(r.stem)}"`
           + ` title="回到工作台接着核这张票">${esc(no)}</button>`
@@ -3559,6 +3563,7 @@ function renderDay(fade){
   $("#dayStats").innerHTML = dvStatHtml(L.dayBar(VIEW.rows));
   const subs = L.daySubCounts(live);
   const rows = L.dayOrder(L.dayFilter(live, DV.filter), DV.sort);
+  const mkeys = L.foldableKeys(rows);
   if (!rows.length){
     $("#dayBox").innerHTML = VIEW.rows.length
       ? '<div class="empty">' + (dayOnlyVoid ? "这一天没有作废的票。"
@@ -3573,7 +3578,7 @@ function renderDay(fade){
       <th class="w-doc">单据</th><th>状态</th><th class="w-flag">红旗</th>
       <th class="w-rec">提交记录</th><th class="w-snap">缩影</th><th class="w-att">附件</th>
       <th class="w-op">操作</th></tr></thead>
-      <tbody>${rows.map(r => dvRowHtml(r, subs, fade)).join("")}</tbody></table>
+      <tbody>${rows.map(r => dvRowHtml(r, subs, fade, mkeys)).join("")}</tbody></table>
       <p class="hint hintp">「公司发送状态」要按主单去公司系统查（限流 10 次/秒）：点顶栏「主单检索」查那张主单下的全部票。</p>`;
   dvSyncCollapse();
 }
