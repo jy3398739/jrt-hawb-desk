@@ -9,6 +9,8 @@
 """
 import re
 
+import codes
+
 # 三组当事人各 11 列，写法一致
 _PARTY_SUFFIXES = (("COMP_NAME", "公司名"), ("COMP_ADDRESS", "地址"), ("CITY", "城市"),
                    ("COUNTRY", "国家"), ("STATE", "州省"), ("POSTAL", "邮编"),
@@ -104,7 +106,9 @@ def original_lines(lines: list, baseline: list, sent: dict) -> tuple:
 
     剔的判据两条同时成立（宁可少剔：误剔等于把公司真值从模型眼前藏掉，还会冒一条假漏取）：
       ① 这一行的标签在**基线**里没有——基线里有 = 公司先录的，值相同也不改口；
-      ② 值与本机发出去的那一格相同（空白按出行同一套归一，写回再读回可能差个空格）。
+      ② 值与本机发出去的那一格**去符号后**相同（2026-10-27 去符号定案：本机发出的值被清洗过，
+         与公司原文只差符号时不算写回改动——逐字符比会把每张老票都误判成"我们改过"，
+         行被剔出资料、指纹漂移、假重解析）。空白按出行同一套归一，写回再读回可能差个空格。
     基线本身是空的（连可比对象都没有：第一次解析前缓存就被清了）⇒ 一行都不剔，
     只把②成立的那些行报成分不清——假装分得清比留着更坏。
     基线由调用处负责：第一次读到时就钉下，逐次继承；老票没钉过的，退到上一次解析读到的
@@ -117,7 +121,8 @@ def original_lines(lines: list, baseline: list, sent: dict) -> tuple:
         text = str((x or {}).get("text", ""))
         label, _, value = text.partition(":")
         label, value = label.strip(), _txt(value)
-        hit = bool(label) and isinstance(sent, dict) and label in sent and value == _txt(sent[label])
+        hit = bool(label) and isinstance(sent, dict) and label in sent \
+            and codes.sym_to_space(value) == codes.sym_to_space(_txt(sent[label]))
         if hit and label not in had:
             if had:
                 gone.append({"label": label, "value": value, "text": text})
@@ -166,6 +171,15 @@ def clean_ams(ams: dict) -> dict:
             out[col] = _txt(v).upper()
         else:
             out[col] = _txt(v)
+    # 2026-10-27 业主定案：主单收发货人+通知人的子列去符号（与分单同一个 codes.sym_to_space：
+    # 字母/数字/空格/中文保留，其余→空格并折叠）。两个例外：*_INFO_POSTAL——收货人邮编的
+    # 官方横杠（04546-040）保留；*_INFO_EORI——上面的分支已经去空格连写，再过一遍会把
+    # 多号之间的分隔符黏掉。空值照旧进 None，不变成空格串；整串三列是外层资料块不经手。
+    for col in out:
+        if col.startswith(("SHIPPER_", "CONSIGNEE_", "NOTIFY_")) \
+                and not col.endswith(("_INFO_POSTAL", "_INFO_EORI")) \
+                and isinstance(out[col], str) and out[col]:
+            out[col] = codes.sym_to_space(out[col])
     return out
 
 

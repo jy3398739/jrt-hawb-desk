@@ -76,17 +76,18 @@ def test_polish_endpoint_never_answers_for_the_verbatim_block():
 
 
 def test_polish_endpoint_answers_per_chain():
-    """同一份值在两条链上给不一样的答复：主单不过 to_air，别把分单的 alpha-2 当通用规则。"""
+    """同一份值在两条链上给不一样的答复：主单不过 to_air，别把分单的 alpha-2 当通用规则。
+    2026-10-27 起发货人三格无条件固定（国家恒 CN），拿收货人列验这条差异。"""
     client, st = _client()
     try:
-        fields = {"MAWB_NO": "999-95764373", "SHIPPER_INFO_COMP_NAME": "ACME LTDA",
-                  "SHIPPER_INFO_COUNTRY": "brazil", "SHIPPER_INFO_POSTAL": "04546040"}
+        fields = {"MAWB_NO": "999-95764373", "CONSIGNEE_INFO_COMP_NAME": "ACME LTDA",
+                  "CONSIGNEE_INFO_COUNTRY": "brazil", "CONSIGNEE_INFO_POSTAL": "04546040"}
         h = {x["field"]: x["to"] for x in client.post(
             "/polish", json={"chain": "hawb", "fields": fields}).json()["rows"]}
         m = {x["field"]: x["to"] for x in client.post(
             "/polish", json={"chain": "master", "fields": fields}).json()["rows"]}
-        assert h["SHIPPER_INFO_COUNTRY"] == "BR" and m["SHIPPER_INFO_COUNTRY"] == "BRAZIL"
-        assert h["SHIPPER_INFO_POSTAL"] == m["SHIPPER_INFO_POSTAL"] == "04546-040"
+        assert h["CONSIGNEE_INFO_COUNTRY"] == "BR" and m["CONSIGNEE_INFO_COUNTRY"] == "BRAZIL"
+        assert h["CONSIGNEE_INFO_POSTAL"] == m["CONSIGNEE_INFO_POSTAL"] == "04546-040"
     finally:
         _undo(st)
 

@@ -235,4 +235,18 @@ def to_air(d: dict) -> dict:
         # （4_ceva 发货人）——而这一列正是制单员核对时读的那一眼，串一重排就等于抄错票。
         # 整串为空时也不拼：留空会进制单员的空栏确认，拼出来的串谁都不会再看第二眼。
 
+    # 2026-10-27 业主定案：收发货人的整串与子列去符号（codes.sym_to_space，字母/数字/空格/中文
+    # 保留，其余→空格并折叠）。执行顺序在电话清洗、国家转码之后——电话的 + 不会残留符号。
+    # 两个例外：*_INFO_POSTAL——收货人邮编的官方横杠（04546-040）保留，「优化补横杠」照旧；
+    # *_INFO_EORI——识别号格由 id_cell 保证无符号，多号之间的「 / 」是内容不是符号，
+    # 过一遍去符号会把两颗号黏成一颗（2026-10-27 变异与基线双双抓到）。
+    # 发货人城市/邮编/国家无条件固定 BEIJING/101300/CN（2026-10-27 业主定案；票面写哪都一样，
+    # L2 照抄不动、核对区可手改；主单不动）。
+    out["SHIPPER_INFO_CITY"] = "BEIJING"
+    out["SHIPPER_INFO_POSTAL"] = "101300"
+    out["SHIPPER_INFO_COUNTRY"] = "CN"
+    for k in out:
+        if k.startswith(("SHIPPER_", "CONSIGNEE_")) \
+                and not k.endswith(("_INFO_POSTAL", "_INFO_EORI")):
+            out[k] = codes.sym_to_space(out[k])
     return {k: out.get(k, "") for k in codes.TARGET_KEYS_OUT}

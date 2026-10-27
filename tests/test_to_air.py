@@ -68,7 +68,9 @@ def test_party_whole_string_is_the_transcribed_text_not_an_assembly():
     （2_sch_1 收货人、5e696c 收货人）、邮编省名整段丢掉（5_dhl 收货人的 KA 560058）、
     公司名第二行被挪到地址后面（4_ceva 发货人）——而这一列是制单员核对时读的那一眼。
 
-    子列照常归一：同一条里 *_INFO_COUNTRY 要落成两字母码、*_INFO_TEL 要清成号码本体。"""
+    2026-10-27 业主定案：**发出的整串去符号**（字母/数字/空格/中文保留，其余→空格并折叠）——
+    照抄那一层退到 L2（输入 dict 不许动，保真回查查的是它）；L3 的发出值 = sym_to_space(L2)。
+    发货人国家/城市/邮编三格无条件固定（见下一条用例），国家不再落 SE。"""
     l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2d.update({
         "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261001",
@@ -79,12 +81,14 @@ def test_party_whole_string_is_the_transcribed_text_not_an_assembly():
         "SHIPPER_INFO_CITY": "KARLSTAD", "SHIPPER_INFO_COUNTRY": "SWEDEN",
         "SHIPPER_INFO_POSTAL": "652 21", "SHIPPER_INFO_TEL": "+46 (0)70 31 76 762"})
     l3 = to_air.to_air(l2d)
-    assert l3["SHIPPER_INFO"] == l2d["SHIPPER_INFO"], \
-        f"整串被改了：{l3['SHIPPER_INFO']!r}"
+    assert l3["SHIPPER_INFO"] == codes.sym_to_space(l2d["SHIPPER_INFO"]), \
+        f"整串发出值要等于 L2 照抄串去符号：{l3['SHIPPER_INFO']!r}"
     assert l3["SHIPPER_INFO"].count("GJUTERIGATAN") == 1, "重拼会把街道再挂一遍"
-    # 同一格的国家/电话照常归一——这次动的只有整串的取值来源
-    assert l3["SHIPPER_INFO_COUNTRY"] == "SE", l3["SHIPPER_INFO_COUNTRY"]
-    assert l3["SHIPPER_INFO_TEL"] == "+46703176762", l3["SHIPPER_INFO_TEL"]
+    assert l2d["SHIPPER_INFO"].count("GJUTERIGATAN") == 1 and "," in l2d["SHIPPER_INFO"], \
+        "L2 照抄层一个字不许动"
+    # 发货人三格无条件固定；电话里的 + 是符号，也去
+    assert l3["SHIPPER_INFO_COUNTRY"] == "CN" and l3["SHIPPER_INFO_CITY"] == "BEIJING"
+    assert l3["SHIPPER_INFO_TEL"] == "46703176762", l3["SHIPPER_INFO_TEL"]
 
 
 def test_l3_invents_no_whole_string_when_the_model_left_it_empty():
@@ -100,14 +104,13 @@ def test_l3_invents_no_whole_string_when_the_model_left_it_empty():
         "CONSIGNEE_INFO_TEL": "+442077010005"})
     l3 = to_air.to_air(l2d)
     assert l3["CONSIGNEE_INFO"] == "", f"空整串被代码拼出来了：{l3['CONSIGNEE_INFO']!r}"
-    assert l3["CONSIGNEE_INFO_TEL"] == "+442077010005", l3["CONSIGNEE_INFO_TEL"]
+    assert l3["CONSIGNEE_INFO_TEL"] == "442077010005", l3["CONSIGNEE_INFO_TEL"]
     assert l3["CONSIGNEE_INFO_COUNTRY"] == "GB", l3["CONSIGNEE_INFO_COUNTRY"]
 
 
-def test_both_party_cities_keep_the_ticket_spelling():
-    """收发货人城市都留票面写法：收货人侧是 2026-10-15 定案（「收货人城市要全称，不要三字码」），
-    发货人侧 2026-10-23 跟上（业主：发货人不用打三字母缩写，写原版里的拼音就可以）。
-    三字码只剩这三处：到达港 DEST_NAME、航路 TO1/TO2/TO3；起运港按城市全名发（见上面那两条）。"""
+def test_shipper_city_fixed_consignee_keeps_the_ticket_name():
+    """发货人三格无条件固定（2026-10-27 业主定案）：票面写 QINGDAO 也发 BEIJING/101300/CN；
+    收货人城市照旧留票面写法（10-15 定案），国家照落两字母码。"""
     l2d = {k: "" for k in codes.TARGET_KEYS_OUT}
     l2d.update({
         "MAWB_NO": "131-56115007", "HAWB_NO": "BJS261003",
@@ -120,8 +123,9 @@ def test_both_party_cities_keep_the_ticket_spelling():
     l3 = to_air.to_air(l2d)
     assert l3["CONSIGNEE_INFO_CITTY"] == "LONDON", \
         f"收货人城市被转成了三字码：{l3['CONSIGNEE_INFO_CITTY']!r}"
-    assert l3["SHIPPER_INFO_CITY"] == "QINGDAO", \
-        f"发货人城市还在转码：{l3['SHIPPER_INFO_CITY']!r}"
+    assert l3["SHIPPER_INFO_CITY"] == "BEIJING" \
+        and l3["SHIPPER_INFO_POSTAL"] == "101300" and l3["SHIPPER_INFO_COUNTRY"] == "CN", \
+        f"发货人三格要无条件固定：{l3['SHIPPER_INFO_CITY']!r}/{l3['SHIPPER_INFO_POSTAL']!r}/{l3['SHIPPER_INFO_COUNTRY']!r}"
 
 
 def test_prompt_asks_for_a_transcribed_party_string():
@@ -190,10 +194,11 @@ def test_to_air_end_to_end_on_one_ticket():
     assert l3["TO3"] == "MAO" and l3["DEST_NAME"] == "MAO", (l3["TO3"], l3["DEST_NAME"])
     assert l3["ORIGIN_NAME"] == "TAO", l3["ORIGIN_NAME"]
     assert l3["SHIPPER_INFO_COUNTRY"] == "CN"
-    assert l3["SHIPPER_INFO_TEL"] == "+8613944484042", l3["SHIPPER_INFO_TEL"]
+    assert l3["SHIPPER_INFO_TEL"] == "8613944484042", l3["SHIPPER_INFO_TEL"]
     assert "CNPJ" not in l3["SHIPPER_INFO_TEL"]
     # 电话已单独成字段，L3 街道里不该再留号码，但门牌号要保住（_drop_phone_segs 接进 to_air 了吗）
-    assert l3["SHIPPER_INFO_COMP_ADDRESS"] == "NO.91 XINGANG ROAD", l3["SHIPPER_INFO_COMP_ADDRESS"]
+    assert l3["SHIPPER_INFO_COMP_ADDRESS"] == "NO 91 XINGANG ROAD", \
+        l3["SHIPPER_INFO_COMP_ADDRESS"]   # 句点也是符号（2026-10-27 去符号定案）
     assert l3["SHIPPER_INFO"] == "", \
         "这份 L2 没给整串：出口必须是空的，代码不许拿子字段拼一份顶上（2026-10-14 定案）"
     assert validator.validate_air(l3) == [], validator.validate_air(l3)
@@ -336,4 +341,81 @@ def test_beijing_in_the_origin_cell_is_not_a_missing_code_anymore():
     assert any("DEST_NAME 未转成" in w for w in validator.validate_air(bad))
     odd = dict(ok, ORIGIN_NAME="BEIJINGG")
     assert any("ORIGIN_NAME 未转成" in w for w in validator.validate_air(odd)), "拼错的还得报"
+
+
+# ── 2026-10-27 业主定案：收发货人字段去符号 + 发货人三格固定 ───────────────────────
+# 「所有符号替换成空格」：字母/数字/空格/中文保留，其余→空格并折叠、去首尾。
+# 唯一例外：*_INFO_POSTAL 不做替换——收货人邮编保留官方横杠写法（04546-040），
+# 「优化补横杠」规则照旧。发货人城市/邮编/国家无条件固定 BEIJING/101300/CN（主单不动）。
+SYM_CASES = [
+    ("LIM-TEC（BEIJING）CO.，LTD.", "LIM TEC BEIJING CO LTD"),
+    ("+86 22 25322285", "86 22 25322285"),
+    ("ADMIN@163.COM", "ADMIN 163 COM"),
+    ("ROOM 101-3", "ROOM 101 3"),
+    ("  A   B  ", "A B"),
+    ("统一社会信用代码：911201117706402073", "统一社会信用代码 911201117706402073"),
+    ("07.454.234/0001-10", "07 454 234 0001 10"),
+    ("SÃO PAULO", "SÃO PAULO"),          # 带变音符的字母是字母，不是符号
+    ("", ""),
+    (None, ""),
+]
+
+
+def test_sym_to_space_keeps_letters_digits_space_cjk():
+    for src, want in SYM_CASES:
+        got = codes.sym_to_space(src)
+        assert got == want, f"sym_to_space({src!r}) -> {got!r}，期望 {want!r}"
+
+
+def test_party_fields_leave_the_symbols_behind():
+    """收发货人的整串与全部子列去符号；唯一例外邮编（收货人官方横杠保留）；
+    L2 那份照抄串一个字不动（保真回查靠它）。"""
+    d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    d.update({
+        "MAWB_NO": "074-55430340", "HAWB_NO": "NGB2609026A",
+        "SHIPPER_INFO": "BEIJING SHUNYI CO LTD, ROOM 101-3, TEL: +861065766886",
+        "SHIPPER_INFO_COMP_NAME": "BEIJING SHUNYI CO., LTD.",
+        "SHIPPER_INFO_COMP_ADDRESS": "ROOM 101-3, BEIJING, 101300, CHINA",
+        "SHIPPER_INFO_CITY": "QINGDAO", "SHIPPER_INFO_COUNTRY": "CHINA",
+        "SHIPPER_INFO_POSTAL": "101-300", "SHIPPER_INFO_TEL": "+86 10 65766886",
+        "SHIPPER_INFO_EMAIL": "ADMIN@163.COM",
+        "CONSIGNEE_INFO": "ACME LTDA, RUA X 100, SAO PAULO BRAZIL",
+        "CONSIGNEE_INFO_COMP_NAME": "ACME LTDA.",
+        "CONSIGNEE_INFO_COMP_ADDRESS": "RUA X 100, SAO PAULO, BRAZIL",
+        "CONSIGNEE_INFO_CITTY": "SAO PAULO", "CONSIGNEE_INFO_COUNTRY": "BRAZIL",
+        "CONSIGNEE_INFO_POSTAL": "04546-040", "CONSIGNEE_INFO_TEL": "+55 (11) 3333-4444",
+    })
+    air = to_air.to_air(d)
+    assert air["SHIPPER_INFO"] == "BEIJING SHUNYI CO LTD ROOM 101 3 TEL 861065766886", air["SHIPPER_INFO"]
+    assert air["SHIPPER_INFO_COMP_NAME"] == "BEIJING SHUNYI CO LTD"
+    assert air["SHIPPER_INFO_TEL"] == "861065766886", "电话里的 + 是符号，也要变成空格"
+    assert air["SHIPPER_INFO_EMAIL"] == "ADMIN 163 COM", "邮箱的 @ 按字面也去"
+    assert air["CONSIGNEE_INFO_COMP_NAME"] == "ACME LTDA"
+    assert air["CONSIGNEE_INFO_POSTAL"] == "04546-040", "邮编是唯一例外：官方横杠保留"
+    d["CONSIGNEE_INFO_EORI"] = "IT03268900267 / 911201117706402073"
+    air = to_air.to_air(d)
+    assert air["CONSIGNEE_INFO_EORI"] == "IT03268900267 / 911201117706402073", \
+        f"识别号格也在例外里：多号的「 / 」分隔符是内容，不是符号——{air['CONSIGNEE_INFO_EORI']!r}"
+    assert air["CONSIGNEE_INFO_TEL"] == "551133334444"
+    assert d["SHIPPER_INFO"] == "BEIJING SHUNYI CO LTD, ROOM 101-3, TEL: +861065766886", \
+        "L2 照抄串不许被去符号动过"
+
+
+def test_shipper_city_postal_country_are_fixed():
+    """发货人城市/邮编/国家无条件固定 BEIJING/101300/CN（2026-10-27 业主定案）：
+    票面写德州、青岛、外国都一样；主单不动；核对区仍可手改。"""
+    d = {k: "" for k in codes.TARGET_KEYS_OUT}
+    d.update({"MAWB_NO": "999-95764373", "HAWB_NO": "VCE4373",
+              "SHIPPER_INFO_COMP_NAME": "DEZHOU TEXTILE CO LTD",
+              "SHIPPER_INFO_CITY": "DEZHOU", "SHIPPER_INFO_COUNTRY": "CN",
+              "SHIPPER_INFO_POSTAL": "253000",
+              "CONSIGNEE_INFO_COMP_NAME": "BIG METAL LTD"})
+    air = to_air.to_air(d)
+    assert air["SHIPPER_INFO_CITY"] == "BEIJING"
+    assert air["SHIPPER_INFO_POSTAL"] == "101300"
+    assert air["SHIPPER_INFO_COUNTRY"] == "CN"
+    # 收货人不受固定影响
+    d2 = dict(d, CONSIGNEE_INFO_CITTY="WARSAW", CONSIGNEE_INFO_COUNTRY="POLAND")
+    air2 = to_air.to_air(d2)
+    assert air2["CONSIGNEE_INFO_CITTY"] == "WARSAW" and air2["CONSIGNEE_INFO_COUNTRY"] == "PL"
 

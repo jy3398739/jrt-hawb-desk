@@ -47,12 +47,14 @@ def test_l3_output_is_exactly_the_current_column_contract():
     assert not bad, f"{len(bad)} 份夹具的 L3 出口与现行列面不一致：\n    " + "\n    ".join(bad[:8])
 
 
-def test_l3_keeps_the_party_whole_strings_as_transcribed():
-    """整串这一列只有一个来源：L2 那份照抄串（2026-10-14 业主定案「整串提取不要有优化」）。
+def test_l3_party_whole_strings_are_the_transcribed_text_minus_symbols():
+    """整串这一列只有一个来源：L2 那份照抄串（2026-10-14 业主定案「整串提取不要有优化」）；
+    2026-10-27 业主定案加一道：**发出的整串 = 照抄串去符号**（codes.sym_to_space，字母/数字/
+    空格/中文保留，其余→空格并折叠）。照抄层退到 L2——输入 dict 一个字不许动，保真回查查的是它。
 
-    这条不看 expected、直接拿 input 比：L3 一旦恢复从子字段重拼，这里先红，而不是等 40 份
-    expected 一起漂移了才在 diff 里发现。expected 也要一起核——基线里还留着旧的重拼串，
-    说明 --update-baseline 没跑，发出去的就是两份口径。"""
+    这条不看 expected、直接拿 input 比：L3 一旦恢复从子字段重拼、或把整串改回带符号，这里先红。
+    expected 也要一起核——基线里还留着带符号的旧串，说明 --update-baseline 没跑。"""
+    import codes as _codes
     bad = []
     for p in sorted((FIX / "input").glob("*.json")):
         d = _read(p)
@@ -60,10 +62,11 @@ def test_l3_keeps_the_party_whole_strings_as_transcribed():
         ep = FIX / "expected" / p.name
         old = _read(ep) if ep.exists() else {}
         for k in ("SHIPPER_INFO", "CONSIGNEE_INFO"):
-            if str(got.get(k, "") or "") != str(d.get(k, "") or ""):
-                bad.append(f"{p.name}:{k} 整串被 L3 改了")
-            if ep.exists() and str(old.get(k, "") or "") != str(d.get(k, "") or ""):
-                bad.append(f"{p.name}:{k} 冻结的期望值还是重拼那一份")
+            want = _codes.sym_to_space(d.get(k, ""))
+            if str(got.get(k, "") or "") != want:
+                bad.append(f"{p.name}:{k} 整串发出值 ≠ L2 照抄串去符号")
+            if ep.exists() and str(old.get(k, "") or "") != want:
+                bad.append(f"{p.name}:{k} 冻结的期望值与「照抄串去符号」不一致")
     assert not bad, "整串口径没对上：\n    " + "\n    ".join(bad[:10])
 
 

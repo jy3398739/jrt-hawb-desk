@@ -94,6 +94,10 @@ def stage_master(mawb: str, ams: dict, by: str, role: str, acked_flags: list = N
     if not rec:
         raise ValueError("这条主单还没有解析结果（先在审核台检索一次主单号）")
     ams = ams if isinstance(ams, dict) else {}
+    # 人工值也要过一遍 clean_ams（2026-10-27 去符号定案）：核对区显示的是清洗后的值，
+    # 人没碰的列随表单原样回来是干净的，人手敲的值也得洗——发出去的才保证无符号。
+    # 不洗的话模型侧洗了、人工侧没洗，同一列会凭空多出一条「人改过」。
+    ams = mf.clean_ams(ams)
     base = rec.get("ams_model")
     if not isinstance(base, dict) or not base:
         base = rec.get("ams") if isinstance(rec.get("ams"), dict) else {}

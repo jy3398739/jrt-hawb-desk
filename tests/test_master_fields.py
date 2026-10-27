@@ -104,7 +104,7 @@ def test_clean_types_slac_and_normalizes_eori():
                          CONSIGNEE_INFO_EMAIL=""))
     assert ams["CONSIGNEE_INFO_EORI"] == "SA4827430", "EORI 去空白转大写（公司按 EORI 形态校验）"
     assert ams["SLAC"] == 12, "SLAC 是整数"
-    assert ams["SHIPPER_INFO_COMP_NAME"] == "METSO (TIANJIN)", "连续空白归一、首尾去掉"
+    assert ams["SHIPPER_INFO_COMP_NAME"] == "METSO TIANJIN", "去符号并折叠空白（2026-10-27 定案）"
     assert ams["CONSIGNEE_INFO_EMAIL"] is None, "空串→None，公司侧写 NULL"
     assert "HMY_ID" not in ams and "SEND_STATUS" not in ams and "CREATE_TIME" not in ams
 
@@ -184,3 +184,31 @@ def test_original_lines_drops_only_what_we_sent_back():
     assert original_lines(new, base, {})[1] == [], "本机什么都没发过，就没有回填这回事"
     assert original_lines(new, base + ["MAWB_NO", "GOODS_INFO_HSCODE", "CONSIGNEE_INFO_TEL"],
                           sent)[1] == [], "基线里就有这几行 = 公司先录的，值相同也不许剔"
+
+
+# ── 2026-10-27 业主定案：主单收发货人+通知人去符号（邮编例外）───────────────────
+# 与分单同一条规则、同一个函数（codes.sym_to_space）：字母/数字/空格/中文保留，
+# 其余 → 空格并折叠。唯一例外 *_INFO_POSTAL——收货人邮编的官方横杠（04546-040）保留。
+# 整串三列（SHIPPER/CONSIGNEE/NOTIFY_INFO）是外层资料块，不进提交体，normalize 不经手。
+def test_clean_ams_strips_symbols_from_party_fields():
+    ams = {c: None for c in MASTER_COLS}
+    ams.update({
+        "SHIPPER_INFO_COMP_NAME": "METSO (TIANJIN) CO., LTD.",
+        "SHIPPER_INFO_COMP_ADDRESS": "NO. 4 WAREHOUSE, TIANJIN 300385 CHINA",
+        "SHIPPER_INFO_TEL": "+86 22 25322285",
+        "SHIPPER_INFO_POSTAL": "101-300",
+        "CONSIGNEE_INFO_COMP_NAME": "MAADEN GOLD & BASE METALS CO",
+        "NOTIFY_INFO_COMP_NAME": "MOHAMMED SALEEM & SONS",
+        "NOTIFY_INFO_EMAIL": "SALEEM@HOTMAIL.COM",
+    })
+    out = clean_ams(ams)
+    assert out["SHIPPER_INFO_COMP_NAME"] == "METSO TIANJIN CO LTD", out["SHIPPER_INFO_COMP_NAME"]
+    assert out["SHIPPER_INFO_COMP_ADDRESS"] == "NO 4 WAREHOUSE TIANJIN 300385 CHINA"
+    assert out["SHIPPER_INFO_TEL"] == "86 22 25322285", "电话里的 + 是符号，也去"
+    assert out["SHIPPER_INFO_POSTAL"] == "101-300", "邮编是唯一例外：官方横杠保留"
+    assert out["CONSIGNEE_INFO_COMP_NAME"] == "MAADEN GOLD BASE METALS CO", "& 也是符号"
+    assert out["NOTIFY_INFO_COMP_NAME"] == "MOHAMMED SALEEM SONS", "通知人一并去符号"
+    assert out["NOTIFY_INFO_EMAIL"] == "SALEEM HOTMAIL COM"
+    out2 = clean_ams(dict(ams, SHIPPER_INFO_COMP_NAME="", CONSIGNEE_INFO_COMP_NAME=None))
+    assert out2["SHIPPER_INFO_COMP_NAME"] is None and out2["CONSIGNEE_INFO_COMP_NAME"] is None, \
+        "空仍进 None，不许变成空格串"

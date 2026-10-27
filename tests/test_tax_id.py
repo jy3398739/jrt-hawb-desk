@@ -77,9 +77,9 @@ def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
              SHIPPER_INFO_CITY="TIANJIN", SHIPPER_INFO_COUNTRY="CN",
              SHIPPER_INFO_POSTAL="300385", SHIPPER_INFO_TEL="+862258388999 USCI: " + USCI)
     l3 = to_air.to_air(l2d)
-    assert l3["SHIPPER_INFO_TEL"] == "+862258388999", l3["SHIPPER_INFO_TEL"]
+    assert l3["SHIPPER_INFO_TEL"] == "862258388999", l3["SHIPPER_INFO_TEL"]
     assert l3["SHIPPER_INFO_EORI"] == "USCI" + USCI, "税号要落在 EORI 格，不是消失"
-    assert l3["SHIPPER_INFO_CITY"] == "TIANJIN", "发货人城市留票面拼音，不再转 TSN"
+    assert l3["SHIPPER_INFO_CITY"] == "BEIJING", "发货人城市无条件固定（2026-10-27 定案）"
     assert USCI not in l3["SHIPPER_INFO_COMP_ADDRESS"], l3["SHIPPER_INFO_COMP_ADDRESS"]
     # 这份 L2 没给整串，出口就得是空的——以前这里是"重拼后的串里不许再挂着没归位的号"，
     # 现在整串不拼了，号在照抄串里出现本来就是票面印的，该管的只剩地址那一格。
@@ -228,9 +228,10 @@ def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
              SHIPPER_INFO_TEL="+861065766886")
     l3 = to_air.to_air(l2d)
     assert l3["SHIPPER_INFO_EORI"] == "USCI91110105562078969J", l3["SHIPPER_INFO_EORI"]
-    assert l3["SHIPPER_INFO_TEL"] == "+861065766886", l3["SHIPPER_INFO_TEL"]
-    assert l3["SHIPPER_INFO"] == l2d["SHIPPER_INFO"], \
-        f"整串被动过了：{l3['SHIPPER_INFO']!r}"
+    assert l3["SHIPPER_INFO_TEL"] == "861065766886", l3["SHIPPER_INFO_TEL"]
+    assert l3["SHIPPER_INFO"] == codes.sym_to_space(l2d["SHIPPER_INFO"]), \
+        f"整串发出值 = L2 照抄串去符号（2026-10-27 定案）：{l3['SHIPPER_INFO']!r}"
+    assert "," in l2d["SHIPPER_INFO"], "L2 照抄层一个字不许动"
 
 
 def test_l3_moves_a_legacy_tax_column_into_eori():

@@ -192,7 +192,8 @@ def test_master_row_state_follows_stage_then_submit():
     with _sandbox():
         _master("999-90273120")
         assert {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]["state"] == "parsed"
-        master_pipeline.stage_master("999-90273120", {"MAWB_NO": "999-90273120", "ORIGIN": "SHA"},
+        master_pipeline.stage_master("999-90273120", {"MAWB_NO": "999-90273120",
+                                                      "GOODS_INFO_HSCODE": "8412909080"},
                                      "刘明", "inputter")
         m = {r["kind"]: r for r in store.day_rows(TODAY)}["mawb"]
         assert m["state"] == "staged" and m["stager"] == "刘明" and m["edited"] == 1, m
