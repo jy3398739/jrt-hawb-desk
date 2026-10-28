@@ -2995,6 +2995,11 @@ async function mstSearch(force){
     st.textContent = "（" + j.mode + "）";
     MST_LAST = j;
     mstRender(j, m);
+    saveView();                       /* 主单位置（号 + 核对页开没开）跟着这次检索落盘 */
+    if (MV_AUTO_OPEN){                /* 刷新回位：离开时核对页开着，这次检索回来就把它摆回去 */
+      MV_AUTO_OPEN = false;
+      if (!MV && L.normNo(String(j.mawb || "")) === L.normNo(m)) openMvFromMst(String(j.mawb || ""));
+    }
     if (j.master && j.master.state === "parsing") mstPoll(m);   // 解析在后台跑，卡片跟着刷新状态
     else if (MV && MV.mawb === j.mawb && MV.rec && MV.rec.state === "parsing" && j.master){
       mvSetRec(j.master); render();                             // 检索回来时已是现成的：空壳直接填上
@@ -3116,7 +3121,14 @@ function mvPoll(){
       giveUp: () => toast("主单解析三分钟内没回话：可点「重新解析」再试", "bad")});
 }
 /* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。 */
-function mvOff(){ if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; } MV = null; }
+/* 关掉主单视图：轮询句柄必须跟着停，否则它会继续刷新一张已经不存在的核对区。
+   位置也跟着记一笔：核对页关了，刷新就不该再把它摆回来（号还留着，检索卡片照旧）。 */
+function mvOff(){
+  const was = !!MV;
+  if (MV_POLL){ MV_POLL.stop(); MV_POLL = null; }
+  MV = null;
+  if (was) saveView();
+}
 /* 检索另一张主单时的空壳：停在解析中那一档，两栏都先空着——上一张的原文与核对表要是继续
    挂着，看上去就像新票已经解析完了（2026-10-15 现场）。旧票的改动不受影响：mvSave 逐键落了盘。 */
 function mvShell(mawb){
@@ -3229,6 +3241,7 @@ function openMvFromMst(mawb){
             + (MV.conflicts.length ? "（其中 " + MV.conflicts.length + " 列与最新解析对不上，见下方红条）" : "")
           : "已载入主单 " + MV.mawb + " 的解析结果")
         + "（36 列可改，提交前由服务端重算红旗）", "ok");
+  saveView();                         /* 核对页开着了：位置里记 mstOpen，刷新要能摆回来 */
   return true;
 }
 /* 分单提交被"先主单后分单"那道门挡下来时走这里：把人带到那条主单的核对页，
@@ -3271,15 +3284,20 @@ function saveView(){
     localStorage.setItem(LS.view, JSON.stringify({
       day: dayKey(), view: VIEW.cur, rail: RAILTAB.cur,
       dayv: {scope: DAY.scope || "", date: $("#dayDate").value || "",
-             q: ($("#dayQ").value || "").trim()}
+             q: ($("#dayQ").value || "").trim()},
+      mst: (MV && MV.mawb) || (MST_LAST && MST_LAST.mawb) || "",
+      mstOpen: !!MV
     }));
   }catch(e){}                         /* 位置不是草稿：写不进去就静默放弃，不该吵人 */
 }
+let VIEW_RESTORE = null;              /* 开机恢复的位置：restoreMaster 要用里面的 mst/mstOpen */
+let MV_AUTO_OPEN = false;             /* 一次性：这次 mstSearch 回来后把主单核对页也摆回去 */
 function restoreViewPosition(){
   let raw = null;
   try{ raw = localStorage.getItem(LS.view); }catch(e){}
   const vs = L.viewRestore(raw, dayKey());
   if (!vs) return;
+  VIEW_RESTORE = vs;
   if (vs.rail !== "queue") railTab(vs.rail);
   if (vs.view === "day"){
     if (vs.dayv){
@@ -3290,22 +3308,29 @@ function restoreViewPosition(){
     setView("day");                   /* 数据由 loadDay 现拉：与点页签那一下走同一条路 */
   }
 }
-/* 主单面板的回堂（同一条反馈的另一半）：改动其实逐键落在本机未保存的编辑里（mvSave），但刷新后
-   面板空着、没有任何地方提醒"还有一张主单"。拿**今天**最近动过的那张把检索填回去——
+/* 主单面板的回堂（2026-10-28 反馈的两半）：① v1.36.0 只从草稿里找号，而只看不改的主单
+   不落草稿（draftEntry 三样全空返回 null）⇒ 改成先读位置里那份 mst，草稿只当升级前的兜底；
+   ② 核对页开着的话，检索回来后按 mstOpen 把它摆回去（从前只重跑检索、不回核对页）。
    隔天不自动打公司检索口（/company/mawb 是一次真实的公司读，得是人自己要的）。 */
 function restoreMaster(){
   if (VIEW.cur === "day") return;
-  const d = mstDrafts(), today = new Date().toISOString().slice(0, 10);
-  let best = null;
-  Object.keys(d).forEach(m => {
-    const e = d[m];
-    if (!e || typeof e !== "object") return;
-    if (String(e.savedAt || "").slice(0, 10) !== today) return;
-    if (!best || String(e.savedAt) > String(best.savedAt)) best = {mawb: m, savedAt: e.savedAt};
-  });
-  if (!best) return;
-  $("#mstNo").value = best.mawb;
-  mstSearch();
+  let mawb = (VIEW_RESTORE && VIEW_RESTORE.mst) || "";
+  let open = mawb && VIEW_RESTORE.mstOpen === true;
+  if (!mawb){
+    const d = mstDrafts(), today = new Date().toISOString().slice(0, 10);
+    let best = null;
+    Object.keys(d).forEach(m => {
+      const e = d[m];
+      if (!e || typeof e !== "object") return;
+      if (String(e.savedAt || "").slice(0, 10) !== today) return;
+      if (!best || String(e.savedAt) > String(best.savedAt)) best = {mawb: m, savedAt: e.savedAt};
+    });
+    if (!best) return;
+    mawb = best.mawb;
+  }
+  $("#mstNo").value = mawb;
+  MV_AUTO_OPEN = !!open;
+  mstSearch(false);
 }
 const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;

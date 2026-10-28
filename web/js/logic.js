@@ -402,8 +402,14 @@ const L = {
       const q = typeof d.dayv.q === "string" ? d.dayv.q.slice(0, 40) : "";
       if (scope || date || q) dayv = {scope: scope, date: date, q: q};
     }
-    if (view === "desk" && rail === "queue" && !dayv) return null;
-    return {view: view, rail: rail, dayv: dayv};
+    /* 主单位置（v1.36.1）：只看不改的主单不落草稿（draftEntry 三样全空返回 null），位置必须
+       单独记，否则刷新后面板空空——2026-10-28 业主截图报的正是这条路。号与服务器同尺：
+       超长截 40、带路径分隔符的不认。 */
+    const mst = typeof d.mst === "string" ? d.mst.trim().slice(0, 40) : "";
+    const mstOk = mst && !/[/\\]/.test(mst) ? mst : "";
+    const mstOpen = !!mstOk && d.mstOpen === true;   /* 只认真布尔：没有号就没有页可开 */
+    if (view === "desk" && rail === "queue" && !dayv && !mstOk) return null;
+    return {view: view, rail: rail, dayv: dayv, mst: mstOk, mstOpen: mstOpen};
   },
 
   /* 本机记的「今天把谁从队列里拿掉了」。只认今天那一条：/day 本来就是按天的，跨天自然失效
