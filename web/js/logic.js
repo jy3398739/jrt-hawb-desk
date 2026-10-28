@@ -384,6 +384,28 @@ const L = {
     return out;
   },
 
+  /* 刷新后回到离开时的那一页（2026-10-28 反馈："刷新以后回到的永远是登录后的界面"）。
+     位置不是偏好：**只认今天**记下的——隔天的那份是过期偏好，「记住全部那一档」跨了天，
+     人会把全局的数当自己的数报（台账 scope 那条老定案），所以隔天一律回默认（返回 null）。
+     值全部对不上默认时也返回 null（desk.js 无事可做）。垃圾输入、越界的档位与日期、
+     超过服务端闸（/day 的 q≤40）的搜索词都在这里归一，desk.js 只管读写与摆位。 */
+  viewRestore(raw, today){
+    let d = raw;
+    if (typeof d === "string"){ try { d = JSON.parse(d); } catch (e) { return null; } }
+    if (!d || typeof d !== "object" || Array.isArray(d) || d.day !== today) return null;
+    const view = d.view === "day" ? "day" : "desk";
+    const rail = ["queue", "mawb", "draft"].indexOf(d.rail) >= 0 ? d.rail : "queue";
+    let dayv = null;
+    if (view === "day" && d.dayv && typeof d.dayv === "object" && !Array.isArray(d.dayv)){
+      const scope = ["mine", "all", "toreview", "reviewed"].indexOf(d.dayv.scope) >= 0 ? d.dayv.scope : "";
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(d.dayv.date || "") ? d.dayv.date : "";
+      const q = typeof d.dayv.q === "string" ? d.dayv.q.slice(0, 40) : "";
+      if (scope || date || q) dayv = {scope: scope, date: date, q: q};
+    }
+    if (view === "desk" && rail === "queue" && !dayv) return null;
+    return {view: view, rail: rail, dayv: dayv};
+  },
+
   /* 本机记的「今天把谁从队列里拿掉了」。只认今天那一条：/day 本来就是按天的，跨天自然失效
      （第二天重新动过它就该回来）。读坏了、不是对象的一律当空——一份坏数据不许把整桌票挡在门外。 */
   droppedToday(map, today){

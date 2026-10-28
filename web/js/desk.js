@@ -57,7 +57,8 @@ const SUBMIT_URL = BASE + "/submit";
 const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts", hintLocate:"hawb.review.hint.locate", dayDensity:"hawb.review.day.density",
             locateZoom:"hawb.review.locate.zoom", fieldH:"hawb.review.fieldH",
             split:"hawb.review.split", colK:"hawb.review.colK", open:"hawb.review.open",
-            dropped:"hawb.review.dropped", chlogSeen:"hawb.review.chlog.seen"};
+            dropped:"hawb.review.dropped", chlogSeen:"hawb.review.chlog.seen",
+            view:"hawb.review.view"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
 const S = {tickets:[], sel:null, running:false};
@@ -1486,6 +1487,7 @@ function renderDrafts(){
    而这三样本来就不同时用。页签只决定哪一块看得见，上传、检索、草稿的逻辑一行没动。 */
 function railTab(name){
   RAILTAB.cur = name;
+  saveView();
   for (const k of ["queue", "mawb", "draft"]){
     const cap = k[0].toUpperCase() + k.slice(1), on = k === name;
     const pan = $("#tab" + cap), btn = $("#railTab" + cap);
@@ -2309,8 +2311,10 @@ function startDesk(){
   if (startDesk._on) return;
   startDesk._on = true;
   pruneSubmittedDrafts();   // 老版本留下的已提交副本先清掉，再画那一栏（不然数字还是骗人）
+  restoreViewPosition();    // 先把"停在哪一页"摆回去：render 之后才恢复，人看见的就是默认页
   probe(); loadModels(); render();
   restoreQueue();           // 服务器那份「今天你动过的票」补回桌面，刷新不等于从零开始
+  restoreMaster();          // 主单面板同样回堂：今天动过的那张自动检索回来
 }
 async function checkAuth(){
   try{
@@ -2968,7 +2972,9 @@ async function restoreQueue(){
   S.tickets = rows.map(seedRow).concat(keep);
   const last = localStorage.getItem(LS.open) || "";
   const pick = S.tickets.some(t => t.stem === last) ? last : S.tickets[0].stem;
-  await openHouse(pick);             // 回到离开时那一张：这一张取完整那份，其余点开再取
+  /* 恢复到今日归档的人别被拽回某张票（2026-10-28 刷新回位）：归档页照旧，票留在队列里，
+     点「工作台」那颗回来就是；那句"已载入分单"的 toast 在归档页也是白吵。 */
+  if (VIEW.cur !== "day") await openHouse(pick);
 }
 let MST_SEQ = 0;
 async function mstSearch(force){
@@ -3255,6 +3261,52 @@ const VIEW = {cur: "desk", rows: [], date: "", lastDate: "", machineLast: "",
    （待我复核），别人还是「我的」。 */
 const DAY = {scope: ""};
 const dayScopeDefault = () => (ME && ME.role === "inputter") ? "toreview" : "mine";
+/* 「现在停在哪一页」的记与还（2026-10-28 反馈："刷新以后回到的永远是登录后的界面"）。
+   数据那几样本来就会回来（队列由 restoreQueue 种回、离开时的票由 LS.open 重开、没提交的
+   改动在「未保存的编辑」），丢的是位置：今日归档的档位与日期、左栏页签、主单面板。
+   判据在 logic.js 的 viewRestore（**只认今天**：隔天的位置是过期偏好不是当前位置，
+   「记住全部那一档」跨天会让人把全局的数当自己的数报），这里只做读写与摆位。 */
+function saveView(){
+  try{
+    localStorage.setItem(LS.view, JSON.stringify({
+      day: dayKey(), view: VIEW.cur, rail: RAILTAB.cur,
+      dayv: {scope: DAY.scope || "", date: $("#dayDate").value || "",
+             q: ($("#dayQ").value || "").trim()}
+    }));
+  }catch(e){}                         /* 位置不是草稿：写不进去就静默放弃，不该吵人 */
+}
+function restoreViewPosition(){
+  let raw = null;
+  try{ raw = localStorage.getItem(LS.view); }catch(e){}
+  const vs = L.viewRestore(raw, dayKey());
+  if (!vs) return;
+  if (vs.rail !== "queue") railTab(vs.rail);
+  if (vs.view === "day"){
+    if (vs.dayv){
+      DAY.scope = vs.dayv.scope;
+      $("#dayDate").value = vs.dayv.date;
+      $("#dayQ").value = vs.dayv.q;
+    }
+    setView("day");                   /* 数据由 loadDay 现拉：与点页签那一下走同一条路 */
+  }
+}
+/* 主单面板的回堂（同一条反馈的另一半）：改动其实逐键落在本机未保存的编辑里（mvSave），但刷新后
+   面板空着、没有任何地方提醒"还有一张主单"。拿**今天**最近动过的那张把检索填回去——
+   隔天不自动打公司检索口（/company/mawb 是一次真实的公司读，得是人自己要的）。 */
+function restoreMaster(){
+  if (VIEW.cur === "day") return;
+  const d = mstDrafts(), today = new Date().toISOString().slice(0, 10);
+  let best = null;
+  Object.keys(d).forEach(m => {
+    const e = d[m];
+    if (!e || typeof e !== "object") return;
+    if (String(e.savedAt || "").slice(0, 10) !== today) return;
+    if (!best || String(e.savedAt) > String(best.savedAt)) best = {mawb: m, savedAt: e.savedAt};
+  });
+  if (!best) return;
+  $("#mstNo").value = best.mawb;
+  mstSearch();
+}
 const ST = {rows: [], summary: {}, seg: "all"};
 let MST_CARD_ON = false;
 function syncCards(){
@@ -3272,6 +3324,7 @@ function setView(v){
   });
   syncCards();
   dayConfirm = "";                      // 换页就把「确认作废？」问句收掉：回来得重新点一次，不会留着等人误点
+  saveView();
   if (VIEW.cur === "day") loadDay(true);
 }
 const todayStr = () => {
@@ -3313,6 +3366,7 @@ async function loadDay(fade){
     dayScopeSync();
     if (j.date) $("#dayDate").value = j.date;   // 以服务端那天为准：服务器与本机时区可能不同。
                                                 // 跨天那几档回的是空日期，别把框清成一片空白
+    saveView();                                 // 档位/日期/搜索词认服务端确认过的这份（与 VIEW.scope 同一手）
     renderDay(fade !== false);
   }catch(e){
     box.innerHTML = `<div class="empty empty-err">读台账失败：${esc(e.message || e)}</div>`;
