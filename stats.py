@@ -191,7 +191,7 @@ _CN = {"stem": "票名", "state": "状态", "when": "解析时刻", "model": "�
        "no_inputter_review": "未经录入员复核", "inputter_self_submit": "录入员本人直发",
        "self_submit": "录入员本人直发张数", "legacy": "无逐字段留痕(历史)",
        "field": "列", "edits": "被改次数", "tickets": "票数", "fields": "可比列数",
-       "clean": "零改动票数", "clean_rate": "一次通过率", "acc_field": "逐字段准确率",
+       "clean": "零改动票数", "clean_rate": "一次通过率", "acc_ticket": "按票准确率", "acc_field": "逐字段准确率",
        "acc_after_review": "复核后准确率（能不能对接看这个）", "edits_total": "改动列合计",
        "edits_doc": "制单员改的列", "edits_inp": "录入员改的列",
        "edits_polished": "按规则优化的列（不算人工修正）",
@@ -224,14 +224,17 @@ def summary(rows: list, group_by: str = None) -> dict:
             e = by_field.setdefault(f, {"field": f, "edits": 0, "tickets": 0})
             e["edits"] += 1
             e["tickets"] += 1
+    clean = sum(1 for r in usable if not r.get("total"))
     out = {"tickets": len(usable), "legacy": len(rows) - len(usable),
            "fields_comparable": fields, "edits_total": total, "edits_doc": doc, "edits_inp": inp,
            # 按规则优化掉的列单独报：它们既不在 edits_total 里、也不在分母里，
            # 不报就成了凭空少掉的数（谁看了都不知道少的是哪一挡）。
            "edits_polished": polished_total, "polish_by_rule": polish_by_rule,
-           "clean": sum(1 for r in usable if not r.get("total")),
-           "clean_rate": (None if not usable
-                          else round(sum(1 for r in usable if not r.get("total")) / len(usable), 4)),
+           "clean": clean,
+           # 票口径：整票零改动算这一票"对"，分母是有效票数（不是列数）。
+           # acc_ticket 是给人看的新名字；clean_rate 是旧键，保留给导出与老调用，数值同源。
+           "acc_ticket": (None if not usable else round(clean / len(usable), 4)),
+           "clean_rate": (None if not usable else round(clean / len(usable), 4)),
            "acc_field": _rate(total, fields),
            "acc_after_review": _rate(inp, fields),
            # 只数真的发出去那批：只暂存没发的票同样还没有 inputter 事件，把它算进来，

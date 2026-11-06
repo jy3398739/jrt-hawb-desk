@@ -129,6 +129,33 @@ def test_per_field_accuracy_and_who_moved_it():
         assert s["clean_rate"] == 0.0, "这张票改过两列，不该算一次通过"
 
 
+def test_ticket_accuracy_counts_tickets_not_fields():
+    """按票准确率：整票零改动才算这一票"对"，分母是有效票数，不是列数。
+    同一批数据里它和逐字段准确率必须能各算各的：一张票改 1 列，
+    票口径是 1/2，字段口径是 15/16。"""
+    with _world():
+        m1 = _parsed("T1", {})
+        _send("T1", "235-96146363", "T1", dict(m1), "马殿齐")
+        m2 = _parsed("T2", {})
+        _send("T2", "235-96146363", "T2", {**m2, "DEST_NAME": "ORD"}, "马殿齐")
+
+        s = stats.summary(stats.collect())
+        assert s["tickets"] == 2 and s["clean"] == 1, s
+        assert s["acc_ticket"] == 0.5, "两张票里一张零改动，按票算就是 50%"
+        assert s["clean_rate"] == 0.5, "旧口径保留，数值应一致"
+        assert s["acc_field"] == round(1 - 1 / 16, 4), "字段口径仍是 15/16，不被票口径替换"
+
+
+def test_ticket_accuracy_is_none_when_no_usable_ticket():
+    """没有可算的票就不许编 100%：票口径和字段口径一起给 None。"""
+    with _world():
+        _parsed("OLD", {"DEST_NAME": "LAX"})
+        store.mark_submitted("OLD", "235-96146363", "OLD", "admin", {"mode": "mock"})
+        s = stats.summary(stats.collect())
+        assert s["tickets"] == 0
+        assert s["acc_ticket"] is None and s["clean_rate"] is None
+
+
 def test_a_direct_send_with_no_stage_trace_counts_every_change_against_the_preparer():
     """没暂存记录时，改动全记到制单员那一档。
 
@@ -352,8 +379,9 @@ def test_stats_view_shows_the_server_numbers_and_says_what_is_missing():
     css = web_src.part("css/desk.css")
     assert ".statsbody th{top:0}" in css, "统计窗口里的表头还在用整页那个 sticky 偏移（会浮在第一行数据上）"
     assert '"/stats"' in js and "renderStats" in js, "前端没接 /stats"
-    for k in ("acc_field", "acc_after_review", "clean_rate"):
+    for k in ("acc_field", "acc_after_review", "acc_ticket"):
         assert k in js, f"页面上少了 {k} 这个数"
+    assert "按票准确率" in js, "按票数统计的那张卡没有出现在页面上"
     assert "legacy" in js, "要说明有几张历史票没逐字段留痕、没进分母"
     assert "edits_doc" in js and "edits_inp" in js, "两个角色的改动要分开摆，不能合成一个修改率"
     # 前端不许自己再算总改动：只许读 summary

@@ -192,7 +192,7 @@ def test_seven_cards_with_the_three_rate_ones_declaring_a_progress_bar():
     for r in rows[3:]:
         assert re.search(r'bar: ""', r), "计数卡不该有进度条：" + r.strip()[:80]
     assert [m.group(1) for m in re.finditer(r'\{k: "([\w_]+)"', tbl)] == \
-        ["acc_field", "acc_after_review", "clean_rate", "edits_doc", "edits_inp",
+        ["acc_field", "acc_after_review", "acc_ticket", "edits_doc", "edits_inp",
          "edits_polished", "unreviewed"], (
         "七张卡取的数不是 §3.2 那六个加「按规则优化」那一档（顺序与口径钉死：换成 edits_total "
         "就把「未复核就发出」这一张悄悄丢了）")

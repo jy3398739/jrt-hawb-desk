@@ -3685,7 +3685,7 @@ function stTagCell(list, label){
 const ST_KPI = [
   {k: "acc_field", lb: "逐字段准确率", ds: "模型本身读得准不准", rate: true, v: "blue", bar: "blue"},
   {k: "acc_after_review", lb: "复核后准确率", ds: "人还剩多少活；能否对接看这个", rate: true, v: "green", bar: "green"},
-  {k: "clean_rate", lb: "一次通过率", ds: "一张没改的票占比", rate: true, v: "amber", bar: "amber"},
+  {k: "acc_ticket", lb: "按票准确率", ds: "整票零改动算对；分母是可算票数", rate: true, v: "amber", bar: "amber"},
   {k: "edits_doc", lb: "制单员改的列", ds: "人修正模型的字段数", u: " 列", v: "", bar: ""},
   {k: "edits_inp", lb: "录入员改的列", ds: "录入环节的二次改动", u: " 列", v: "green", bar: ""},
   {k: "edits_polished", lb: "按规则优化", ds: "点「优化」接受的写法，不算人修正模型", u: " 列", v: "", bar: ""},
@@ -3737,8 +3737,10 @@ function renderStats(){
   const kpis = '<div class="stkpis" id="stKpis">' + ST_KPI.map(c => {
     const raw = s[c.k];
     const p = c.rate ? pctParts(raw) : {n: String(raw || 0), u: c.u};
+    const ds = (c.k === "acc_ticket" && s.tickets)
+      ? c.ds + "（" + (s.clean || 0) + "/" + s.tickets + " 票）" : c.ds;
     return `<div class="stkpi${c.v ? " v-" + c.v : ""}"><div class="lb">${esc(c.lb)}</div>`
-      + `<div class="ds">${esc(c.ds)}</div>`
+      + `<div class="ds">${esc(ds)}</div>`
       + `<div class="vl">${esc(p.n)}<small>${esc(p.u)}</small></div>`
       + (c.bar ? `<div class="sttrack ${c.bar}"><i></i></div>` : "")
       + `</div>`;
@@ -3792,7 +3794,8 @@ function renderStats(){
   }
   html += '<p class="stfoot"><b>读法：</b>上面七张卡速读准确率与人的工作量，左边条形图定位「最该修的列」，'
     + '右边明细用「有改动 / 无留痕」分段切换，<b>无留痕行自动弱化</b>而不是满屏刷屏。'
-    + '两个数不能混：<b>逐字段准确率</b>问模型读得准不准；<b>复核后准确率</b>问录入员还剩多少活'
+    + '三个数不能混：<b>按票准确率</b>按票数算（整票零改动 ÷ 可算票数），'
+    + '<b>逐字段准确率</b>问模型读得准不准（改动列 ÷ 可比列）；<b>复核后准确率</b>问录入员还剩多少活'
     + '——能不能把提取结果直接喂给平台，看后者。没暂存记录就直发的票，改动全记在制单员档'
     + '（那些值确实是核对台上的人改的），「未复核就发出」那一张卡是它的对照组。'
     + '想知道某张票另外那几个被折叠的列是什么，把鼠标停在标签上。</p>';
