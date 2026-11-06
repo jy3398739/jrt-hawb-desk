@@ -27,7 +27,10 @@ import server
 import store
 import web_src
 
-NOW = "2026-10-11T12:00:00"
+# 不能用写死的日期：路由 /purge/candidates 取的是真实 now，夹具写死 10-11 后，
+# D12（12 天前）会随日历往后漂成"已满 30 天"，这条用例在发版当天就红。
+# 统一用"今天"做基准，OLD/D12 都是相对值，断言里的天数不变。
+NOW = datetime.now().replace(microsecond=0).isoformat(timespec="seconds")
 OLD = (datetime.fromisoformat(NOW) - timedelta(days=40)).isoformat(timespec="seconds")
 
 
