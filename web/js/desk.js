@@ -3740,7 +3740,7 @@ function renderStats(){
     const ds = (c.k === "acc_ticket" && s.tickets)
       ? c.ds + "（" + (s.clean || 0) + "/" + s.tickets + " 票）" : c.ds;
     return `<div class="stkpi${c.v ? " v-" + c.v : ""}"><div class="lb">${esc(c.lb)}</div>`
-      + `<div class="ds">${esc(ds)}</div>`
+      + `<div class="ds" title="${esc(ds)}">${esc(ds)}</div>`
       + `<div class="vl">${esc(p.n)}<small>${esc(p.u)}</small></div>`
       + (c.bar ? `<div class="sttrack ${c.bar}"><i></i></div>` : "")
       + `</div>`;

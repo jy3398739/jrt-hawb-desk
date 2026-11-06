@@ -177,6 +177,20 @@ def test_the_board_stays_a_window_and_keeps_every_real_control():
     assert '$("#btnStats").hidden = !admin' in js, "入口只对管理员可见（与服务端门禁同一口径）"
 
 
+def test_kpi_descriptions_reserve_two_lines_so_values_and_bars_line_up():
+    """说明文字会换行，七张卡的数字与三条进度条必须仍在同一水平线。
+    说明区固定两行高、限两行（全文进 title）：长说明如果不能占同样的高度，
+    下面的数字与进度条就会被整体压下去，三条线一高一低。"""
+    css = web_src.part("css/desk.css")
+    rule = re.search(r"\.stkpi \.ds\{[^}]*\}", css, re.S)
+    assert rule, "找不到 KPI 说明区的规则"
+    body = rule.group(0)
+    assert "min-height:31px" in body and "line-height:1.4" in body, body
+    assert "-webkit-line-clamp:2" in body, "说明区没限两行，长说明会把下面的数字和条顶歪"
+    js = web_src.part("js/desk.js")
+    assert 'class="ds" title=' in js, "说明被截断时要把全文放进 title，鼠标停上去能看全"
+
+
 def test_seven_cards_with_the_three_rate_ones_declaring_a_progress_bar():
     """前三张是百分比、后四张是计数，进度条只属于百分比那三张（§3.2）。
     这条必须在源码上钉住 KPI 表里的 bar 标记：浏览器实测就是这么发现第一张卡的条子整个没生成的
