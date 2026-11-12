@@ -406,6 +406,10 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
   padding:9px 16px;border-radius:var(--r-lg);font-size:var(--f-md);box-shadow:var(--sh-2);
   opacity:0;transition:var(--dur);pointer-events:auto;max-width:100%;cursor:pointer}
 .toast.on{opacity:1}.toast.bad{background:var(--c-toast-bad)}.toast.ok{background:var(--c-toast-ok)}
+/* 窄屏先收「缩影」：通道与耗时整串在行的 title 里仍看得到；上传/暂存是追溯人的主列，不藏。 */
+@media (max-width:1200px){
+  #dayBox th.w-snap,#dayBox td.c-snap{display:none}
+}
 @media (max-width:1460px){
   .wrap{grid-template-columns:48px 248px 1fr;grid-template-areas:"rail side view" "rail side form"}
   /* 两栏堆叠时没有"另一侧"可挤，把手跟着藏起来（不藏会被自动摆进隐式格子，凭空多一条缝）。
@@ -764,6 +768,8 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
    60px 装不下——装不下的确认按钮等于没有确认。 */
 #dayBox th.w-doc{width:250px}
 #dayBox th.w-flag{width:90px}
+#dayBox th.w-up{width:124px}
+#dayBox th.w-stg{width:124px}
 #dayBox th.w-rec{width:240px}
 #dayBox th.w-snap{width:110px}
 #dayBox th.w-att{width:70px}
@@ -826,7 +832,9 @@ body[data-density=cozy] .dvci{min-height:var(--dv-row-cozy)}
 .dvfc{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-weight:var(--w-semi);color:var(--c-bad-text)}
 .dvfc.none{font-weight:var(--w-normal);color:var(--c-text-3)}
 .dvrec{overflow:hidden;font-size:var(--f-xs);color:var(--c-text-2);text-overflow:ellipsis}
+.dvwho{overflow:hidden;font-size:var(--f-xs);color:var(--c-text-2);text-overflow:ellipsis}
 .dvrec .dvt{font-family:var(--mono);color:var(--c-text-3)}
+.dvwho .dvt{font-family:var(--mono);color:var(--c-text-3)}
 .dvsnap{font-family:var(--mono);font-size:var(--f-xs);color:var(--c-text-3)}
 .dvatt{border:0;background:transparent;padding:0;font:inherit;font-size:var(--f-sm);cursor:pointer;
   color:var(--c-attach);text-decoration:underline;text-underline-offset:3px}
