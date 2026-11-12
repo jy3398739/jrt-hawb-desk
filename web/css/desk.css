@@ -407,7 +407,7 @@ td.k.loc:hover .kk,td.k.loc .kbtn:hover .kk{color:var(--c-accent)}
   opacity:0;transition:var(--dur);pointer-events:auto;max-width:100%;cursor:pointer}
 .toast.on{opacity:1}.toast.bad{background:var(--c-toast-bad)}.toast.ok{background:var(--c-toast-ok)}
 /* 窄屏先收「缩影」：通道与耗时整串在行的 title 里仍看得到；上传/暂存是追溯人的主列，不藏。 */
-@media (max-width:1200px){
+@media (max-width:1360px){
   #dayBox th.w-snap,#dayBox td.c-snap{display:none}
 }
 @media (max-width:1460px){
@@ -766,15 +766,17 @@ tr.sttrace:hover td{background:var(--c-accent-glow)}
    七列里只有「状态」不给宽：它是唯一允许伸的那一列，把余量都吃走。
    操作列比原型的 60px 宽：这里放的是两步确认的作废（确认作废 / 取消 竖着排），
    60px 装不下——装不下的确认按钮等于没有确认。 */
-#dayBox th.w-doc{width:250px}
+#dayBox th.w-doc{width:230px}
+#dayBox th.w-st{width:96px}
 #dayBox th.w-flag{width:90px}
-#dayBox th.w-up{width:124px}
-#dayBox th.w-stg{width:124px}
-#dayBox th.w-rec{width:240px}
+#dayBox th.w-up{width:108px}
+#dayBox th.w-stg{width:108px}
+#dayBox th.w-rec{width:210px}
 #dayBox th.w-snap{width:110px}
-#dayBox th.w-att{width:70px}
-#dayBox th.w-op{width:96px}
+#dayBox th.w-att{width:60px}
+#dayBox th.w-op{width:86px}
 #dayBox td{padding:0 12px;border-bottom:1px solid var(--c-line-soft);vertical-align:middle;white-space:nowrap}
+#dayBox td.c-up,#dayBox td.c-stg{padding:0 8px}
 /* 坑 3：行高与过渡都作用在 td 里的包裹层上——行高写在 td 上不参与过渡，折叠就只能是"啪"地消失。
    过渡列表里只能有 height 与 opacity：min-height 混进去的话，收尾清内联值时它会从 0 再动画回行高，
    肉眼就是"展开到 31px 又掉到 17px 再爬回来"。 */

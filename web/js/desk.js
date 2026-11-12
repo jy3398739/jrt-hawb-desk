@@ -3612,10 +3612,10 @@ function dvRowHtml(r, subs, fade, mkeys){
   /* 上传/暂存单独两列（v1.38.0）：这两个名字原先只藏在整行的 title 里，要悬停才看得见。
      格内只写 姓名 + 时:分；角色与完整时间进 title，不挤占单号列。 */
   const up = r.uploader
-    ? `<span class="dvwho" title="${esc("上传：" + r.uploader + (r.uploader_role ? "（" + L.roleCn(r.uploader_role) + "）" : "") + " · " + (r.processed_at || ""))}">${esc(r.uploader)} <span class="dvt">${esc(L.shortTime(r.processed_at))}</span></span>`
+    ? `<span class="dvwho" title="${esc("上传：" + r.uploader + (r.uploader_role ? "（" + L.roleCn(r.uploader_role) + "）" : "") + " · " + (r.processed_at || ""))}">${esc(r.uploader)} <span class="dvt">${esc((L.shortTime(r.processed_at) || "").slice(-5))}</span></span>`
     : '<span class="dvdash">—</span>';
   const stg = r.stager
-    ? `<span class="dvwho" title="${esc("暂存：" + r.stager + (r.stager_role ? "（" + L.roleCn(r.stager_role) + "）" : "") + " · " + (r.staged_at || ""))}">${esc(r.stager)} <span class="dvt">${esc(L.shortTime(r.staged_at))}</span></span>`
+    ? `<span class="dvwho" title="${esc("暂存：" + r.stager + (r.stager_role ? "（" + L.roleCn(r.stager_role) + "）" : "") + " · " + (r.staged_at || ""))}">${esc(r.stager)} <span class="dvt">${esc((L.shortTime(r.staged_at) || "").slice(-5))}</span></span>`
     : '<span class="dvdash">—</span>';
   const sub = r.submitted;
   const rec = sub
@@ -3664,7 +3664,7 @@ function renderDay(fade){
   /* 折叠态是全局的（以归一化主单号为键），换筛选/排序/密度都保留：重画时按 DV.collapsed
      把 is-collapsed、箭头那 90° 与「分单 N 已折叠」提示一起还原，否则人一筛就丢了刚才收好的那几组。 */
   $("#dayBox").innerHTML = `<table><thead><tr>
-      <th class="w-doc">单据</th><th>状态</th><th class="w-flag">红旗</th>
+      <th class="w-doc">单据</th><th class="w-st">状态</th><th class="w-flag">红旗</th>
       <th class="w-up">上传</th><th class="w-stg">暂存</th><th class="w-rec">提交记录</th><th class="w-snap">缩影</th><th class="w-att">附件</th>
       <th class="w-op">操作</th></tr></thead>
       <tbody>${rows.map(r => dvRowHtml(r, subs, fade, mkeys)).join("")}</tbody></table>

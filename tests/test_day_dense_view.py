@@ -262,7 +262,7 @@ def test_columns_and_cells_follow_the_handover_layout():
     head = js[js.index("<th class=\"w-doc\""):js.index("</tr></thead>", js.index("<th class=\"w-doc\""))]
     assert [c for c in re.findall(r"<th[^>]*>([^<]*)</th>", head)] == \
         ["单据", "状态", "红旗", "上传", "暂存", "提交记录", "缩影", "附件", "操作"], head
-    for w in ("w-doc", "w-flag", "w-up", "w-stg", "w-rec", "w-snap", "w-att", "w-op"):
+    for w in ("w-doc", "w-st", "w-flag", "w-up", "w-stg", "w-rec", "w-snap", "w-att", "w-op"):
         assert re.search(r"#dayBox th\.%s\{width:\d+px\}" % w, css), w + " 的列宽要在样式表里给"
     assert re.search(r"#dayBox tr\.flagged td\.c-flag\{background:", css), \
         "红旗行的红底要落在红旗那一格（用类，别用 nth-child 数列）"
@@ -371,9 +371,11 @@ def test_upload_and_stage_columns_name_the_person_visibly():
                processed_at="2026-10-10T09:20:00",
                stager="李四", stager_role="inputter", staged_at="2026-10-10T10:05:00")
     tds = run(row, {}).split("<td")
-    assert "c-up" in tds[4] and "张三" in tds[4] and "10-10 09:20" in tds[4], tds[4]
-    assert "c-stg" in tds[5] and "李四" in tds[5] and "10-10 10:05" in tds[5], tds[5]
+    assert "c-up" in tds[4] and "张三" in tds[4] and "09:20" in tds[4], tds[4]
+    assert "c-stg" in tds[5] and "李四" in tds[5] and "10:05" in tds[5], tds[5]
     assert "制单员" in tds[4] and "录入员" in tds[5], "角色要写进 title，姓名旁不挤小字"
+    assert "2026-10-10T09:20:00" in tds[4] and "2026-10-10T10:05:00" in tds[5], \
+        "格内只写时:分，完整日期时间必须留在 title 里"
     empty = run(base, {}).split("<td")
     assert "—" in empty[4] and "—" in empty[5], "没上传/没暂存要给破折号，别留空"
 
