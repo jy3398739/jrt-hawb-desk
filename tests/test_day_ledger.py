@@ -537,9 +537,11 @@ def test_an_unattributed_row_shows_only_in_the_all_view():
         assert rows[0]["touched"] == {}
 
 
-def test_the_day_route_answers_for_the_logged_in_person_and_only_admin_widens():
+def test_the_day_route_answers_for_the_logged_in_person_and_widens_only_on_request():
     """过滤在服务端，不在前端：前端过滤等于把别人的行发到浏览器里，F12 就能看见。
-    非管理员手敲 all=1 也拿不到——那一档认的是会话里的角色，不是查询串。"""
+    默认只给自己那一份；「全部」是**主动切**出来的——三种角色都能切（制单员从 2026-11-13
+    起也要这一档，业主原话"把制单员也加上全部一档"）。
+    两档复核清单仍是录入员的活：制单员敲 scope=toreview 照样退回自己那一份。"""
     with _sandbox():
         _uploaded("L1", "马殿齐", hawb="HL1")
         _uploaded("L2", "宛平", hawb="HL2")
@@ -547,9 +549,12 @@ def test_the_day_route_answers_for_the_logged_in_person_and_only_admin_widens():
         rev = _login("马殿齐", "pw-12345")
         j = rev.get("/day").json()
         assert j["scope"] == "mine" and [r["stem"] for r in j["rows"]] == ["L1"], j
-        forced = rev.get("/day", params={"all": 1}).json()
-        assert forced["scope"] == "mine" and [r["stem"] for r in forced["rows"]] == ["L1"], \
-            "制单员敲 all=1 就看到别人的台账：这一档必须由服务端认角色"
+        wide = rev.get("/day", params={"all": 1}).json()
+        assert wide["scope"] == "all" and sorted(r["stem"] for r in wide["rows"]) == ["L1", "L2"], \
+            "制单员切「全部」要看到这台机器所有人的台账"
+        for sc in ("toreview", "reviewed"):
+            forced = rev.get("/day", params={"scope": sc}).json()
+            assert forced["scope"] == "mine", "两档复核清单还是录入员的活，制单员敲了也只回自己那一份"
         adm = _login("admin", "admin123")
         mine = adm.get("/day").json()
         assert mine["scope"] == "mine" and mine["rows"] == [], "管理员打开也先看到自己的，不是默认全局"
@@ -589,8 +594,12 @@ def test_the_scope_chip_is_role_based_and_never_remembered():
     assert '"all=1"' in load and "scope=" in load, "换档没重新拉数据：只在这批行里筛，筛不出别人的"
     assert "VIEW.scope =" in load and "j.scope" in load, "档上显示的是自己刚才点了什么，不是服务端真给了哪一份"
     sync = _fn(js, "function dayScopeSync(")
-    assert 'role === "reviewer"' in sync and "hidden" in sync, "制单员不该看得见这几颗档（服务端同一判据）"
-    assert 'role === "inputter"' in sync, "录入员与管理员各看得见哪几颗档，要在这儿分得开"
+    assert "box.hidden = false" in sync, \
+        "这一档不再按角色整条藏起来：制单员从 2026-11-13 起也有「全部」（服务端同一判据）"
+    assert '(role === "reviewer" && (ds === "toreview" || ds === "reviewed"))' in sync, \
+        "制单员只多一颗「全部」：两档复核清单还是录入员的活，不该画给他"
+    assert 'role === "inputter" && ds === "mine"' in sync, \
+        "录入员与管理员各看得见哪几颗档，要在这儿分得开"
     assert "VIEW.scope" in sync, "服务端拒了那一档之后，档要退回它真给的那一份，不能留着亮着"
     empty = _fn(js, "function dayEmptyHtml(")
     assert "VIEW.others" in empty and "别人经手" in empty, "空态要答得出「票都在，但不是你的」这一种"

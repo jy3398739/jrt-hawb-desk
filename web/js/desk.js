@@ -3399,12 +3399,14 @@ async function loadDay(fade){
 }
 function dayScopeSync(){
   const box = $("#dayScope"), role = ME && ME.role;
-  box.hidden = role === "reviewer";        // 制单员这一页只有自己的台账（服务端是同一判据，两边不许各判一次）
-  /* 录入员不必再要一颗「我的」：他在这台机器上经手的票，全部都在那两档复核清单里。
-     管理员四颗都要——他平时就是替两边看数的人。 */
+  box.hidden = false;    // 三种角色都有「我的 / 全部」：制单员 2026-11-13 起也能主动看全机（服务端同一判据）
+  /* 谁看得见哪几颗：录入员不必再要一颗「我的」——他在这台机器上经手的票全在那两档复核清单里；
+     制单员只有我的 / 全部，两档复核清单是录入员的活。管理员四颗都要——替两边看数的人。 */
   box.querySelectorAll("[data-ds]").forEach(b => {
-    b.hidden = role === "inputter" && b.dataset.ds === "mine";
-    const on = b.dataset.ds === VIEW.scope;
+    const ds = b.dataset.ds;
+    b.hidden = (role === "inputter" && ds === "mine")
+            || (role === "reviewer" && (ds === "toreview" || ds === "reviewed"));
+    const on = ds === VIEW.scope;
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", String(on));
   });

@@ -1063,9 +1063,9 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1),
     作废的行照样返回（带 voided），显示与否由前端那一个筛决定——数据层不藏东西。
 
     **默认只给登录者自己动过的那些**（上传解析 / 暂存核对 / 提交发送任一，2026-10-12 需求：
-    "每个人记录每个人的，不能混在一起"）。`all=1` 只对管理员放开，非管理员带了它仍然只拿到
-    自己那一份。过滤发生在服务端而不是前端藏行：后者等于把别人的经手记录发到他的浏览器里，
-    F12 就能翻出来，而 `scope` 这一格报的仍是"只看你的"。"""
+    "每个人记录每个人的，不能混在一起"）。`all=1` 是主动切出来的「全部」：三种角色都放开
+    （制单员从 2026-11-13 起也要这一档）；两档复核清单仍只给管理员与录入员。过滤发生在服务端
+    而不是前端藏行：后者等于把别人的经手记录发到他的浏览器里，F12 就能翻出来。"""
     d = (date or time.strftime("%Y-%m-%d")).strip()
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
         raise HTTPException(400, "date 要写成 2026-09-30 这种四位日期")
@@ -1077,14 +1077,19 @@ def day(date: str = "", all: int = Query(0, ge=0, le=1),
     qn = store.norm_no(q)
     who = str(user.get("name") or "")
     role = str(user.get("role") or "")
-    # 谁能拿哪一档，只有这一处判据：录入员的职责就是复核别人交上来的票，所以"这台机器所有人的"
-    # 与两档复核清单对他放开；制单员仍只看自己（他没提这个需求，放开是另一件事）。
+    # 谁能拿哪一档，只有这一处判据：
+    #   「全部」（这台机器所有人的）——三种角色都放开（2026-11-13 业主："把制单员也加上全部一档"）；
+    #     制单员默认仍是「我的」，主动切才看全机。
+    #   「待我复核 / 我核过·没提交」——复核清单是录入员的活，仍只给管理员与录入员。
     # 拿不到的人**退回他自己那一份并把 scope 如实报成 mine**，不是报错——前端认的就是响应里这一格。
-    may = role in ("admin", "inputter")
-    want = (scope or "").strip().lower() or ("all" if may and (qn or all) else "mine")
+    may_all = role in ("admin", "inputter", "reviewer")
+    may_review = role in ("admin", "inputter")
+    want = (scope or "").strip().lower() or ("all" if may_all and (qn or all) else "mine")
     if want not in ("mine", "all", "toreview", "reviewed"):
         want = "mine"
-    if want != "mine" and not may:
+    if want in ("toreview", "reviewed") and not may_review:
+        want = "mine"
+    if want == "all" and not may_all:
         want = "mine"
     # 复核那一档与号检索都不按天：昨天暂存的今天还得核，手里只有一个号的时候更不该先猜哪天。
     flat = want in ("toreview", "reviewed") or bool(qn)
