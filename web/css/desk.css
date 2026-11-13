@@ -799,9 +799,9 @@ body[data-density=cozy] .dvci{min-height:var(--dv-row-cozy)}
 
 .dvdoc{display:inline-flex;align-items:center;gap:7px;min-width:0}
 /* 分单那一道树形缩进：竖线要跨到上一行与下一行（top/bottom 各 -9px），连起来才是一条不断的线 */
-.dvind{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0;padding-left:20px}
+.dvind{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0;padding-left:34px}
 .dvind::before{content:"";position:absolute;left:7px;top:-9px;bottom:-9px;width:1px;background:var(--c-line-strong)}
-.dvind::after{content:"";position:absolute;left:7px;top:50%;width:10px;height:1px;background:var(--c-line-strong)}
+.dvind::after{content:"";position:absolute;left:7px;top:50%;width:24px;height:1px;background:var(--c-line-strong)}
 .dvk{display:inline-flex;align-items:center;flex:none;height:16px;padding:0 5px;border-radius:var(--r-sm);
   font-size:var(--f-xs);font-weight:var(--w-semi);letter-spacing:.3px}
 .dvk.m{color:var(--c-accent);background:var(--c-accent-soft);border:1px solid var(--c-accent-line)}

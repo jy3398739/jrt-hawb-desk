@@ -380,6 +380,19 @@ def test_upload_and_stage_columns_name_the_person_visibly():
     assert "—" in empty[4] and "—" in empty[5], "没上传/没暂存要给破折号，别留空"
 
 
+def test_the_sub_indent_clears_the_master_badge_instead_of_sitting_left_of_it():
+    """分单行要真落在本主单后面（2026-11-13 业主按截图："把分单再往后点，要在本主单后面"）。
+    主单那格是箭头 18px + 间距 7px 才到标签；缩进若还停在 20px，分单标签反而比主单标签
+    靠左 5px——图上看着像平级甚至更靠前。缩进 34px、横枝 7+24px 接到标签跟前。"""
+    css = _css()
+    m = re.search(r"\.dvind\{([^}]*)\}", css)
+    assert m, "分单缩进那条规则不见了（.dvind）"
+    assert re.search(r"padding-left:34px", m.group(1)), m.group(1)
+    branch = re.search(r"\.dvind::after\{([^}]*)\}", css)
+    assert branch, "缩进的横枝不见了（.dvind::after）"
+    assert re.search(r"width:24px", branch.group(1)), "横枝要跟着缩进一并延长：" + branch.group(1)
+
+
 def test_the_tree_indent_only_goes_to_subs_whose_master_is_in_the_view():
     run = _dvrow_run()
     child = {"kind": "hawb", "mawb": "074-55430340", "stem": "B9", "flags": 0,
