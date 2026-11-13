@@ -1613,7 +1613,10 @@ def test_the_value_box_itself_has_a_width_handle():
     assert ".edg{" in css and "cursor:ew-resize" in css, "值格右边界没有横向拖把手"
     assert ".edg{display:none}" in css, "两栏堆叠时没有另一侧可以挤，这把手留着就是骗人的假抓手"
     assert "function edgeGripHtml()" in js, "把手没进模板"
-    assert js.count("${edgeGripHtml()}") >= 2, "分单表与主单表是两处模板，只接一处另一张表的框还是拖不动"
+    # 只读态下把手故意不画（条件写在模板里），但两张表仍然都得有这一处调用：
+    # 收起状态之外少接一处，那张表的框就拖不动。
+    assert len(re.findall(r"\$\{[^}]*edgeGripHtml\(\)[^}]*\}", js)) >= 2, \
+        "分单表与主单表是两处模板，只接一处另一张表的框还是拖不动"
     assert re.search(r'closest\("\.edg"\)', js), "把手没接 pointerdown/keydown"
     assert js.count("L.boxWidthPct(") >= 2, "宽度算式只接在拖拽上：键盘那一路（←/→）没接，读屏器用户就只用得鼠标"
     # 与分栏那道把手写的是同一份偏好：各存各的会互相盖，拖完一边另一边不知道

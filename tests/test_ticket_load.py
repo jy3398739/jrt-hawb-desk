@@ -193,7 +193,11 @@ def test_reopening_a_ticket_takes_values_and_acks_from_the_server():
     op = web_src.fn(web_src.desk(), "async function openHouse(")
     assert "L.serverState" in op, "要走「服务器那份赢」那一条算式，不是只翻 /staged"
     assert "skipE:sf.skippedEmpty" in op, "提交时跳过的空栏单独带回去：它不算待办，也不算已确认"
-    assert "airE:mg.airE" in op and "ackF:uni(dr.ackF, sf.acked)" in op, "改动与确认都要合并回来"
+    # 交出去的票只显示发出去那一版（2026-11-13 起提交后只读）：值取台账 air_sent、确认取台账
+    # acked_flags，本机未保存的编辑不再掺进来；还没交的票仍按暂存记录合并。
+    assert "sentAir" in op and "air:(sent ? sentAir" in op, "已提交票要显示发出去的值"
+    assert "ackF:sent ? sf.acked" in op, "已提交票的确认要认台账那份"
+    assert "L.stagedMerge(sf.values, dr.airE" in op, "没交的票仍要合并本机改动"
 
 
 def test_a_row_without_a_number_says_so_instead_of_showing_nothing():

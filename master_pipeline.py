@@ -303,6 +303,9 @@ def public(rec: dict | None) -> dict | None:
     sent = led.get("ams_sent")
     out["flags_now"] = master_flags(sent, rec.get("transcript")) if isinstance(sent, dict) and sent else None
     out["flags_now_at"] = str(led.get("submitted_at") or "")
+    # 前端要判"这条提交完没有"只看这一格：台账里有记录才算本台发出去过；
+    # 缓存里的 submitted_at 只在"暂存过又提交"时才盖章，不能当判据。
+    out["submitted_at"] = str(led.get("submitted_at") or rec.get("submitted_at") or "")
     out["fields"] = [list(f) for f in mf.MASTER_FIELDS]
     out["groups"] = dict(mf.MASTER_GROUP_LABELS)
     outer = rec.get("outer") or {}

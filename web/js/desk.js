@@ -317,6 +317,7 @@ function airVal(t, k){
   return txt(t.air, k);
 }
 function setEdit(t, k, v){
+  if (t.ro) return;          // 已提交票：值框本来就是 readonly，这里再挡一道写入路径
   const orig = txt(t.air, k);
   if (v === orig) delete t.airE[k]; else t.airE[k] = v;
   const fl = flagsByField(t.qc).map[k] || [];
@@ -355,7 +356,7 @@ function polishHtml(face, sent, po, edited, locked, rec){
 }
 function polishInner(t, r){
   return polishHtml(txt(t.air, r.k), airVal(t, r.k), (t.polish || {})[r.k],
-                    r.k in t.airE, !!t.locked, (t.polishW || {})[r.k]);
+                    r.k in t.airE, !!(t.locked || t.ro), (t.polishW || {})[r.k]);
 }
 async function polishScan(t){
   if (!t) return;
@@ -1500,13 +1501,17 @@ function control(t, k){
   /* 一律 textarea：原生斜角只长在 textarea 上，短字段从前用 input 标签就没有可拖的角
      （2026-10-09 用户："可以自由拖拽改变大小的"）。单行那些标 .one：挡回车、按内容长高。 */
   const one = LONG.has(k) ? "" : ' class="one"';
-  return `<textarea data-k="${k}" rows="1"${one}` + (NUM[k] ? ` inputmode="decimal"` : "") + `>${esc(v)}</textarea>`;
+  const ro = t.ro ? ' readonly title="已提交：只读，要修正请管理员点「解锁修正」"' : "";
+  return `<textarea data-k="${k}" rows="1"${one}${ro}` + (NUM[k] ? ` inputmode="decimal"` : "") + `>${esc(v)}</textarea>`;
 }
 /* 单行那些换成了 textarea，就得把回车挡住：这个值原样写进公司系统，换行混进 MAWB 号或件重
    就是脏数据，而且在单行框里换行看不见（改完的人以为只有一行）。
    回车另外兼一件事：跳到下一个待办——核对是一格一格走的，手不该离开键盘。
    Shift+Enter 留给出真要换行的那一格；回车绝不提交：提交不可逆，只能点按钮那一下。 */
 function blockEnter(e){
+  /* 只读票里回车也不能顺手"确认空栏"：那个动作靠 Enter 触发，readOnly 挡不住 keydown。 */
+  const tcur = current();
+  if (tcur && tcur.ro && e.target.dataset.k){ e.preventDefault(); return; }
   if (e.key !== "Enter" || e.shiftKey) return;
   if (!e.target.classList.contains("one")) return;      // 长文本那几格：回车就是换行
   e.preventDefault();
@@ -1651,7 +1656,7 @@ function rowCls(r, t){
 }
 /* 段头是"本段核到什么程度"，粘在自己那张表的 thead 里（<tr> 上写 sticky 粘不住，包含块就是那一行）。
    红旗段比空值段重：两处都有事时段头保持红，不许被抹平成琥珀。 */
-function segHeadHtml(seg){
+function segHeadHtml(seg, ro){
   const warn = seg.hard ? `<span class="sflag">⚑ ${seg.hard} 处红旗要核票面</span>`
              : seg.soft ? `<span class="ssoft">${seg.soft} 个空栏待确认</span>`
              : `<span class="sok">✓ 本段已清</span>`;
@@ -1659,21 +1664,21 @@ function segHeadHtml(seg){
   return `<tr class="grp ${seg.state}">`
     + `<th class="kcol"><span class="in"><button class="fold" type="button" data-fold="${seg.g}"`
     + ` aria-expanded="${!folded}" title="折叠/展开这一段">${folded ? "▸" : "▾"}</button>`
-    + `<span class="gn">${esc(GROUPS[seg.g] || seg.g)}</span>${gripColHtml()}</span></th>`
+    + `<span class="gn">${esc(GROUPS[seg.g] || seg.g)}</span>${ro ? "" : gripColHtml()}</span></th>`
     + `<th><span class="in"><span class="cnt">${seg.cleared}/${seg.tot}</span>${warn}</span></th>`
-    + `<th class="scol">` + (seg.todo ? `<button class="btn sm" type="button" data-gack="${seg.g}"`
+    + `<th class="scol">` + (seg.todo && !ro ? `<button class="btn sm" type="button" data-gack="${seg.g}"`
         + ` title="这一段里的红旗与空栏都逐条对照票面看过了 → 一次点完（留痕与逐条点完全一样）">整段核对 ${seg.todo} 项</button>` : "")
     + `</th></tr>`;
 }
 function statusCell(t, r){
-  const k = r.k, s = r.st.s;
+  const k = r.k, s = r.st.s, ro = !!t.ro;
   const ck = checks(k, r.raw, r.air);
   const acts = [];
-  if (s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与「整张票」那一格逐条确认同一个留痕）">红旗已核</button>`);
-  else if (s === "confirmed") acts.push(`<button class="btn sm gh" type="button" data-unackf="${esc(k)}" title="撤回：这一列的红旗回到待办">撤回</button>`);
-  if (s === "empty" || s === "skipped") acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
-  else if (s === "emptyok") acts.push(`<button class="btn sm gh" type="button" data-une="${esc(k)}" title="撤回：这一格回到待办">撤回</button>`);
-  const edits = (k in t.airE) ? `<div class="note"><span class="e">已改</span>
+  if (!ro && s === "flag") acts.push(`<button class="btn sm danger" type="button" data-ackf="${esc(k)}" title="这一列的红旗全部确认（与「整张票」那一格逐条确认同一个留痕）">红旗已核</button>`);
+  else if (!ro && s === "confirmed") acts.push(`<button class="btn sm gh" type="button" data-unackf="${esc(k)}" title="撤回：这一列的红旗回到待办">撤回</button>`);
+  if (!ro && (s === "empty" || s === "skipped")) acts.push(`<button class="btn sm g" type="button" data-acke="${esc(k)}" title="票面本来就没印这一格 → 确认「本就为空」，它不再算待办，提交时按 acked_empty 留痕">本就为空</button>`);
+  else if (!ro && s === "emptyok") acts.push(`<button class="btn sm gh" type="button" data-une="${esc(k)}" title="撤回：这一格回到待办">撤回</button>`);
+  const edits = (!ro && k in t.airE) ? `<div class="note"><span class="e">已改</span>
       <button type="button" class="rs" data-restore="${esc(k)}">还原</button></div>` : "";
   const notes = ck.slice(0, 3).map(x => `<div class="note"><span class="${x[1] === "bad" ? "b" : "q"}">${esc(x[0])}</span></div>`).join("");
   return `<span class="badge ${BADGE_CLS[s]}">${esc(r.st.label)}</span>`
@@ -1696,10 +1701,10 @@ function orphanRows(t, rest, ackF){
     return `<tr class="${done ? "acked" : "flag"}" data-hov="orphan">
       <td class="k"><span class="kk">整张票</span><span class="ky">不落在某一列</span></td>
       <td class="c"><div class="flagline${done ? " ack" : ""}">${done ? "已确认：" : ""}${esc(f)}</div></td>
-      <td class="s"><div class="acts">` + (done
+      <td class="s"><div class="acts">` + (t.ro ? "" : (done
         ? `<button class="btn sm gh" type="button" data-unack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
         : `<button class="btn sm danger" type="button" data-ack="${esc(f)}"`
-          + ` title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) + `</div></td></tr>`;
+          + ` title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`)) + `</div></td></tr>`;
   }).join("");
 }
 function orphanTable(t, ef){
@@ -1719,7 +1724,7 @@ function orphanTable(t, ef){
 function fieldRowHtml(t, r, hide){
   return `<tr id="f-${r.k}" class="${rowCls(r, t)}" data-hov="${r.k}" data-todo="${r.st.todo ? 1 : 0}"${hide ? " hidden" : ""}>
       <td class="k loc"><button type="button" class="kbtn" data-jump-field="${r.k}" title="点击：在左边票面上定位并放大这个值"><span class="kk">${esc(r.lab)}</span><span class="ky">${esc(r.k)}</span></button></td>
-      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air"><div class="poline">${polishInner(t, r)}</div>${control(t, r.k)}${flagLines(r)}${edgeGripHtml()}</td>
+      <td class="c v${r.k in t.airE ? " edited" : ""}" data-cell="air"><div class="poline">${polishInner(t, r)}</div>${control(t, r.k)}${flagLines(r)}${t.ro ? "" : edgeGripHtml()}</td>
       <td class="s" data-st="${r.k}">${statusCell(t, r)}</td></tr>`;
 }
 /* 三态提交按钮。红旗那一档与"跳过空栏"是两件事，界面上不许混成一颗按钮：
@@ -1729,13 +1734,15 @@ function fieldRowHtml(t, r, hide){
    只有一张模板：整页只留一份提交按钮的 id，写两处事件就只会绑上第一个。 */
 function drawSubmitBtn(t, ef, n){
   let cls = "okGo", txt = "提交本票", tip = "没有待办了：这一票可以回传公司";
-  if (ef.length){ cls = "badGo"; txt = "还有 " + ef.length + " 个红旗未确认";
+  if (t.ro){ cls = ""; txt = "已提交 · 只读";
+    tip = "这张票已经提交发送：提交后只读；要修正请管理员点「解锁修正」（会留痕）"; }
+  else if (ef.length){ cls = "badGo"; txt = "还有 " + ef.length + " 个红旗未确认";
     tip = "还有未确认的红旗：这一颗只会带你跳到第一处，不发送"; }
   else if (n && DESK.armed){ cls = "badGo"; txt = "再按一次：跳过 " + n + " 个空栏提交";
     tip = "再点一次就真的发给公司：这 " + n + " 个空栏没人确认过，提交时按 skipped_empty 逐列留痕"; }
   else if (n){ cls = "warnGo"; txt = "仍有 " + n + " 项待核对";
     tip = "点了不直接发送：先武装一次，再点才发。有未确认红旗时这一档根本不出现"; }
-  return `<button class="btn ${cls}" id="submit" type="button" title="${esc(tip)}">${txt}</button>`;
+  return `<button class="btn ${cls}" id="submit" type="button"${t.ro ? " disabled" : ""} title="${esc(tip)}">${txt}</button>`;
 }
 function drawSubmitCtl(t){
   const old = $("#submit"); if (!old) return;
@@ -1771,6 +1778,36 @@ function firstFlagKey(t, ef){
   const map = flagsByField({flags: ef || efOf(t)}).map;
   return KEYS.find(k => (map[k] || []).length) || "";
 }
+/* 提交完的票顶上的那条只读横条：管理员多一颗「解锁修正」（先由服务端留痕再放开本次查看）。
+   解锁态只在内存里，刷新就回来重新锁——写进本机偏好等于把"提交完不能改"永久松了。 */
+function roBarHtml(kind, key, unlocked){
+  if (unlocked)
+    return `<div class="chips robanner"><span class="chip ok">已解锁修正（本次查看有效）：刷新会重新锁上，这次解锁已留痕</span></div>`;
+  const admin = !!ME && ME.role === "admin";
+  return `<div class="chips robanner"><span class="chip">已提交：只读。值、确认、优化、暂存、提交与重解析都已锁住</span>`
+    + (admin ? `<button class="btn sm" type="button" data-unlock="${esc(kind + "|" + key)}"`
+        + ` title="先写一条解锁留痕，再放开本次查看；刷新会重新锁上">解锁修正</button>` : "")
+    + `</div>`;
+}
+async function unlockNow(tag){
+  const i = tag.indexOf("|");
+  if (i < 0) return;
+  const kind = tag.slice(0, i), key = tag.slice(i + 1);
+  try{
+    const r = await fetch(BASE + "/unlock", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({kind: kind, key: key})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) throw new Error(typeof j.detail === "string" ? j.detail : ("HTTP " + r.status));
+    if (kind === "hawb"){
+      const t = current();
+      if (t && t.stem === key){ t.unlocked = true; t.ro = false; }
+    } else if (MV && L.normNo(MV.mawb) === L.normNo(key)){
+      MV.unlocked = true;
+    }
+    render();
+    toast("已解锁修正（本次查看有效）：动作已留痕，刷新会重新锁上", "ok");
+  }catch(e){ toast("解锁失败：" + (e.message || e), "bad"); }
+}
 function renderMain(){
   const el = $("#main"), t = current();
   el.classList.remove("has-todo");     // 只有分单核对区有置顶待办条
@@ -1786,6 +1823,7 @@ function renderMain(){
   if (MV){
     const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
     const vals = mvValues(), left = flags.filter(f => !MV.acked.includes(f));
+    const mro = mvRO();          // 已回传公司且本轮没解锁：整页只读
     const missed = (qc.missed_cols) || [];
     const MVG = rec.groups || {};
     /* 主单侧同样"旗挂在它点名的那一格上"（顶部那排 chip 已经撤了）。一条旗点了两格就两格都亮；
@@ -1803,8 +1841,9 @@ function renderMain(){
     const mvLine = f => {
       const done = MV.acked.includes(f);
       return `<div class="flagline${done ? " ack" : ""}">${done ? "已确认：" : ""}${esc(f)}` +
-        (done ? `<button class="ackb" type="button" data-munack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
-              : `<button class="ackb" type="button" data-mack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`) + `</div>`;
+        (mro ? "" : (done
+          ? `<button class="ackb" type="button" data-munack="${esc(f)}" title="撤回这条确认：它回到待办">撤回</button>`
+          : `<button class="ackb" type="button" data-mack="${esc(f)}" title="票面已核对无误 → 确认这条提示，提交放行（留痕进台账）">确认无误</button>`)) + `</div>`;
     };
     const metaBy = {};
     (rec.meta || []).forEach(m => { (metaBy[m.group] = metaBy[m.group] || []).push(m); });
@@ -1825,7 +1864,7 @@ function renderMain(){
       const miss = missed.includes(k);
       rows += `<tr id="mf-${k}" class="${hit || miss ? "flag" : ""}">
         <td class="k"><div class="kk">${esc(lab)}</div><div class="ky">${esc(k)}</div></td>
-        <td class="c v${k in MV.edit ? " edited" : ""}"><div class="poline">${mvPolishInner(k, v)}</div><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${edgeGripHtml()}</td>
+        <td class="c v${k in MV.edit ? " edited" : ""}"><div class="poline">${mvPolishInner(k, v)}</div><textarea data-mk="${k}" rows="1"${MV_LONG.has(k) ? "" : ' class="one"'}${mro ? ' readonly title="已提交：只读，要修正请管理员点「解锁修正」"' : ""}>${esc(v)}</textarea><div class="flags">${fl.map(mvLine).join("")}</div>${mro ? "" : edgeGripHtml()}</td>
         <td class="s">${miss ? `<span class="badge miss">漏取</span>`
           : hit ? `<span class="badge warn">红旗 ${hit}</span>`
           : (v ? (BACK.has(k) ? `<span class="badge same" title="资料里这一格与本机上次发给公司的值相同，多半是自己回填的：它不能当独立证据">本机回填</span>`
@@ -1851,26 +1890,28 @@ function renderMain(){
             ${L.polishCount(MV.polish, MV.edit, MV.locked) ? ` · 可优化 ${L.polishCount(MV.polish, MV.edit, MV.locked)} 列（点格子里的「优化」才改值）` : ""}
             ${MV.submitted ? ` · 已回传 ${esc(MV.submitted.at)}` : ""}</div></div>
         <span class="sp"></span>
-        <button class="btn sm" id="mvReparse">重新解析</button>
+        <button class="btn sm" id="mvReparse"${mro ? " disabled" : ""}>重新解析</button>
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机未保存的编辑与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
       ${MV.staged ? `<div class="chips"><span class="chip">服务器上有 ${esc(L.roleCn(MV.staged.role))} ${esc(MV.staged.by)} 暂存的核对结果（${esc(MV.staged.at)}），已按那份显示</span></div>` : ""}
       ${MV.locked ? `<div class="chips"><span class="chip">这条主单在公司已经离开暂存档（状态 ${esc(MV.locked)}），公司不再收改动</span></div>` : ""}
+      ${mro || MV.unlocked ? roBarHtml("mawb", MV.mawb, MV.unlocked) : ""}
       ${(MV.localDiff || []).length ? `<div class="chips"><span class="chip bad">${esc(MV.localDiff.map(mvLabel).join("、"))} 你这台机器上的改动和服务器暂存的不一致，已按服务器版本显示；你那份没删，还在本机未保存的编辑里</span></div>` : ""}
       ${rec.state === "parsing" ? `<div class="empty" id="mvParsingEmpty">主单 ${esc(MV.mawb)} 解析中（约 7-20 秒）：解析完成后这里出 36 列核对表，左栏也先空着等原文。</div>`
       : `${rec.state === "failed" ? `<div class="empty empty-err">解析失败：${esc(rec.error || "未知错误")}<br>
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
-      <div class="tools"><span class="hint">改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
+      <div class="tools"><span class="hint">${mro ? "这张主单已回传公司：只读查看；要修正请管理员点「解锁修正」（会留痕，刷新重新锁）。"
+        : `改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
         主单表没有件重/航路/税号列，<b>税号按公司口径统一填同主体的 EORI 列</b>；
-        同一主体有多个号（EORI 与 VAT 并存那种）就用 <b>/</b> 拼在同一格，两个都留。</span></div>
+        同一主体有多个号（EORI 与 VAT 并存那种）就用 <b>/</b> 拼在同一格，两个都留。`}</span></div>
       <table><thead><tr>
-        <th class="kcol">字段${gripColHtml()}</th><th class="g">公司 AMS 列 · 可改</th><th class="num scol">状态</th>
+        <th class="kcol">字段${mro ? "" : gripColHtml()}</th><th class="g">公司 AMS 列${mro ? " · 只读" : " · 可改"}</th><th class="num scol">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>
       <div class="ft bottom">
-        <button class="btn" id="mvStage" type="button" title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
-        ${ME && ME.role === "inputter" ? `<button class="btn" id="mvReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写这 36 列、不碰公司、不改任何值">我核过了，先不发</button>` : ""}
-        <button class="btn pri" id="mvSubmit">提交主单回公司</button>
+        <button class="btn" id="mvStage" type="button"${mro ? " disabled" : ""} title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
+        ${ME && ME.role === "inputter" && !mro ? `<button class="btn" id="mvReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写这 36 列、不碰公司、不改任何值">我核过了，先不发</button>` : ""}
+        <button class="btn pri" id="mvSubmit"${mro ? " disabled" : ""}>${mro ? "已提交 · 只读" : "提交主单回公司"}</button>
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
         <span class="hint" id="mvMsg">${esc(MV.msg || (left.length ? "红旗 " + left.length + " 条待确认"
@@ -1882,9 +1923,11 @@ function renderMain(){
       autoGrow(inp);
     });
     el.querySelectorAll("[data-mack]").forEach(b => b.addEventListener("click", () => {
+      if (mvRO()) return;
       MV.acked.push(b.dataset.mack); MV.msg = ""; mvSave(); render();
     }));
     el.querySelectorAll("[data-munack]").forEach(b => b.addEventListener("click", () => {
+      if (mvRO()) return;
       MV.acked = MV.acked.filter(x => x !== b.dataset.munack); mvSave(); render();
     }));
     $("#mvBack").addEventListener("click", () => { mvOff(); render(); });
@@ -1900,7 +1943,7 @@ function renderMain(){
         const b = e.target.closest("[data-polish]");
         if (!b || !MV) return;
         const k = b.dataset.polish, po = (MV.polish || {})[k];
-        if (!po || k in MV.edit || MV.locked) return;
+        if (!po || k in MV.edit || MV.locked || mvRO()) return;
         mvWrite(k, po.to);
         MV.polishW = MV.polishW || {};
         MV.polishW[k] = {rule: po.rule, to: po.to};
@@ -1934,6 +1977,10 @@ function renderMain(){
     $("#retryParse").addEventListener("click", () => retryParse(t));
     return;
   }
+  /* 提交完的票整页只读：判据只看两个真输入——服务端台账说的已提交、本次查看解没解锁。
+     解锁只活这一轮页面（不落 localStorage），刷新回来还是只读。 */
+  t.unlocked = !!t.unlocked;
+  t.ro = L.viewOnly(t.submitted && t.submitted.mode === "server", t.unlocked);
   const ef = efOf(t), [c, label] = statusOf(t, ef);
   /* 重画一次就收回"武装"那一下：提交按钮的红态只代表"这最后一次点击会真的发送"，
      中间人又点了别的（确认、改值、换票）就等于改了主意，不该还留着。 */
@@ -1958,7 +2005,7 @@ function renderMain(){
       : fs.map(r => fieldRowHtml(t, r, DESK.onlyTodo && !r.st.todo && !(r.k in t.airE))).join("");
     return `<table class="gt" id="gt-${seg.g}"${DESK.onlyTodo && !seg.todo ? " hidden" : ""}>`
       + `<colgroup><col class="kcol"><col class="vcol"><col class="scol"></colgroup>`
-      + `<thead>${segHeadHtml(seg)}</thead><tbody>${body}</tbody></table>`;
+      + `<thead>${segHeadHtml(seg, t.ro)}</thead><tbody>${body}</tbody></table>`;
   }).join("");
   el.classList.add("has-todo");
   el.innerHTML = `
@@ -1975,7 +2022,7 @@ function renderMain(){
       <button class="t-flag" type="button" data-jump-first="flag" id="cFlag">红旗 ${ef.length}</button>
       <button class="t-soft" type="button" data-jump-first="empty" id="cEmpty">空值 ${nSoft}</button>
       <span class="t-edit" id="cEdit">已改 ${Object.keys(t.airE).length}</span>
-      <span class="t-polish" id="cPolish" title="按目的国写法可以改的那几格：只在格子上点「优化」才改值，系统不自动动你的票面">可优化 ${L.polishCount(t.polish, t.airE, t.locked)} 格</span>
+      <span class="t-polish" id="cPolish" title="按目的国写法可以改的那几格：只在格子上点「优化」才改值，系统不自动动你的票面">可优化 ${L.polishCount(t.polish, t.airE, t.locked || t.ro)} 格</span>
       <button class="btn sm" id="jumpFirst" type="button">跳到首个待办</button>
       <label><input type="checkbox" id="onlyTodo"${DESK.onlyTodo ? " checked" : ""}> 只看待核对</label>
       <span class="bar" aria-hidden="true"><i id="barFill"></i></span>
@@ -1984,9 +2031,10 @@ function renderMain(){
       <span class="sp"></span>
       <span class="hint" title="中列就是航空口径 L3（可直接改）；指针停在一行上，左边票面会框出它的转录出处；点字段名定位并放大；回车跳下一个待办（Shift+Enter 才是换行）">点字段名＝定位 · 回车＝下一个</span>
     </div>
+    ${t.ro || t.unlocked ? roBarHtml("hawb", t.stem, t.unlocked) : ""}
     ${segHtml}${orphanTable(t, ef)}
     <div class="ft bottom">
-      <button class="btn" id="stage" type="button" title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
+      <button class="btn" id="stage" type="button"${t.ro ? " disabled" : ""} title="把现在的核对结果存到服务器给同事看，同时在 j9 那边占个位（状态 0，还能反复改）；缺号只存本机。只有「提交本票」才会真的发送">暂存到公司</button>
       ${ME && ME.role === "inputter" && !t.submitted ? `<button class="btn" id="markReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写核对结果、不碰公司、不改任何值。要交给同事点「暂存到公司」，要发走点「提交本票」">我核过了，先不发</button>` : ""}
       ${drawSubmitBtn(t, ef, todo.n)}
       <button class="btn" id="expOne">导出本票 JSON</button>
@@ -2003,7 +2051,7 @@ function renderMain(){
   drawAnchors();                                // 确认一条红旗，票面上那个常驻锚点就要当场没
   /* 打开一张票就扫一次可优化的格子。挂在这儿而不是 refreshChrome：那个函数只在改格子时跑，
      初次渲染根本不经过它——浏览器实测过，挂在里面的结果是永远 0 格。 */
-  if (!t.polishDone) polishScan(t);
+  if (!t.polishDone && !t.ro) polishScan(t);
 }
 /* 吸顶高度是量出来的，不是抄下来的：顶栏在 1020-1460px 会折成两排、待办条会随红旗多少换行，
    写死一次就在折行那天压住第一行字段（--todoH 有过这个教训，--hdh 从前干脆只是个静态令牌）。
@@ -2026,13 +2074,13 @@ function refreshChrome(t){
   const hard = {}, soft = {};
   for (const r of rows){ if (r.st.s === "flag") hard[r.k] = 1; if (r.st.s === "empty") soft[r.k] = 1; }
   for (const seg of L.segState(rows, hard, soft)){
-    const th = $("#gt-" + seg.g + " thead"); if (th) th.innerHTML = segHeadHtml(seg);
+    const th = $("#gt-" + seg.g + " thead"); if (th) th.innerHTML = segHeadHtml(seg, t.ro);
   }
   const pr = L.progress(t.todoBase == null ? todo.n : t.todoBase, todo.n);
   setTxt("#cFlag", "红旗 " + ef.length);
   setTxt("#cEmpty", "空值 " + rows.filter(r => r.st.s === "empty").length);
   setTxt("#cEdit", "已改 " + Object.keys(t.airE).length);
-  setTxt("#cPolish", "可优化 " + L.polishCount(t.polish, t.airE, t.locked) + " 格");
+  setTxt("#cPolish", "可优化 " + L.polishCount(t.polish, t.airE, t.locked || t.ro) + " 格");
   setTxt("#progTxt", pr.done + "/" + pr.total);
   const bar = $("#barFill"); if (bar) bar.style.width = pr.pct + "%";
   drawSubmitCtl(t);
@@ -2104,19 +2152,22 @@ function wireMain(t){
        先勾一下「只看待核对」再点才生效"就是这么来的（2026-10-16 用户实测）。
        委托只挂一次，整页重画、局部重画都不影响它。 */
     $("#main").addEventListener("click", e => {
+      const ub = e.target.closest("[data-unlock]");
+      if (ub){ unlockNow(ub.dataset.unlock); return; }
       const b = e.target.closest("[data-ack],[data-unack],[data-ackf],[data-unackf]," +
                                 "[data-acke],[data-une],[data-restore],[data-fold],[data-gack]," +
                                 "[data-polish]");
       if (!b) return;
       const t = current(); if (!t) return;
       const d = b.dataset;
+      if (t.ro && d.fold === undefined) return;   // 只读时只剩折叠/展开这种看的分法
       let msg = "";
       if (d.polish !== undefined){
         /* 「优化」＝走人工改值那一条链（setEdit → 已改 → 暂存逐列 diff → 提交重算红旗），
            只是额外记下"是哪条规则把值换成这个的"。按钮在每次重画的新节点上，
            所以必须待在这条委托里，不能逐节点挂（2026-10-16 那个"点了没反应"就是这个坑）。 */
         const po = (t.polish || {})[d.polish];
-        if (!po || d.polish in t.airE || t.locked) return;
+        if (!po || d.polish in t.airE || t.locked || t.ro) return;
         setEdit(t, d.polish, po.to);
         t.polishW = t.polishW || {};
         t.polishW[d.polish] = {rule: po.rule, to: po.to};
@@ -2907,16 +2958,24 @@ async function openHouse(stem){
     if (sr && sr.ok){ try{ st = await sr.json(); }catch(e){ st = null; } }
     if (seq !== OH_SEQ) return;      // 解析 /staged 那几毫秒里也可能被改点
     const sf = L.serverState(d.submitted, st);
+    const sent = !!d.submitted;
     const srvEdits = {}; sf.edits.forEach(k => { srvEdits[k] = 1; });
-    const mg = L.stagedMerge(sf.values, dr.airE || {}, srvEdits);
+    /* 交出去的票只显示发出去那一版：本机未保存的编辑一律不掺进来——否则"解锁过的改动刷新后没发出去"
+       会被当成已发送的值摆在只读页上（看的人和公司库里的那份对不上）。 */
+    const mg = sent ? {airE:{}, conflicts:[]} : L.stagedMerge(sf.values, dr.airE || {}, srvEdits);
     const uni = (a, b) => [...new Set((a || []).concat(b || []))];
+    /* 老台账没有 air_sent 的那一档：sf.values 是空对象，不能拿它当底——否则只读页整表空白。
+       只有"这一版确实来自提交台账"时才用发出去的值，否则退回模型那份。 */
+    const sentAir = (sf.from === "submit" && Object.keys(sf.values || {}).length) ? sf.values : (d.air || {});
     const t = {file:null, filename:d.filename || stem, stem:d.stem, state:"done", restored:"server",
                channel:d.channel, elapsed:d.elapsed,
                qc: Object.keys(d.qc || {}).length ? d.qc : null,
-               raw:d.raw || {}, air:d.air || {}, airE:mg.airE,
-               ackF:uni(dr.ackF, sf.acked), ackE:uni(dr.ackE, sf.ackedEmpty),
+               raw:d.raw || {}, air:(sent ? sentAir : (d.air || {})),
+               airE:sent ? {} : mg.airE,
+               ackF:sent ? sf.acked : uni(dr.ackF, sf.acked),
+               ackE:sent ? sf.ackedEmpty : uni(dr.ackE, sf.ackedEmpty),
                skipE:sf.skippedEmpty,
-               todoBase:null, ll:null,
+               todoBase:null, ll:null, unlocked:false,
                staged: st && !st.submitted_at ? {by:st.stager, role:st.stager_role,
                                                  at:st.staged_at, edited:Object.keys(st.edits || {}).length} : null,
                submitted: d.submitted ? {mode:"server", at:d.submitted.submitted_at,
@@ -2932,7 +2991,7 @@ async function openHouse(stem){
     if (hit) S.tickets[S.tickets.indexOf(hit)] = t; else S.tickets.push(t);
     mvOff(); S.sel = stem; render();
     $("#view").scrollIntoView({behavior:"smooth", block:"start"});
-    const from = sf.from === "submit" ? "已提交过，载入发出去的那一版（改 " + sf.edits.length + " 列），改动需再点提交"
+    const from = sf.from === "submit" ? "已提交过，载入发出去的那一版（只读；要修正请管理员点「解锁修正」）"
       : (st ? "载入 " + L.roleCn(st.stager_role) + " " + st.stager + " 暂存的核对结果（改 "
                  + sf.edits.length + " 列）" : "本机模型结果，改完点提交");
     toast("已载入分单 " + (t.air.HAWB_NO || stem) + "（" + from + "）", "ok");
@@ -3063,14 +3122,17 @@ function mvLabel(k){
   return f ? f[1] : k;
 }
 function mvRestore(rec){
+  const sent = !!((rec && rec.submitted_at) || (MV && MV.submitted));
   const m = L.draftMerge(mstDrafts()[MV.mawb], (rec || {}).ams || {});
   /* 服务器上有别人（或自己上次）暂存的核对结果时，那份赢；本机未存的改动不删，冲突列点名。
-     和分单侧同一条规则：静悄悄盖掉任何一边，人都会拿着错的版本往下核。 */
-  const mg = L.stagedMerge(rec && rec.ams_final, m.edit, rec && rec.edits);
-  MV.edit = mg.airE;
+     和分单侧同一条规则：静悄悄盖掉任何一边，人都会拿着错的版本往下核。
+     已回传的票反过来：只显示交出去那一版，本机未保存的编辑一律不掺进来（否则没发出去的改动会被当成已发送）。 */
+  const mg = sent ? {airE:{}, conflicts:[]} : L.stagedMerge(rec && rec.ams_final, m.edit, rec && rec.edits);
+  MV.edit = sent ? {} : mg.airE;
   /* 确认过哪些红旗也认服务器那份（顶上那一档）：只靠这台浏览器的草稿，刷新一次或换台机器
      再检索同一张主单，昨天逐条点过的确认今天又红一遍（2026-10-15 与分单侧同一个病）。 */
-  MV.acked = [...new Set((rec && rec.acked_flags || []).concat(m.acked))];
+  MV.acked = sent ? [...new Set(rec && rec.acked_flags || [])]
+                  : [...new Set((rec && rec.acked_flags || []).concat(m.acked))];
   MV.extraFlags = m.extraFlags;
   MV.editBase = m.editBase; MV.conflicts = m.conflicts; MV.localDiff = mg.conflicts;
   MV.staged = (rec && rec.ams_final && !rec.submitted_at)
@@ -3079,6 +3141,8 @@ function mvRestore(rec){
 /* 换解析记录的唯一入口：重解析、轮询、提交后都走这里，绕开它就等于把刚恢复的草稿弄丢。 */
 function mvSetRec(rec){
   if (!MV) return;
+  if (rec && rec.submitted_at && !MV.submitted)
+    MV.submitted = {at: String(rec.submitted_at), mode: "server"};
   if (MV.rec && MV.rec.ams !== rec.ams) MV.polishDone = false;   // 36 列换了一份：可优化的那些要重扫
   MV.rec = rec;
   mvRestore(rec);
@@ -3087,11 +3151,13 @@ function mvSetRec(rec){
 /* 主单改一格只有这一个写入口：手打与点「优化」都从这儿出去，
    否则两条路会写出两份 MV.edit 语义（分单侧同一个道理在 setEdit）。 */
 function mvWrite(k, v){
+  if (mvRO()) return;        // 已提交主单：值框 readOnly，这里再挡一道写入路径
   const m = L.draftTouch(MV.edit, MV.editBase, MV.conflicts, k, v, (MV.rec.ams || {})[k]);
   MV.edit = m.edit; MV.editBase = m.editBase; MV.conflicts = m.conflicts;
   mvSave();
 }
 function mvTouch(inp){
+  if (mvRO()) return;
   const k = inp.dataset.mk;
   mvWrite(k, inp.value);
   inp.closest("td").classList.toggle("edited", k in MV.edit);
@@ -3102,6 +3168,7 @@ function mvTouch(inp){
 }
 async function mvReparse(){
   if (!MV) return;
+  if (mvRO()){ toast("这张主单已提交：只读，不能再重新解析；要修正请管理员点「解锁修正」", "bad"); return; }
   MV.msg = "重新解析中…"; render();
   await mstSearch(true);                       // force=1：越过缓存，换模型后也能重跑
   if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ mvSetRec(MST_LAST.master || MV.rec); render(); mvPoll(); }
@@ -3134,15 +3201,21 @@ function mvOff(){
 function mvShell(mawb){
   return {mawb: mawb, order: {}, rec: {state: "parsing"}, editBase: {}, edit: {}, acked: [],
           extraFlags: [], conflicts: [], localDiff: [], staged: null, locked: "", submitted: null,
-          polish: {}, polishW: {}, polishDone: false};
+          unlocked: false, polish: {}, polishW: {}, polishDone: false};
 }
 /* 主单侧的并列两行与整票扫描：与分单同一套判据（服务端那张国别表），只是列面是 36 列那份。
    "票面"那一行取的是这条主单最新一次解析出来的值（rec.ams），改过的列永远在它下面那行。 */
+/* 主单是不是"提交完的只读票"：台账时间（public 里带的 submitted_at）或本轮刚提交过；
+   管理员本轮解锁过一次就不算。与分单共用 L.viewOnly 这一句。 */
+function mvRO(){
+  const rec = (MV && MV.rec) || {};
+  return !!(MV && L.viewOnly(!!(MV.submitted || rec.submitted_at), MV.unlocked));
+}
 function mvPolishInner(k, v){
   const ams = (MV && MV.rec && MV.rec.ams) || {};
   const face = ams[k] == null ? "" : String(ams[k]);
   return polishHtml(face, v, ((MV && MV.polish) || {})[k],
-                    k in ((MV && MV.edit) || {}), !!(MV && MV.locked),
+                    k in ((MV && MV.edit) || {}), !!(MV && (MV.locked || mvRO())),
                     ((MV && MV.polishW) || {})[k]);
 }
 function mvPolishSent(){
@@ -3153,7 +3226,7 @@ function mvPolishSent(){
   return out;
 }
 function mvPolishScan(){
-  if (!MV || !MV.rec || MV.rec.state !== "done") return;
+  if (!MV || !MV.rec || MV.rec.state !== "done" || mvRO()) return;
   MV.polishDone = true;      // 与分单同一档：失败不重打，免得每次重画都发一枪
   fetch(BASE + "/polish", {method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({chain: "master", fields: mvValues()})})
@@ -3165,6 +3238,7 @@ function mvPolishScan(){
    与分单同一个道理——从前 MV.edit 只在浏览器里，换台机器就什么都没交出去。 */
 async function mvStage(){
   if (!MV) return;
+  if (mvRO()){ toast("这张主单已提交：只读，不能再暂存；要修正请管理员点「解锁修正」", "bad"); return; }
   try{
     const r = await fetch(BASE + "/master/stage", {method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -3185,6 +3259,7 @@ async function mvStage(){
   }catch(e){ toast("主单暂存失败：" + (e.message || e), "bad"); }
 }
 async function mvSubmit(){
+  if (mvRO()){ toast("这张主单已提交：只读，不能再提交；要修正请管理员点「解锁修正」", "bad"); return; }
   const who = $("#reviewer").value.trim();
   if (!who){ toast("先填复核人姓名：提交要留痕", "bad"); $("#reviewer").focus(); return; }
   const left = mvFlags().filter(f => !MV.acked.includes(f));
@@ -3209,6 +3284,7 @@ async function mvSubmit(){
       } else throw new Error((typeof d === "string" ? d : d.message) || ("HTTP " + r.status));
     } else {
       MV.submitted = {at: nowTxt(), mode: j.mode};
+      MV.unlocked = false;
       MV.edit = {}; MV.acked = []; MV.extraFlags = []; MV.conflicts = []; MV.polishW = {};
       mstDraftClear(MV.mawb);                  // 已回传公司：草稿再留着，下次打开同一主单会把交过的改动重新盖上来
       mvSetRec(Object.assign({}, MV.rec, {ams: mvValues()}));
@@ -3232,7 +3308,8 @@ function openMvFromMst(mawb){
   if (!MST_LAST || !mawb) return false;
   if (LOC.on) exitLocate();          // 定位模式的页图会被资料文本顶掉，先退干净免得留着半张高亮层
   MV = {mawb: mawb, order: MST_LAST.mawb_order || {}, rec: {},
-        edit: {}, editBase: {}, acked: [], extraFlags: [], conflicts: [], msg: "", submitted: null};
+        edit: {}, editBase: {}, acked: [], extraFlags: [], conflicts: [], msg: "", submitted: null,
+        unlocked: false};
   mvSetRec(MST_LAST.master || {});
   render(); mvPoll();
   $("#view").scrollIntoView({behavior: "smooth", block: "start"});   // 停在票面栏：窄屏两栏堆叠时核对区在它下面，滚到核对区会让人以为票面栏没动静

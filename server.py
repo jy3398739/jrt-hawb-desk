@@ -368,6 +368,42 @@ def master_result(mawb: str, _: None = Depends(require_web)):
     return rec
 
 
+_READONLY_SUBMITTED = ("这张票已经提交发送：提交后只读，只能查看。"
+                       "要修正请让管理员在核对页点「解锁修正」（会留痕）")
+
+
+def _refuse_after_submit(kind: str, key: str, user: dict) -> None:
+    """提交完的票，四道写入口对非管理员一律 409——界面灰掉只是体验，这一道才是门。
+    管理员放行：界面上的「解锁修正」先写留痕再放开本次查看（`POST /unlock`）。"""
+    if str(user.get("role") or "") == "admin":
+        return
+    hit = store.submitted_hawb(key) if kind == "hawb" else store.submitted_master(key)
+    if hit:
+        raise HTTPException(409, _READONLY_SUBMITTED)
+
+
+class UnlockBody(BaseModel):
+    kind: str = "hawb"
+    key: str = ""
+
+
+@app.post("/unlock")
+def unlock(body: UnlockBody, user: dict = Depends(current_user),
+           _: None = Depends(require_admin)):
+    """管理员「解锁修正」：提交完的票本来全页只读；先往解锁本落一笔（谁、何时、哪张票），
+    再放开**本次查看**。刷新即重新锁上，留痕不删——每次解锁都留一条，别把两次修正并成一次。"""
+    try:
+        k, v = store.unlock_key(body.kind, body.key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    hit = store.submitted_hawb(v) if k == "hawb" else store.submitted_master(v)
+    if not hit:
+        raise HTTPException(409, "这张票还没提交过：只有提交完的只读票才需要解锁")
+    entry = store.unlock_ticket(k, v, str(user.get("name") or ""), str(user.get("role") or ""))
+    LOG.warning("解锁修正 who=%s(%s) %s=%s", user.get("name"), user.get("role"), k, v)
+    return {"ok": True, "unlock": entry}
+
+
 class MasterSubmitBody(BaseModel):
     mawb: str = ""
     reviewer: str = ""
@@ -385,6 +421,7 @@ def master_stage(body: MasterSubmitBody, user: dict = Depends(current_user)):
     分单有了暂存档，主单也必须有——需求二说的是"主单和分单的暂存内容"。从前 `MV.edit`
     只活在浏览器里（换台机器、刷新一次就没了），录入员根本交不出主单的核对结果。
     公司那一发失败不回滚本机这份，原因随响应带回去（见 _company_stage）。"""
+    _refuse_after_submit("mawb", body.mawb, user)
     try:
         rec = master_pipeline.stage_master(body.mawb, body.ams, str(user.get("name") or ""),
                                            str(user.get("role") or ""), body.acked_flags,
@@ -418,6 +455,7 @@ def master_submit(body: MasterSubmitBody, user: dict = Depends(current_user)):
     公司侧 SEND_STATUS 非 0（已提交发送或外围已发送成功，公司拒改）→ 409 且不发写请求；
     接口不通/没配 → 502，绝不写台账。
     署名同样取登录会话，不认前端传的名字。"""
+    _refuse_after_submit("mawb", body.mawb, user)
     body.reviewer = str(user.get("name") or "")
     body.reviewer_role = str(user.get("role") or "")
     try:
@@ -514,6 +552,7 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
         mawb = str(rec.get("MAWB_NO", "") or "").strip()
         hawb = str(rec.get("HAWB_NO", "") or "").strip()
         stem = str(tk.get("stem") or tk.get("filename") or "").strip()
+        _refuse_after_submit("hawb", stem, user)
         if not store.norm_no(mawb) or not store.norm_no(hawb):
             raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
         raw, transcript = _l2_l1(stem, tk)
@@ -818,6 +857,7 @@ def stage(body: StageBody, user: dict = Depends(current_user)):
         rec = tk.get("air_reviewed") if isinstance(tk.get("air_reviewed"), dict) else {}
         if not rec:
             raise HTTPException(400, f"这张票没有可存的核对内容：{stem}")
+        _refuse_after_submit("hawb", stem, user)
         try:
             saved = store.stage_ticket(stem, rec, str(user.get("name") or ""),
                                        str(user.get("role") or ""), tk.get("acked_flags"),
@@ -1030,6 +1070,7 @@ def review(body: ReviewBody, user: dict = Depends(current_user)):
     who, role = str(user.get("name") or ""), str(user.get("role") or "")
     if k not in ("hawb", "mawb"):
         raise HTTPException(400, "票种只认 hawb / mawb")
+    _refuse_after_submit(k, body.key, user)
     try:
         rec = (master_pipeline.review_master(body.key, who, role) if k == "mawb"
                else store.review_ticket(body.key, who, role))

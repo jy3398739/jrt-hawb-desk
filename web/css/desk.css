@@ -207,6 +207,11 @@ td.v textarea,td.v input{width:100%;border:1px solid transparent;background:tran
    原生 resize 尊重 max-height，写 320 就会把人拖高卡在半路（2026-10-09）。
    「没拖过的框按内容撑」那道上限在 logic.js 的 fieldHeight 里（320）。 */
 td.v textarea{resize:both;max-height:900px;overflow-y:auto}
+/* 已提交票只读：值框变灰、不可改（仍可选中复制）；把手与动作钮在渲染时就不画/禁用。
+   选择器带 #main 是为了压过上面那两条 flag/empty 行的底色规则——灰态要一眼看得出。 */
+#main td.v textarea[readonly]{color:var(--c-text-3);background:var(--c-surface-2);cursor:default;resize:none}
+#main td.v textarea[readonly]:hover{border-color:transparent;background:var(--c-surface-2)}
+#main .robanner{align-items:center}
 /* 值格右边界那道宽度把手：走 td 那 8px 内边距的空档，不压 textarea 的原生拖角
    （原生只管高度，而且 input 根本没有把手——一半的值格是 input，不能只有长文本能拖宽）。
    平时不亮，指针进这一行 / 聚焦 / 正在拖的时候才现形：40 行每行一条实线就是栅栏。 */

@@ -231,9 +231,9 @@ def test_clicking_optimise_is_a_human_edit_with_a_rule_number_attached():
 
 def test_the_button_does_not_appear_on_a_locked_or_already_edited_cell():
     desk = web_src.desk()
-    assert "if (!po || d.polish in t.airE || t.locked) return;" in desk, \
-        "人已改过或票已交出去：这两档都不许再按规则盖掉人的值"
-    assert "if (!po || k in MV.edit || MV.locked) return;" in desk
+    assert "if (!po || d.polish in t.airE || t.locked || t.ro) return;" in desk, \
+        "人已改过或票已交出去（只读）：这几档都不许再按规则盖掉人的值"
+    assert "if (!po || k in MV.edit || MV.locked || mvRO()) return;" in desk
 
 
 def test_polish_html_escapes_everything_and_adds_no_inline_style():

@@ -355,6 +355,53 @@ def master_ledger() -> dict:
     return _load_ledger(config.MASTER_LEDGER)
 
 
+def submitted_hawb(stem: str):
+    """这张分单在本机提交台账里的那一笔；没有（或没提交过）返回 None。
+    提交后只读的判据只认这一处：台账一条 = 一次真回传，暂存与本机草稿都不算。"""
+    return _load_ledger().get(str(stem or "").strip()) or None
+
+
+def submitted_master(mawb: str):
+    """这条主单在本机主单台账里的那一笔；没提交过返回 None。判据与分单同一句：
+    台账一条 = 一次真回传（主单缓存里的 submitted_at 只在暂存过又提交时才盖章，不可靠）。"""
+    return master_ledger().get(norm_no(mawb)) or None
+
+
+# === 解锁修正：提交完的票默认只读，管理员点一下才放开本次查看 ===
+_UNLOCK_LOCK = threading.Lock()
+_UNLOCK_KINDS = ("hawb", "mawb")
+
+
+def unlock_key(kind: str, key: str) -> tuple:
+    """解锁留痕的键：分单用 stem，主单用归一化主单号；校验与作废本同一把尺。"""
+    k = str(kind or "").strip().lower()
+    if k not in _UNLOCK_KINDS:
+        raise ValueError(f"解锁的票种只能是 {'/'.join(_UNLOCK_KINDS)}，收到「{kind}」")
+    v = norm_no(str(key or "").strip()) if k == "mawb" else str(key or "").strip()
+    if not v:
+        raise ValueError("解锁要带单号：分单给 stem，主单给主单号")
+    return k, v
+
+
+def unlocks_map() -> dict:
+    """读解锁留痕本：{"events": [ {kind,key,by,role,at}, ... ]}。坏文件当空表，不拖挂解锁。"""
+    data = _load_ledger(config.UNLOCK_LEDGER)
+    events = data.get("events") if isinstance(data, dict) else None
+    return {"events": events if isinstance(events, list) else []}
+
+
+def unlock_ticket(kind: str, key: str, by: str, role: str) -> dict:
+    """管理员「解锁修正」留一笔痕（只追加、不覆盖）。前端只认本次查看，刷新即重新锁。"""
+    k, v = unlock_key(kind, key)
+    with _UNLOCK_LOCK:
+        data = unlocks_map()
+        entry = {"kind": k, "key": v, "by": str(by or ""), "role": str(role or ""),
+                 "at": datetime.datetime.now().isoformat(timespec="seconds")}
+        data["events"].append(entry)
+        _write_ledger(data, config.UNLOCK_LEDGER)
+    return entry
+
+
 # === 作废本：台账上那一行「不作数」 ===
 # 只写这一个文件，其余一律不动：提交台账、暂存、归档原件、复合键索引全都原样留着。
 # 为什么不往 submitted.json 里加个字段：那本台账的语义是「这张票发过公司」，

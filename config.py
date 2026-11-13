@@ -367,6 +367,10 @@ SUBMIT_GUARD_DIR = Path(os.getenv("SUBMIT_GUARD_DIR", str(BASE_DIR / "output" / 
 # 为什么不并进 submitted.json：那本台账一条=一次真回传，往里塞"不作数"的标记会让它的语义变脏，
 # 而索引与检索都只认它。单独一本，读的人一眼分得清"发过"与"发过但人说不作数了"。
 VOID_LEDGER = Path(os.getenv("VOID_LEDGER", str(BASE_DIR / "output" / "voided.json")))
+# 管理员「解锁修正」留痕本：提交完的票默认只读（值、确认、暂存、提交、重解析全灰）。
+# 管理员点「解锁修正」时先往这里追加一条（票种、键、谁、何时）再放开本次查看；
+# 同一张票可能被解锁多次，所以只追加不去重、不覆盖。
+UNLOCK_LEDGER = Path(os.getenv("UNLOCK_LEDGER", str(BASE_DIR / "output" / "unlocks.json")))
 # 主单(MAWB)原件落盘处：按归一化主单号建子目录，里面放公司给的主单 PDF/电子单。
 # 公司主单原件接口待 IT——先支持人工放入同一目录跑通录入员"对票面核对"，真接口到位后
 # 由 company_api 把取回的主单原件缓存进这里，路由与前端一行都不用改。

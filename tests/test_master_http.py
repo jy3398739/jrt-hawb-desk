@@ -348,10 +348,31 @@ def test_master_submit_sends_unreviewed_work_and_leaves_the_trace():
         assert rec["submitted_at"] and rec["submitter"] == "马殿齐", rec
 
         inp = _acct("刘明", "inputter", "in-123456")
-        assert inp.post("/master/stage", json={"mawb": "176-62400004", "ams": ams}).status_code == 200
+        st = inp.post("/master/stage", json={"mawb": "176-62400004", "ams": ams})
+        assert st.status_code == 409 and "只读" in st.json()["detail"], \
+            "提交完的主单只读：录入员也不能再写，要修正请管理员解锁"
         r3 = inp.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "刘明",
                                              "ams": ams, "acked_flags": []})
-        assert r3.status_code == 200, f"录入员自己复核过就不该再要确认：{r3.text[:150]}"
+        assert r3.status_code == 409 and "只读" in r3.json()["detail"], r3.text[:150]
+    finally:
+        undo()
+        _restore(old, tmp)
+
+
+def test_an_inputter_stage_before_submit_still_flips_the_review_trace():
+    """录入员自己暂存过再提交（没经过制单员）：no_inputter_review=False 这条留痕不能因为
+    新加的"提交后只读"而丢掉——新规则挡的是提交之后的那几发，不挡提交之前这一单。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_mack2_"))
+    old = _isolate(tmp)
+    undo = _stub_live()
+    try:
+        inp = _acct("刘明", "inputter", "in-123456")
+        assert inp.get("/company/mawb", params={"mawb": "176-62400004"}).status_code == 200
+        ams = dict(AMS, GOODS_NAME="PISTON ROD ASSY")
+        assert inp.post("/master/stage", json={"mawb": "176-62400004", "ams": ams}).status_code == 200
+        r = inp.post("/master/submit", json={"mawb": "176-62400004", "reviewer": "刘明",
+                                             "ams": ams, "acked_flags": []})
+        assert r.status_code == 200, f"录入员自己复核过就不该再要确认：{r.text[:150]}"
         assert store.master_ledger()["17662400004"]["no_inputter_review"] is False
     finally:
         undo()
