@@ -600,6 +600,22 @@ def test_the_scope_chip_is_role_based_and_never_remembered():
     assert '[data-ds]' in h[:1200] and "DAY.scope" in h[:1200], "空态里那颗切换没接上"
 
 
+def test_the_all_scope_keeps_the_date_picker_live():
+    """「全部」也是按天的：管理员在昨天那页切「全部」，要看的是**昨天全机**。
+
+    v1.19 加「待我复核」时把 date 塞进了 else-if 的最后一支：`all=1` 那条从此不带日期，
+    日期框在「全部」下面成了摆设——选昨天，服务端按默认回今天，页面再把日期框弹回今天。
+    日期与档位是两个独立维度：跨天那两档（待我复核/我核过）不带它，mine/all 都要带。"""
+    load = _fn(web_src.part("js/desk.js"), "async function loadDay(")
+    i = load.index('if (s === "all")')
+    branch = load[i:load.index('else if (s === "toreview"', i)]
+    assert "all=1" in branch and "date=" in branch, \
+        "「全部」这一档没把日期发出去：日期框在它下面就是摆设"
+    tail = load[load.index('else if (s === "toreview"', i):]
+    tail = tail[:tail.index('else if (picked') if 'else if (picked' in tail else len(tail)]
+    assert "date=" not in tail, "跨天那两档不许带日期：日期框在它们底下是藏着的，带了就是替人乱挑一天"
+
+
 def test_the_empty_day_picks_its_sentence_in_the_pure_layer():
     """四类空态各说各的话，而"是哪一类"必须在纯函数里判：判据写在渲染那段里时，
     把分支条件改成 if(false) 静态用例根本看不出来（文案还挂在代码里，只是永远走不到）。"""

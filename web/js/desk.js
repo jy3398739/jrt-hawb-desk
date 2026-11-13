@@ -3375,7 +3375,7 @@ async function loadDay(fade){
     /* 每一档都交给服务端去筛：在浏览器里筛的那批行本来就是服务端按人给出来的，
        筛不出别人的票，页上却写着"待你复核"——那就是这一页在说谎。 */
     if (kw) q.push("q=" + encodeURIComponent(kw));
-    if (s === "all") q.push("all=1");
+    if (s === "all"){ q.push("all=1"); if (picked) q.push("date=" + encodeURIComponent(picked)); }
     else if (s === "toreview" || s === "reviewed") q.push("scope=" + s);
     else if (picked && picked !== VIEW.date) q.push("date=" + encodeURIComponent(picked));
     const r = await fetch(BASE + "/day" + (q.length ? "?" + q.join("&") : ""));
