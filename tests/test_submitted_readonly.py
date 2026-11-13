@@ -83,7 +83,7 @@ def _master_submitted():
         "transcript": {"full_text": "主单资料"},
         "qc": {"flags": [], "needs_review": False}, "error": ""})
     store.mark_master_submitted(MAWB, "宛平", receipt={"action": "ok"},
-                                ams_sent={"MAWB_NO": MAWB})
+                                ams_sent={"MAWB_NO": MAWB, "GOODS_NAME": "PISTON ROD"})
 
 
 def _reviewer_and_admin():
@@ -122,6 +122,65 @@ def test_two_master_write_routes_refuse_a_submitted_master_for_reviewers():
         assert sub.status_code == 409 and "只读" in sub.json()["detail"], sub.text
         assert adm.post("/master/stage", json={"mawb": MAWB,
                                                "ams": {"MAWB_NO": MAWB}}).status_code == 200
+
+
+def _stub_company_master():
+    """把公司检索替换成"有主单资料"的桩：这条用例只关心会不会去调模型，不关心 j9。"""
+    import company_api
+    old = company_api.search_mawb
+    company_api.search_mawb = lambda mawb: {
+        "mode": "mock", "mawb": mawb,
+        "mawb_order": {"MAWB_NO": mawb, "GOODS_NAME": "FROM-COMPANY"},
+        "hawb_orders": [], "pending": [], "source_available": False}
+    return lambda: setattr(company_api, "search_mawb", old)
+
+
+def test_viewing_a_submitted_master_never_calls_the_model_again():
+    """已提交主单的“查看”不许二次解析（2026-11-13 业主："已提交的查看主单还会二次解析吗？
+    页面显示解析中"）。缓存指纹过期也不许：直接显示本机缓存，值取提交台账里发出去的那版。"""
+    with _sandbox():
+        _master_submitted()
+        # 故意让缓存指纹全对不上：旧版本解析的 / 换过模型的那种状态
+        rec = json.loads((config.MASTER_DIR / (store.norm_no(MAWB) + ".json")).read_text(encoding="utf-8"))
+        rec.update({"text_md5": "stale", "face_md5": "stale", "model": "old-model",
+                    "ams": {"MAWB_NO": MAWB, "GOODS_NAME": "MODEL-OLD"}})
+        (config.MASTER_DIR / (store.norm_no(MAWB) + ".json")).write_text(
+            json.dumps(rec, ensure_ascii=False), encoding="utf-8")
+        undo = _stub_company_master()
+        old_ensure, old_fresh = master_pipeline.ensure, master_pipeline.fresh_record
+        master_pipeline.ensure = lambda *a, **k: (_ for _ in ()).throw(AssertionError("已提交主单不许再解析"))
+        master_pipeline.fresh_record = lambda *a, **k: (_ for _ in ()).throw(AssertionError("已提交主单不许判指纹"))
+        try:
+            rev, _ = _reviewer_and_admin()
+            j = rev.get("/company/mawb", params={"mawb": MAWB}).json()
+            assert j["master"]["state"] == "done", "查看已提交主单不该进「解析中」"
+            assert j["master"]["ams"]["GOODS_NAME"] == "PISTON ROD", \
+                "只读页显示发出去那一版（台账 ams_sent），不是缓存里模型旧值"
+        finally:
+            master_pipeline.ensure, master_pipeline.fresh_record = old_ensure, old_fresh
+            undo()
+
+
+def test_force_reparse_is_refused_for_a_submitted_master_and_empty_cache_still_opens():
+    """「重新解析」对已提交主单一律 409（管理员也一样，修正请解锁改值）；
+    本机缓存没有时用台账那份值拼只读页，不能退回解析中、也不能空白。"""
+    with _sandbox():
+        _master_submitted()
+        undo = _stub_company_master()
+        old_ensure = master_pipeline.ensure
+        master_pipeline.ensure = lambda *a, **k: (_ for _ in ()).throw(AssertionError("已提交主单不许再解析"))
+        try:
+            rev, adm = _reviewer_and_admin()
+            r = adm.get("/company/mawb", params={"mawb": MAWB, "force": 1})
+            assert r.status_code == 409 and "只读" in r.json()["detail"], r.text
+            for p in config.MASTER_DIR.glob("*.json"):
+                p.unlink()
+            j = rev.get("/company/mawb", params={"mawb": MAWB}).json()
+            assert j["master"]["state"] == "done" and j["master"]["ams"]["MAWB_NO"] == MAWB, \
+                "没有缓存也要用台账发出去那版把只读页撑起来"
+        finally:
+            master_pipeline.ensure = old_ensure
+            undo()
 
 
 def test_unlock_is_admin_only_and_always_leaves_a_trace():
@@ -166,7 +225,8 @@ def test_the_master_view_locks_submitted_records_too():
     assert 'data-mk="${k}" rows="1"' in render and "mro ?" in render, \
         "主单值框没接只读态"
     assert 'id="mvSubmit"${mro ? " disabled" : ""}' in render, "主单提交钮在只读时没 disabled"
-    assert 'id="mvReparse"${mro ? " disabled" : ""}' in render, "重新解析在只读时没 disabled"
+    assert '"重新解析" 对已提交主单一律禁用' in render or 'id="mvReparse"${mSent ? " disabled" : ""}' in render, \
+        "重新解析对已提交主单（含解锁后）也必须 disabled"
 
 
 def test_the_desk_renders_the_lock_and_keeps_it_out_of_local_storage():

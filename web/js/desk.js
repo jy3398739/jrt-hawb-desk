@@ -1823,7 +1823,8 @@ function renderMain(){
   if (MV){
     const rec = MV.rec || {}, qc = rec.qc || {}, flags = mvFlags();
     const vals = mvValues(), left = flags.filter(f => !MV.acked.includes(f));
-    const mro = mvRO();          // 已回传公司且本轮没解锁：整页只读
+    const mSent = !!(MV.submitted || rec.submitted_at);   // 已回传过公司：重解析也锁，解锁只能改值
+    const mro = L.viewOnly(mSent, MV.unlocked);           // 已回传且本轮没解锁：整页只读
     const missed = (qc.missed_cols) || [];
     const MVG = rec.groups || {};
     /* 主单侧同样"旗挂在它点名的那一格上"（顶部那排 chip 已经撤了）。一条旗点了两格就两格都亮；
@@ -1890,7 +1891,7 @@ function renderMain(){
             ${L.polishCount(MV.polish, MV.edit, MV.locked) ? ` · 可优化 ${L.polishCount(MV.polish, MV.edit, MV.locked)} 列（点格子里的「优化」才改值）` : ""}
             ${MV.submitted ? ` · 已回传 ${esc(MV.submitted.at)}` : ""}</div></div>
         <span class="sp"></span>
-        <button class="btn sm" id="mvReparse"${mro ? " disabled" : ""}>重新解析</button>
+        <button class="btn sm" id="mvReparse"${mSent ? " disabled" : ""}${mSent ? ' title="已提交：只读，不能再重新解析；要修正请管理员点「解锁修正」改值"' : ""}>重新解析</button>
         <button class="btn sm" id="mvBack">返回分单核对</button>
       </div>
       ${MV.conflicts.length ? `<div class="chips"><span class="chip bad">本机未保存的编辑与最新解析对不上：${esc(MV.conflicts.map(mvLabel).join("、"))} —— 这几列改的还是重解析前的值，请对着左栏原文重改</span></div>` : ""}
@@ -3168,7 +3169,8 @@ function mvTouch(inp){
 }
 async function mvReparse(){
   if (!MV) return;
-  if (mvRO()){ toast("这张主单已提交：只读，不能再重新解析；要修正请管理员点「解锁修正」", "bad"); return; }
+  const mSent = !!(MV.submitted || (MV.rec && MV.rec.submitted_at));
+  if (mSent){ toast("这张主单已提交：只读，不能再重新解析；要修正请管理员点「解锁修正」改值", "bad"); return; }
   MV.msg = "重新解析中…"; render();
   await mstSearch(true);                       // force=1：越过缓存，换模型后也能重跑
   if (MV && MST_LAST && MST_LAST.mawb === MV.mawb){ mvSetRec(MST_LAST.master || MV.rec); render(); mvPoll(); }

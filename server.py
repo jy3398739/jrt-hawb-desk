@@ -348,6 +348,29 @@ def company_mawb(background: BackgroundTasks,
     if not store.norm_no(mawb):
         raise HTTPException(400, "主单号不能为空")
     res = company_api.search_mawb(mawb)
+    # 已提交的主单只**查看**：不再判指纹、不再起解析。换过模型/老缓存过期都会让
+    # fresh_record 回 None，页面就闪"解析中"并白烧一次模型、覆盖交出去的那一版。
+    # 只读页的值取提交台账的 ams_sent；本机缓存没了也用它把 36 列撑起来。
+    led = store.submitted_master(mawb)
+    if led:
+        if force:
+            raise HTTPException(409, "这张主单已经提交发送：提交后只读，不能再重新解析；"
+                                     "要修正请管理员在核对页点「解锁修正」直接改值")
+        cached = master_pipeline.read_master(mawb)
+        sent = led.get("ams_sent") if isinstance(led.get("ams_sent"), dict) else {}
+        if cached:
+            shown = dict(cached)
+            if sent:
+                shown["ams"] = dict(sent)
+            shown["state"] = "done"
+        else:
+            shown = {"mawb": str(mawb or "").strip(), "state": "done",
+                     "ams": dict(sent), "ams_model": {}, "qc": {}, "transcript": {},
+                     "model": "", "elapsed": 0,
+                     "started_at": str(led.get("submitted_at") or ""),
+                     "updated_at": str(led.get("submitted_at") or "")}
+        res["master"] = master_pipeline.public(shown)
+        return res
     order = res.get("mawb_order") or {}
     if order:
         fresh = master_pipeline.fresh_record(mawb, order, bool(force))
