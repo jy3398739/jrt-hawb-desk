@@ -175,7 +175,7 @@ def test_recheck_backfills_flags_without_calling_model():
 
 def test_recheck_recomputes_l3_and_backfills_new_columns():
     """字段契约变更后跑 --recheck：老结果补齐新键，L3 由 L2 纯函数重算
-    （把粘在地址上的税号摘出来、落进同主体的 EORI 格，2026-10-10 定案）。
+    （把粘在地址上的税号摘出来——2026-11-14 两列拆分后税号落同主体的 TAX 格）。
     不这么办的话老票的税号永远留在地址串里，而重跑一遍又是一次额度。"""
     with _sandbox():
         old = {"MAWB_NO": "999-30825351", "HAWB_NO": "999-30825351",
@@ -191,15 +191,16 @@ def test_recheck_recomputes_l3_and_backfills_new_columns():
             "老结果要补齐新列；L2 是照抄口径，号仍在地址串里"
         assert not [k for r in (raw, air) for k in r if k.endswith("_TAX_ID")], \
             "已删的税号列不该被重算造出来"
-        assert air["SHIPPER_INFO_EORI"] == "USCI9111010880211232X4", air   # 标签词连写在前面（2026-10-23）
+        assert air["SHIPPER_INFO_TAX"] == "USCI9111010880211232X4", air   # 标签词连写在前面（2026-10-23）
+        assert air["SHIPPER_INFO_EORI"] == "", "裸数字税号不该进 EORI 格（EORI 只放海关号）"
         assert "USCI" not in air["SHIPPER_INFO_COMP_ADDRESS"], air["SHIPPER_INFO_COMP_ADDRESS"]
 
 
-def test_recheck_carries_a_legacy_tax_column_over_into_the_air_eori():
+def test_recheck_carries_a_legacy_tax_column_over_into_the_air_tax():
     """归档里的 L2 有不少还带着已删除的 `*_INFO_TAX_ID`（本机 11 份），而且地址串里往往
     已经没有这个号了——老口径是模型把号单独立到那一列的。
-    所以 --recheck 必须先把老键交给 L3 再落盘：修剪成 38 列后重算等于把号两头都弄丢，
-    下一次提交给公司的 EORI 就是空的。"""
+    所以 --recheck 必须先把老键交给 L3 再落盘：修剪成新列面后重算等于把号两头都弄丢，
+    下一次提交给公司的税号就是空的。2026-11-14 两列拆分：裸数字税号按形态归 TAX 格。"""
     with _sandbox():
         old = {k: "" for k in codes.TARGET_KEYS_OUT}
         old.update({"MAWB_NO": "999-30825351", "HAWB_NO": "TSN10359645",
@@ -215,11 +216,12 @@ def test_recheck_carries_a_legacy_tax_column_over_into_the_air_eori():
         air = json.loads((config.OUTPUT_AIR_DIR / "TSN10359645.json").read_text(encoding="utf-8"))
         assert set(codes.TARGET_KEYS_OUT) <= set(raw), "契约键要补齐"
         assert raw["SHIPPER_INFO_TAX_ID"] == "911201117706402073", "重检不许把老列的值剪掉"
-        assert air["SHIPPER_INFO_EORI"] == "911201117706402073", air
+        assert air["SHIPPER_INFO_TAX"] == "911201117706402073", air
+        assert air["SHIPPER_INFO_EORI"] == "", "老列的裸数字税号归 TAX，不进 EORI"
         # 再跑一遍还是同一个结果：号不能"第一次重检就丢"，运维手滑多跑一次不该弄坏数据
         run_batch.recheck_all()
         again = json.loads((config.OUTPUT_AIR_DIR / "TSN10359645.json").read_text(encoding="utf-8"))
-        assert again["SHIPPER_INFO_EORI"] == "911201117706402073", again
+        assert again["SHIPPER_INFO_TAX"] == "911201117706402073", again
 
 
 def test_recheck_flags_ticket_without_transcript():

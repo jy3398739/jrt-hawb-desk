@@ -12,6 +12,7 @@ VLM 调用与重试、保真回查、红旗/提交门/台账范式；不共用�
 import datetime
 import hashlib
 import json
+import os
 import re
 import threading
 import time
@@ -19,6 +20,7 @@ import time
 import atomic
 import config
 import company_api
+import eori_check
 import master_fields as mf
 import store
 import usage
@@ -156,6 +158,7 @@ def master_flags(ams: dict, transcript: dict | None = None) -> list:
     flags = validate_master(cleaned, transcript)
     if transcript:
         flags += _missed_flags(cleaned, transcript)[0]
+    flags += eori_check.cached_flags(cleaned)   # EORI 官网核验（缓存驱动，查不通安静）
     return flags
 
 
@@ -286,7 +289,21 @@ def run_master(mawb: str, mawb_order: dict, prev: dict | None = None) -> dict:
     if isinstance(rec.get("qc"), dict):
         rec["qc"]["usage"] = usage.take()   # 主单这条链更贵（默认公司百炼 + 可开思考），账要单独看得见
     rec["updated_at"] = _now()
-    return _write(rec)
+    _write(rec)
+    # EORI 官网核验（2026-11-14 业主定案方案 1C）：解析完后台查、**只暖缓存**——
+    # 旗面在 master_flags（服务端重算）与 /master 视图读取时并进来，后台线程不回写
+    # 主单记录，免得和人工暂存撞车。查不通有熔断兜着，不白等。
+    if os.environ.get("HAWB_EORI_BG", "1") != "0":
+        threading.Thread(target=_eori_warm_cache, args=(dict(rec.get("ams") or {})),
+                         daemon=True).start()
+    return rec
+
+
+def _eori_warm_cache(ams: dict):
+    try:
+        eori_check.check_cells(ams or {})
+    except Exception:
+        pass    # 后台核验死掉不影响主单结果，手动重查按钮随时能再来一次
 
 
 def public(rec: dict | None) -> dict | None:

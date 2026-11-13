@@ -26,7 +26,8 @@ const FIELDS = [
   ["SHIPPER_INFO_COUNTRY","国家","ship"],
   ["SHIPPER_INFO_TEL","电话","ship"],
   ["SHIPPER_INFO_FAX","传真","ship"],
-  ["SHIPPER_INFO_EORI","EORI / 税号","ship"],
+  ["SHIPPER_INFO_EORI","EORI","ship"],
+  ["SHIPPER_INFO_TAX","税号","ship"],
   ["SHIPPER_INFO_AEO","AEO","ship"],
   ["SHIPPER_INFO_EMAIL","邮箱","ship"],
   ["CONSIGNEE_INFO","收货人整串","cons"],
@@ -38,7 +39,8 @@ const FIELDS = [
   ["CONSIGNEE_INFO_COUNTRY","国家","cons"],
   ["CONSIGNEE_INFO_TEL","电话","cons"],
   ["CONSIGNEE_INFO_FAX","传真","cons"],
-  ["CONSIGNEE_INFO_EORI","EORI / 税号","cons"],
+  ["CONSIGNEE_INFO_EORI","EORI","cons"],
+  ["CONSIGNEE_INFO_TAX","税号","cons"],
   ["CONSIGNEE_INFO_AEO","AEO","cons"],
   ["CONSIGNEE_INFO_EMAIL","邮箱","cons"]
 ];
@@ -171,15 +173,28 @@ function checks(k, l2, l3){
     if (a && !/^\+?\d{6,}$/.test(a.replace(/[\s().-]/g, ""))) out.push(["电话/传真不像号码本体", "warn"]);
   }
   if (k.endsWith("_EORI")){
-    /* 识别号只剩这一格：海关号与税号同住，一格可能用 " / " 装两个号，所以逐段判
-       （分隔符两侧必须带空格——CNPJ 自己就含斜杠）。
-       「混进了标签」那条从前要提示，是因为 L3 会替人摘掉；2026-10-23 起标签词连在号码前面
-       一起发（CNPJ00280273000137），它是正解，提示撤掉。位数按去掉标签词的本体数，
-       与后端 codes.clean_tax 同一条口径——那四个字母不是位数的组成部分。 */
+    /* 识别号两列拆分（2026-11-14）：EORI 格只放海关号（两位国家字母开头），税号住 _TAX。
+       一格可能用 " / " 装多个号，逐段判（分隔符两侧必须带空格——CNPJ 自己就含斜杠）。
+       位数按去掉标签词的本体数，与后端 codes.clean_tax 同一条口径。 */
     const segs = a.split(/\s+\/\s+/).filter(s => s);
     const core = s => s.replace(/^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]*/, "");
     if (segs.some(s => core(s).replace(/[^0-9A-Za-z]/g, "").length < 8))
       out.push(["识别号过短，疑似截断", "warn"]);
+  }
+  if (k.endsWith("_TAX")){
+    /* 税号格：同主体可能有多个号（" / " 拼）；中国主体的税号是 18 位 USCI。 */
+    const cCol = k.replace("_TAX", "_COUNTRY");
+    const country = (g(l2 && l2[cCol]) + " " + g(l3 && l3[cCol])).toUpperCase();
+    const isCn = country.split(/[^A-Z]+/).includes("CN") || country.includes("CHINA");
+    const segs = a.split(/\s+\/\s+/).filter(s => s);
+    const core = s => s.replace(/^(USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*(ID|NO)?|VAT\s*(NO|NR|ID|NUMBER)?|统一社会信用代码)[#.:：\s]*/, "");
+    for (const s of segs){
+      const c = core(s).replace(/[^0-9A-Za-z]/g, "");
+      if (!c) continue;
+      if (isCn && c.length !== 18)
+        out.push(["中国税号应为 18 位 USCI：" + s, "warn"]);
+      else if (c.length < 8) out.push(["税号过短，疑似截断：" + s, "warn"]);
+    }
   }
   if (k === "CREATE_TIME"){
     if (a && !/^\d{4}-\d{2}-\d{2}$/.test(a)) out.push(["签发日期要 YYYY-MM-DD", "warn"]);
@@ -342,7 +357,7 @@ function polishSent(t){
    上行永远是解析出来那份（人核对的就是它），下面那个框照旧是要发出去的值、照旧能手改。
    「优化」只在还没被人工改过、这张票还没交出去的时候出现——按下去就是人的一个决定，
    所以不替人多按一次、更不做整票一键（60 格一次改完，人就再也不看原值了）。 */
-function polishHtml(face, sent, po, edited, locked, rec){
+function polishHtml(face, sent, po, edited, locked, rec, k){
   const parts = [];
   if (L.polishShows(face, sent) && String(face).trim())
     parts.push(`<span class="pf">票面：${esc(face)}</span>`);   // 空着的那一格不必印一行「票面：」
@@ -352,11 +367,42 @@ function polishHtml(face, sent, po, edited, locked, rec){
       + `<span class="pw">${esc(po.why)}</span>`);
   else if (rec && String(sent) === String(rec.to))
     parts.push(`<span class="pw" title="规则号 ${esc(rec.rule)}（暂存时按它留痕）">已按规则优化</span>`);
+  parts.push(eoriBtnHtml(k, sent, locked));
   return parts.join("");
+}
+/* EORI 官网核验的手动按钮（2026-11-14 业主定案方案 1C）：只长在 EORI 列、有值且没锁的时候。
+   解析完后台已自动查过一遍（缓存），这里 force=true 强制重查；查不通=中性提示，不挂旗。 */
+function eoriBtnHtml(k, val, locked){
+  if (!k || !k.endsWith("_INFO_EORI") || locked || !String(val || "").trim()) return "";
+  return `<button class="btn sm g" type="button" data-eoricheck="${esc(k)}"`
+    + ` title="把这一格的 EORI 号拿到欧盟官网核验：有效才该填；查不通时不挂旗">查官网</button>`;
+}
+async function eoriCheckNow(getVal, k, stem, onFlags){
+  toast("正在查欧盟官网核验 EORI…（一个号约 6-10 秒）");
+  try{
+    const r = await fetch(BASE + "/eori/check", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({cells: {[k]: getVal()}, stem: stem || "", force: true})});
+    if (!r.ok){ toast("官网核验没查成（" + r.status + "）", "bad"); return; }
+    const j = await r.json();
+    const res = (j.results || {})[k] || {};
+    const nums = Object.keys(res);
+    if (!nums.length){ toast("这一格没有 EORI 形态的号可查（USCI/VAT 那类税号住税号格，不在核验范围）"); return; }
+    const bad = nums.filter(n => res[n] === "invalid");
+    const good = nums.filter(n => res[n] === "valid");
+    const un = j.unreachable || [];
+    if (bad.length) toast("官网核验不通过：" + bad.join("、") + " 无效——已挂红旗，需人工核票确认", "bad");
+    else if (un.length && !good.length)
+      toast("欧盟官网连不上（这台机器网络到不了），没法核验：没挂旗，回头再试");
+    else toast("官网核验通过：" + good.join("、") + " 是有效 EORI"
+               + (un.length ? "（另有 " + un.join("、") + " 没查到，未挂旗）" : ""), "ok");
+    if (j.flags && j.flags.length && onFlags) onFlags(j.flags);
+    render();
+  }catch(e){ toast("官网核验请求失败：" + e, "bad"); }
 }
 function polishInner(t, r){
   return polishHtml(txt(t.air, r.k), airVal(t, r.k), (t.polish || {})[r.k],
-                    r.k in t.airE, !!(t.locked || t.ro), (t.polishW || {})[r.k]);
+                    r.k in t.airE, !!(t.locked || t.ro), (t.polishW || {})[r.k], r.k);
 }
 async function polishScan(t){
   if (!t) return;
@@ -1904,14 +1950,14 @@ function renderMain(){
         <span class="sub">等一会儿点上面「重新解析」重试；连续失败就换个模型再看。</span></div>` : ""}
       <div class="tools"><span class="hint">${mro ? "这张主单已回传公司：只读查看；要修正请管理员点「解锁修正」（会留痕，刷新重新锁）。"
         : `改完直接点提交：红旗由服务端按当前值重算，未清的会退回来让逐条确认。
-        主单表没有件重/航路/税号列，<b>税号按公司口径统一填同主体的 EORI 列</b>；
-        同一主体有多个号（EORI 与 VAT 并存那种）就用 <b>/</b> 拼在同一格，两个都留。`}</span></div>
+        主单表没有件重/航路列，<b>EORI 只填海关号（两位国家字母开头）</b>，税号（USCI/CNPJ/VAT…）
+        填同主体的 <b>_TAX</b> 列；同一主体有多个号就用 <b>/</b> 拼在同一格，两个都留。`}</span></div>
       <table><thead><tr>
         <th class="kcol">字段${mro ? "" : gripColHtml()}</th><th class="g">公司 AMS 列${mro ? " · 只读" : " · 可改"}</th><th class="num scol">状态</th>
       </tr></thead><tbody>${rows}</tbody></table>
       <div class="ft bottom">
-        <button class="btn" id="mvStage" type="button"${mro ? " disabled" : ""} title="把这 36 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
-        ${ME && ME.role === "inputter" && !mro ? `<button class="btn" id="mvReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写这 36 列、不碰公司、不改任何值">我核过了，先不发</button>` : ""}
+        <button class="btn" id="mvStage" type="button"${mro ? " disabled" : ""} title="把这 39 列存到服务器给同事核对，同时在 j9 那边占个位（状态 0，还能反复改）；只有「提交主单回公司」才会真的发送">暂存到公司</button>
+        ${ME && ME.role === "inputter" && !mro ? `<button class="btn" id="mvReviewed" type="button" title="只记一笔「${esc(ME.name)} 看过了，先不发」：不写这 39 列、不碰公司、不改任何值">我核过了，先不发</button>` : ""}
         <button class="btn pri" id="mvSubmit"${mro ? " disabled" : ""}>${mro ? "已提交 · 只读" : "提交主单回公司"}</button>
         <span class="sp"></span>
         <span class="fhslot">${fhResetHtml()}</span>
@@ -1942,14 +1988,27 @@ function renderMain(){
       card._polishWired = true;
       card.addEventListener("click", e => {
         const b = e.target.closest("[data-polish]");
-        if (!b || !MV) return;
-        const k = b.dataset.polish, po = (MV.polish || {})[k];
-        if (!po || k in MV.edit || MV.locked || mvRO()) return;
-        mvWrite(k, po.to);
-        MV.polishW = MV.polishW || {};
-        MV.polishW[k] = {rule: po.rule, to: po.to};
-        render();
-        toast("「" + mvLabel(k) + "」已换成 " + po.to + " —— " + po.why + "（可还原；暂存时按规则号留痕）", "ok");
+        if (b && MV){
+          const k = b.dataset.polish, po = (MV.polish || {})[k];
+          if (!po || k in MV.edit || MV.locked || mvRO()) return;
+          mvWrite(k, po.to);
+          MV.polishW = MV.polishW || {};
+          MV.polishW[k] = {rule: po.rule, to: po.to};
+          render();
+          toast("「" + mvLabel(k) + "」已换成 " + po.to + " —— " + po.why + "（可还原；暂存时按规则号留痕）", "ok");
+          return;
+        }
+        const ec = e.target.closest("[data-eoricheck]");
+        if (ec && MV && !mvRO()){
+          const k = ec.dataset.eoricheck;
+          const ams = (MV.rec && MV.rec.ams) || {};
+          eoriCheckNow(() => (k in (MV.edit || {})) ? (MV.edit[k] || "") : (ams[k] || ""),
+                       k, "", flags => {
+            MV.qc = MV.qc || {};
+            const old = MV.qc.flags || [];
+            MV.qc.flags = old.concat(flags.filter(f => !old.includes(f)));
+          });
+        }
       });
     }
     /* 解析中那一档没有底部按钮（mvParsingEmpty），这几颗的接线必须先认存在再挂——
@@ -2157,12 +2216,20 @@ function wireMain(t){
       if (ub){ unlockNow(ub.dataset.unlock); return; }
       const b = e.target.closest("[data-ack],[data-unack],[data-ackf],[data-unackf]," +
                                 "[data-acke],[data-une],[data-restore],[data-fold],[data-gack]," +
-                                "[data-polish]");
+                                "[data-polish],[data-eoricheck]");
       if (!b) return;
       const t = current(); if (!t) return;
       const d = b.dataset;
       if (t.ro && d.fold === undefined) return;   // 只读时只剩折叠/展开这种看的分法
       let msg = "";
+      if (d.eoricheck !== undefined){
+        eoriCheckNow(() => reviewed(t)[d.eoricheck] || "", d.eoricheck, t.stem, flags => {
+          t.qc = t.qc || {};
+          const old = t.qc.flags || [];
+          t.qc.flags = old.concat(flags.filter(f => !old.includes(f)));
+        });
+        return;
+      }
       if (d.polish !== undefined){
         /* 「优化」＝走人工改值那一条链（setEdit → 已改 → 暂存逐列 diff → 提交重算红旗），
            只是额外记下"是哪条规则把值换成这个的"。按钮在每次重画的新节点上，
@@ -3218,7 +3285,7 @@ function mvPolishInner(k, v){
   const face = ams[k] == null ? "" : String(ams[k]);
   return polishHtml(face, v, ((MV && MV.polish) || {})[k],
                     k in ((MV && MV.edit) || {}), !!(MV && (MV.locked || mvRO())),
-                    ((MV && MV.polishW) || {})[k]);
+                    ((MV && MV.polishW) || {})[k], k);
 }
 function mvPolishSent(){
   const out = {}, w = (MV && MV.polishW) || {}, edit = (MV && MV.edit) || {};

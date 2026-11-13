@@ -170,14 +170,16 @@ def test_preview_is_idempotent_and_empty_cells_are_not_optimised():
 
 
 def test_master_chain_preview_follows_clean_ams_not_to_air():
-    """主单那 36 列不过 to_air：国家只转大写、不替公司转两字母码，电话不重排。
+    """主单那 39 列不过 to_air：收货人国家只转大写、不替公司转两字母码，电话不重排；
+    发货人国家按 2026-11-14 业主定案固定 CN（票面写什么都不影响发出值）。
 
-    这条是把两条链的口径差别钉住——分单已经在发 BR，主单还按 IT 给的现值发原文大写；
-    界面要是把两家用同一条规则显示，人就会看到"点了优化但发出去的不是那个值"。
+    这条是把两条链的口径差别钉住——界面要是把两家用同一条规则显示，人就会看到
+    "点了优化但发出去的不是那个值"。
     """
     fields = {"MAWB_NO": "999-95764373",
               "SHIPPER_INFO_COMP_NAME": "ACME LTDA",
               "SHIPPER_INFO_COUNTRY": "brazil",
+              "CONSIGNEE_INFO_COUNTRY": "brazil",
               "SHIPPER_INFO_POSTAL": "04546040",
               "SHIPPER_INFO_STATE": "SAO PAULO",
               "SHIPPER_INFO_TEL": "+55 (11) 3333-4444",
@@ -185,7 +187,9 @@ def test_master_chain_preview_follows_clean_ams_not_to_air():
               "NOTIFY_INFO_COUNTRY": "JAPAN",
               "NOTIFY_INFO_POSTAL": "1000001"}
     by = {r["field"]: r for r in polish.preview(fields, chain="master")}
-    assert by["SHIPPER_INFO_COUNTRY"]["to"] == "BRAZIL", "主单只转大写，alpha-2 那一步等 IT 定口径"
+    assert by["SHIPPER_INFO_COUNTRY"]["to"] == "CN" \
+        and by["SHIPPER_INFO_COUNTRY"]["rule"] == "AIR_CN", by.get("SHIPPER_INFO_COUNTRY")
+    assert by["CONSIGNEE_INFO_COUNTRY"]["to"] == "BRAZIL", "收货人国家只转大写，不替公司转码"
     assert by["SHIPPER_INFO_POSTAL"]["to"] == "04546-040"
     assert by["SHIPPER_INFO_STATE"]["to"] == "SP"
     assert by["NOTIFY_INFO_POSTAL"]["to"] == "100-0001", "通知人按通知人自己的国家，不跟着发货人"
@@ -193,11 +197,17 @@ def test_master_chain_preview_follows_clean_ams_not_to_air():
 
 
 def test_hawb_and_master_disagree_on_the_same_value_on_purpose():
-    fields = {"SHIPPER_INFO_COMP_NAME": "ACME LTDA", "SHIPPER_INFO_COUNTRY": "BRAZIL"}
+    """分单发货人国家 v1.35 起固定 CN，主单 2026-11-14 起同口径——发货人这一格两条链同源；
+    收货人国家仍是两条口径：分单转两字母码，主单只转大写（输入用小写，两个动作才都有得做）。"""
+    fields = {"SHIPPER_INFO_COMP_NAME": "ACME LTDA", "SHIPPER_INFO_COUNTRY": "brazil",
+              "CONSIGNEE_INFO_COMP_NAME": "BETA LTDA", "CONSIGNEE_INFO_COUNTRY": "brazil"}
     hawb = {r["field"]: r["to"] for r in polish.preview(dict(fields), chain="hawb")}
     master = {r["field"]: r["to"] for r in polish.preview(dict(fields), chain="master")}
-    assert hawb.get("SHIPPER_INFO_COUNTRY") != master.get("SHIPPER_INFO_COUNTRY"), \
-        "两条链同源就该在这里看得出不同：分单发 BR，主单发 BRAZIL"
+    assert hawb.get("SHIPPER_INFO_COUNTRY") == master.get("SHIPPER_INFO_COUNTRY") == "CN", \
+        "发货人国家两条链都固定 CN（分单 v1.35、主单 2026-11-14）"
+    assert hawb.get("CONSIGNEE_INFO_COUNTRY") == "BR" \
+        and master.get("CONSIGNEE_INFO_COUNTRY") == "BRAZIL", \
+        "收货人国家仍是两条口径：分单转两字母码，主单只转大写"
 
 
 # ── 提交归一那一档：说清"号是从地址里提进来的"与"号本来在这格里、只是被摘了标签" ──
@@ -205,18 +215,28 @@ def test_an_id_pulled_out_of_the_address_is_named_a_pull_not_a_clean():
     """这一格是空的、号印在地址里：那是「提进来」。说成"摘掉标签词"会把人引到错的一眼上。
 
     真票上这一档出现得最多（本地 44 份解析结果里 24 格都是它），所以话必须说对。
+    2026-11-14 两列拆分：VAT 这类税号从地址里提进来落的是 TAX 格，不再进 EORI。
     """
     rows = {r["field"]: r for r in polish.preview(
         {"CONSIGNEE_INFO_COMP_NAME": "ACME",
          "CONSIGNEE_INFO_COMP_ADDRESS": "VAT NO 38-4046995, NAIROBI, KENYA",
-         "CONSIGNEE_INFO_COUNTRY": "KENYA", "CONSIGNEE_INFO_EORI": ""})}
-    assert rows["CONSIGNEE_INFO_EORI"]["rule"] == "AIR_PULL"
-    assert "空" in rows["CONSIGNEE_INFO_EORI"]["why"], rows["CONSIGNEE_INFO_EORI"]["why"]
+         "CONSIGNEE_INFO_COUNTRY": "KENYA", "CONSIGNEE_INFO_EORI": "",
+         "CONSIGNEE_INFO_TAX": ""})}
+    assert rows["CONSIGNEE_INFO_TAX"]["rule"] == "AIR_PULL"
+    assert "空" in rows["CONSIGNEE_INFO_TAX"]["why"], rows["CONSIGNEE_INFO_TAX"]["why"]
+    rows = {r["field"]: r for r in polish.preview(
+        {"CONSIGNEE_INFO_COMP_NAME": "ACME", "CONSIGNEE_INFO_COUNTRY": "KE",
+         "CONSIGNEE_INFO_EORI": "VAT 38-4046995", "CONSIGNEE_INFO_TAX": ""})}
+    assert rows["CONSIGNEE_INFO_EORI"]["rule"] == "AIR_EORI", \
+        "EORI 格里住着税号形态的号：提交时挪去 TAX，EORI 这一行说的是分格"
+    assert rows["CONSIGNEE_INFO_TAX"]["rule"] == "AIR_PULL", \
+        "挪过去落进空的 TAX 格，说的也是「提进来」"
     rows = {r["field"]: r for r in polish.preview(
         {"CONSIGNEE_INFO_COMP_NAME": "ACME",
          "CONSIGNEE_INFO_COMP_ADDRESS": "OLE OLE, NAIROBI",
-         "CONSIGNEE_INFO_COUNTRY": "KE", "CONSIGNEE_INFO_EORI": "VAT 38-4046995"})}
-    assert rows["CONSIGNEE_INFO_EORI"]["rule"] == "AIR_EORI", "号本来在这格里：那才是清洗那一档"
+         "CONSIGNEE_INFO_COUNTRY": "KE", "CONSIGNEE_INFO_EORI": "",
+         "CONSIGNEE_INFO_TAX": "VAT 38-4046995"})}
+    assert rows["CONSIGNEE_INFO_TAX"]["rule"] == "AIR_TAX", "号本来在 TAX 格里：那才是清洗那一档"
 
 
 def test_preview_takes_the_country_from_the_same_party_only():

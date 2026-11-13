@@ -51,9 +51,9 @@ D. CREATE_TIME 是唯一允许的格式转换：把票面签发日期统一成"Y
 14. SLAC - 票面显式"SLAC n"填n，否则默认等于PIECES
 15. CREATE_TIME - 签发日期YYYY-MM-DD（见铁律D）
 16. SEND_STATUS - 固定"PENDING"
-17-27 发货人子字段：SHIPPER_INFO_COMP_NAME公司名 / SHIPPER_INFO_COMP_ADDRESS完整地址(逐字,含城市邮编国家) / SHIPPER_INFO_CITY城市(原文) / SHIPPER_INFO_COUNTRY国家(票面原样!) / SHIPPER_INFO_STATE州省 / SHIPPER_INFO_POSTAL邮编 / SHIPPER_INFO_TEL电话(原文) / SHIPPER_INFO_FAX传真(原文,与电话同号则填同值) / SHIPPER_INFO_EORI识别号(海关号与税号都填这里) / SHIPPER_INFO_AEO / SHIPPER_INFO_EMAIL
-28-38 收货人子字段（注意城市字段拼写为CITTY双T）：CONSIGNEE_INFO_COMP_NAME / CONSIGNEE_INFO_COMP_ADDRESS / CONSIGNEE_INFO_CITTY城市(原文!) / CONSIGNEE_INFO_COUNTRY国家(票面原样!) / CONSIGNEE_INFO_STATE / CONSIGNEE_INFO_POSTAL / CONSIGNEE_INFO_TEL / CONSIGNEE_INFO_FAX / CONSIGNEE_INFO_EORI识别号(常印页底customs区如SE5563646560) / CONSIGNEE_INFO_AEO / CONSIGNEE_INFO_EMAIL
-其他规则：纯数字账号(如6409583920)不是公司名也不是电话；**识别号只有一个格子 _EORI** —— 两位国家字母开头的海关号(EORI/EOI，如 SE5563646560、IT03268900267)、中国统一社会信用代码(USCI+18位，如 USCI: 911201117706402073)、巴西 CNPJ、墨西哥 RFC、GST/TAX ID/VAT NO 标签后的号码，**全部填进同主体的 _EORI 那一格**；同一主体票面上有两个号时用 " / " 拼在一格（例：IT03268900267 / 911201117706402073），一个号也不许丢、也不要重复写两遍；同一格内识别号紧跟电话时（如"TE +862258388999 USCI: 911201117706402073"），TEL 只取 +862258388999，号填进 _EORI，两个都要填；页底 customs 区的 VAT/EORI 若属于收货人，填收货人 _EORI；TEL/FAX 只填号码本身（+、区号、数字及其间的空格横线），票面同一格里号码后面紧跟的人名、CNPJ/VAT/税号、公司名一律不要带进 TEL/FAX 字段（如票面"TE +559240091129 Carla Os CNPJ: 00280273000137"，TEL 只取 +559240091129，CNPJ 那串填进 _EORI）；TEL栏无真实号码时留空；公司名取完整勿因换行截断；TEL/FAX共标签时两字段都填；子字段票面没有则填空串；PIECES/SLAC整数、WEIGHT浮点数。
+17-28 发货人子字段：SHIPPER_INFO_COMP_NAME公司名 / SHIPPER_INFO_COMP_ADDRESS完整地址(逐字,含城市邮编国家) / SHIPPER_INFO_CITY城市(原文) / SHIPPER_INFO_COUNTRY国家(票面原样!) / SHIPPER_INFO_STATE州省 / SHIPPER_INFO_POSTAL邮编 / SHIPPER_INFO_TEL电话(原文) / SHIPPER_INFO_FAX传真(原文,与电话同号则填同值) / SHIPPER_INFO_EORI海关号(只填两位国家字母开头的EORI，如 IT03268900267；没有就填空串) / SHIPPER_INFO_TAX税号(USCI/CNPJ/VAT/GST/TAX ID这类，照抄号码本身，多个用 " / " 拼) / SHIPPER_INFO_AEO / SHIPPER_INFO_EMAIL
+29-40 收货人子字段（注意城市字段拼写为CITTY双T）：CONSIGNEE_INFO_COMP_NAME / CONSIGNEE_INFO_COMP_ADDRESS / CONSIGNEE_INFO_CITTY城市(原文!) / CONSIGNEE_INFO_COUNTRY国家(票面原样!) / CONSIGNEE_INFO_STATE / CONSIGNEE_INFO_POSTAL / CONSIGNEE_INFO_TEL / CONSIGNEE_INFO_FAX / CONSIGNEE_INFO_EORI海关号(常印页底customs区，只填两位国家字母开头的EORI如 SE5563646560) / CONSIGNEE_INFO_TAX税号(同上口径) / CONSIGNEE_INFO_AEO / CONSIGNEE_INFO_EMAIL
+其他规则：纯数字账号(如6409583920)不是公司名也不是电话；**识别号分两格（2026-11-14）** —— EORI 格只填**两位国家字母开头的海关号**（EORI/EOI，如 SE5563646560、IT03268900267），USCI（统一社会信用代码）、巴西 CNPJ、墨西哥 RFC、GST/TAX ID、VAT NO 这些**税号一律填进同主体的 _TAX 格**（照抄号码本身，多个用 " / " 拼，如 "911201117706402073 / 300057757900003"），不要把标签词（VAT/CNPJ/USCI）一起抄进值里；同一格内识别号紧跟电话时（如"TE +862258388999 USCI: 911201117706402073"），TEL 只取 +862258388999，税号填进 _TAX，两个都要填；页底 customs 区的 VAT/EORI 若属于收货人，按上面口径分别填收货人 _EORI 或 _TAX；TEL/FAX 只填号码本身（+、区号、数字及其间的空格横线），票面同一格里号码后面紧跟的人名、CNPJ/VAT/税号、公司名一律不要带进 TEL/FAX 字段（如票面"TE +559240091129 Carla Os CNPJ: 00280273000137"，TEL 只取 +559240091129，CNPJ 那串填进 _TAX）；TEL栏无真实号码时留空；公司名取完整勿因换行截断；TEL/FAX共标签时两字段都填；子字段票面没有则填空串；PIECES/SLAC整数、WEIGHT浮点数。
 只输出JSON。"""
 
 PROMPT_TRANSCRIPT = "\n\n【逐字转录文本（行号: 内容；字段值必须来自这些行）】\n"
@@ -75,7 +75,7 @@ MASTER_PROMPT_HEAD = f"""你是航空主单(MAWB)资料提取员。下面给你�
 【主单口径 —— 与分单不同】
 ① 这是主单资料，不是分单票面：下面清单之外的东西一律不出现，尤其不要凭空造列、不要从发货人城市之类推算任何值。
 ② 通知人（NOTIFY 开头那些列）是独立一组，只能从 NOTIFY_INFO 那段资料里取；严禁把通知人并进收货人 CONSIGNEE_*，也严禁反过来。
-③ 主单表没有税号列，公司定案（2026-10-09）：**所有税号统一填进同主体那一组的 *_INFO_EORI**（发货人的号进 SHIPPER_INFO_EORI，收货人的进 CONSIGNEE_INFO_EORI，通知人的进 NOTIFY_INFO_EORI）。USCI、CNPJ、RFC、GST、VAT NO 都算税号，一律照抄号码本身填进那一格，不要留空。同一主体既有 EORI 又有别的税号时，两个都留，用 " / " 拼在同一格（例：IT03268900267 / 300057757900003）；不要把标签词（VAT/CNPJ/USCI）一起抄进值里。
+③ 识别号两列（2026-11-14）：**EORI 列只填海关号**（两位国家字母开头的 EORI/EOI，如 IT03268900267）；**税号统一填进同主体的 *_INFO_TAX**（发货人的进 SHIPPER_INFO_TAX，收货人的进 CONSIGNEE_INFO_TAX，通知人的进 NOTIFY_INFO_TAX）。USCI、CNPJ、RFC、GST、VAT NO 都算税号，一律照抄号码本身填进那一格，不要留空。同一主体既有 EORI 又有别的税号时，两个都留、各归各格；同一格里有多个税号时用 " / " 拼在一起（例：300057757900003 / 300057757900004）；不要把标签词（VAT/CNPJ/USCI）一起抄进值里。
 ④ 列名照公司现在的写法：通知人国家列叫 NOTIFY_INFO_COUNTRY，收货人城市叫 CONSIGNEE_INFO_CITY（单 T）——列名以清单为准，别自创也别改拼写。
 ⑤ GOODS_INFO_HSCODE 只填号码本身：资料里的「HS CODE:8526109」取 8526109，多个码用英文逗号连接；不要把 "HS CODE" 这类标签一起抄进值里。
 

@@ -32,35 +32,63 @@ def _alnum_upper(v) -> str:
     return re.sub(r"[^0-9A-Za-z]", "", str(v or "")).upper()
 
 
-# 主单 EORI 格的形状（分单侧的判据见下面 `_id_cell_warns`，那条更松）：两位国家字母开头的
-# 海关号/VAT、纯数字税号（11-18 位）、带点斜横线的巴西 CNPJ（去掉标点也是纯数字）。
-# 一格可能装多个号（" / " 拼），所以逐段判；位数本身不当判据——列面放宽后 15 位、17 位
-# 都可能是某个国家的正经税号，按位数拦会把对的挡掉。
-_EORI_SEG = re.compile(r"^(?:[A-Z]{2}[A-Z0-9]{6,15}|\d{11,18}|[0-9A-Z]{18})$")
+# 主单 EORI 格的形状（2026-11-14 两列拆分后收窄）：EORI 列只放海关号，两位国家字母开头。
+# 纯数字的 USCI/CNPJ/VAT 属于同主体 _INFO_TAX——落在 EORI 格里按形态异常报，好让人挪格。
+# 一格可能装多个号（" / " 拼），所以逐段判。分单侧两列共用 `_id_cell_warns`（不按形态拦）。
+_EORI_SEG = re.compile(r"^[A-Z]{2}[A-Z0-9]{6,15}$")
 _CN_VALUES = ("CN", "CHINA", "中国")
 
+def _id_cell_warns(col: str, value: str, country: str = "", tel: str = "",
+                   cn18: bool = False) -> list:
+    """识别号/税号两列共用的形态判据（2026-11-14 两列拆分后，L2 与 L3 各调两回）。
 
-def _id_cell_warns(col: str, value: str, country: str = "", tel: str = "") -> list:
-    """识别号格的形态判据，L2 与 L3 共用一份（列面并成一格之后，两处再各写一套必然走偏）。
-
-    只报这三条，各有各的来处：与电话同值=电话栏吞了税号（串栏）；CN 不是 18 位=多半被截断；
-    过短=不像是号。从前还有第四条「混进了标签」，2026-10-23 业主定案标签词要跟着号一起发出去
-    （`CNPJ00280273000137`），那条就正反颠倒了，撤掉。位数一律按去掉标签词的本体数。
-    这里**故意不按形状再拦一道**：这一格现在装的是各国自己的税号，英国 VAT 就常是
-    9 位纯数字，按形状拦会把对的挡掉（票面查无此号的毛病由保真回查管）。"""
+    只报这三条，各有各的来处：与电话同值=电话栏吞了号（串栏）；CN 不是 18 位=多半被截断
+    （**只判 TAX 列**——USCI 是税号，住 TAX）；过短=不像是号。EORI 列不再有 CN 18 位一条
+    （那一格现在只放海关号）。位数按去掉标签词的本体数；故意不按形状再拦——列面放宽后
+    各国税号长短不一，按形状拦会把对的挡掉（票面查无此号的毛病由保真回查管）。"""
     warns, cu, up_c = [], _alnum_upper(tel), str(country or "").strip().upper()
     for seg in split_ids(value):
-        # 比位数、比电话都按**号码本体**：2026-10-23 起发出值把票面标签词留在前面
+        # 比位数、比电话都按**号码本体**：发出值把票面标签词留在前面
         # （CNPJ00280273000137），那四个字母不是位数的一部分，也不是号本身的一部分。
         core = _alnum_upper(clean_tax(seg))
         if not core:
             continue
         if core == cu and cu:
-            warns.append(f"{col} 与电话同值，疑似电话栏吞了税号: {seg!r}")
-        elif up_c in _CN_VALUES and len(core) != 18:
+            warns.append(f"{col} 与电话同值，疑似电话栏吞了号码: {seg!r}")
+        elif cn18 and up_c in _CN_VALUES and len(core) != 18:
             warns.append(f"{col} 中国 USCI 应为 18 位，现 {len(core)} 位: {seg!r}")
         elif len(core) < 8:
             warns.append(f"{col} 形态异常(过短): {seg!r}")
+    return warns
+
+
+def _eori_cell_ok(value: str) -> bool:
+    """EORI 格逐段判（两链共用）：摘掉标签词看号码本体，必须像 EORI——两位国家字母开头、
+    6-15 位、至少含一个数字（纯字母散文 SEEINVOICE 恰好长得像 SE+8 位，不能放行）。
+    纯数字的 USCI/CNPJ/VAT、散文、短值都算不通过——对应那条红旗会教人把号挪去同主体
+    _INFO_TAX。一格多号（" / " 拼）拆开逐段过。"""
+    segs = [clean_tax(s) for s in split_ids(value)]
+    segs = [s for s in segs if s]
+    return bool(segs) and all(_EORI_SEG.match(s) and any(c.isdigit() for c in s)
+                              for s in segs)
+
+
+def _party_id_warns(d: dict, pfx: str) -> list:
+    """识别号/税号两列的旗（分单 L2/L3 与主单三主体共用同一份判据，2026-11-14 两列拆分）：
+    EORI 格只放海关号，不像 EORI 的报错位（好让人挪去 _INFO_TAX）；TAX 格沿用
+    与电话同值 / CN 不是 18 位 / 过短三条。"""
+    country = d.get(pfx + "_INFO_COUNTRY", "")
+    tel = d.get(pfx + "_INFO_TEL", "")
+    warns: list = []
+    k = pfx + "_INFO_EORI"
+    v = str(d.get(k, "") or "").strip()
+    if v and not _eori_cell_ok(v):
+        warns.append(f"{k} 形态异常: {v!r}（这一格只放 EORI 海关号：两位国家字母开头；"
+                     "多个号用 / 拼一格；USCI/CNPJ/VAT 这类税号放同主体的 _INFO_TAX 列）")
+    warns.extend(_id_cell_warns(k, d.get(k, ""), country, tel))
+    k = pfx + "_INFO_TAX"
+    if d.get(k):
+        warns.extend(_id_cell_warns(k, d.get(k), country, tel, cn18=True))
     return warns
 
 
@@ -135,11 +163,10 @@ def validate_raw(d: dict, sent: dict | None = None) -> list:
                                      f"疑似电话串边")
                     break
 
-    # 6) 识别号格（EORI，税号也在这一格里）形态粗检
+    # 6) 识别号/税号两列形态粗检（2026-11-14 两列拆分）：EORI 格只收海关号（错位要报），
+    #    CN 18 位判据挪到 TAX 列
     for pfx in ("SHIPPER", "CONSIGNEE"):
-        k = pfx + "_INFO_EORI"
-        warns.extend(_id_cell_warns(k, d.get(k, ""),
-                                    d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
+        warns.extend(_party_id_warns(d, pfx))
 
     # 7) 按国别的格式旗（邮编位数/识别号形状/国家认不出/HS 不足 6 位）——只报不改
     warns.extend(_country_warns(d, ("SHIPPER", "CONSIGNEE"), "GOODS_HS_CODE"))
@@ -159,11 +186,9 @@ def validate_air(d: dict) -> list:
     v = str(d.get("ORIGIN_NAME", "")).strip()
     if v and not re.fullmatch(r"[A-Z]{3}", v) and v not in set(ORIGIN_CITY_NAME.values()):
         warns.append(f"ORIGIN_NAME 未转成 IATA 三字码或城市全名: {v!r}（码表缺项，需补 CITY_IATA）")
-    # 识别号格：人工在审核台改过的那一格也归 L3 口径管（税号今天就在这一格里）
+    # 识别号/税号两列：人工在审核台改过的格子也归 L3 口径管
     for pfx in ("SHIPPER", "CONSIGNEE"):
-        k = pfx + "_INFO_EORI"
-        warns.extend(_id_cell_warns(k, d.get(k, ""),
-                                    d.get(pfx + "_INFO_COUNTRY", ""), d.get(pfx + "_INFO_TEL", "")))
+        warns.extend(_party_id_warns(d, pfx))
     # 国别旗同 L2：人改过或点过优化的值，按当前值重新判一遍
     warns.extend(_country_warns(d, ("SHIPPER", "CONSIGNEE"), "GOODS_HS_CODE"))
     return warns
@@ -173,21 +198,14 @@ def validate_air(d: dict) -> list:
 # 判据与分单同源（区号↔国家、EORI 形态、单号格式、限长），只是作用在公司列名上。
 _MASTER_PARTIES = ("SHIPPER", "CONSIGNEE", "NOTIFY")
 _MASTER_GROUPS = tuple((p + "_INFO_COUNTRY", p + "_INFO_TEL") for p in _MASTER_PARTIES)
-_MASTER_EORI = tuple(p + "_INFO_EORI" for p in _MASTER_PARTIES)
 _MAWB_HARD = re.compile(r"^\d{3}-\d{8}$")
-
-
-def _eori_cell_ok(value: str) -> bool:
-    segs = [re.sub(r"[^A-Z0-9]", "", s) for s in str(value).upper().split()]
-    segs = [s for s in segs if s]
-    return bool(segs) and all(_EORI_SEG.match(s) for s in segs)
 
 
 def validate_master(ams: dict, transcript: dict | None = None) -> list:
     """主单可提交列的红旗。
 
-    主单表**没有税号列**：按公司口径（2026-10-09 IT 定案）所有税号统一放同主体的 EORI 列，
-    一个主体有多个号（EORI 与 VAT 并存那种）就用 " / " 拼在同一格，两个都留。
+    识别号两列（2026-11-14 拆分）：EORI 列只放海关号（形态不对要报），税号列 *_INFO_TAX
+    沿用分单那条判据（与电话同值、CN 不是 18 位、过短），一格多号用 " / " 拼。
     限长 50 那九列是公司文档写死的 400 硬线，提前报出来比让人撞接口强。"""
     d = ams or {}
     warns: list[str] = []
@@ -227,11 +245,8 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
                         warns.append(f"{tfield} 电话区号 +{cc}({iso}) 与 {cfield} {country} 不一致，疑似电话串边")
                     break
 
-    for k in _MASTER_EORI:
-        v = str(d.get(k, "") or "").strip()
-        if v and not _eori_cell_ok(v):
-            warns.append(f"{k} 形态异常: {v!r}（这一格放税号：两位国家字母开头的号码、"
-                         "纯数字税号或 18 位 USCI；多个号用 / 隔开，别写标签词或整句话）")
+    for p in _MASTER_PARTIES:
+        warns.extend(_party_id_warns(d, p))
 
     # 国别旗与分单同一张表、同一处判据；主单多一个通知人
     warns.extend(_country_warns(d, _MASTER_PARTIES, "GOODS_INFO_HSCODE"))
@@ -243,9 +258,13 @@ def validate_master(ams: dict, transcript: dict | None = None) -> list:
         seen = set()
         for m in TAX_LABEL_RE.finditer(text):
             label, num = str(m.group(1)), clean_tax(m.group(2))
-            if label.upper().startswith("EORI") or not num or num in seen or num in have:
+            if not num or num in seen or num in have:
                 continue
             seen.add(num)
-            warns.append(f"资料里有税号 {label} {num}，主单表没有税号列：填进同主体的 EORI 列，"
-                         "那一格已有号就用 / 拼在一起（两个都留）")
+            if label.upper().startswith(("EORI", "EOI")):
+                warns.append(f"资料里有 EORI 号 {label} {num}，填进同主体的 _INFO_EORI 列"
+                             "（已有号就用 / 拼在一起，两个都留）")
+            else:
+                warns.append(f"资料里有税号 {label} {num}，填进同主体的 _INFO_TAX 列"
+                             "（已有号就用 / 拼在一起，两个都留）")
     return warns

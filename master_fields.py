@@ -1,20 +1,22 @@
 # -*- coding: utf-8 -*-
-"""主单（MAWB）字段面：公司 `AMS_RECORD` 的 36 列，也就是 `POST /api/v1/j9/mawb2/` 的提交体。
+"""主单（MAWB）字段面：公司 `AMS_RECORD` 的 39 列，也就是 `POST /api/v1/j9/mawb2/` 的提交体。
 
 2026-09-28 用户定案「主单是主单，分单是分单」：这里一律用**公司列名原样**，不套我方分单
-分单那套列面不是这里的契约——通知人国家列叫 `NOTIFY_INFO_COUNTRY`（IT 2026-09-29 把库里多一个 E 的旧拼写
+那套列面。通知人国家列叫 `NOTIFY_INFO_COUNTRY`（IT 2026-09-29 把库里多一个 E 的旧拼写
 `NOTIFYE_INFO_COUNTRY` 改掉了，接口以新名为准；旧名从此算未识别字段），收货人城市
-是单 T 的 `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只在分单表）。主单表没有货名列、没有税号列、
+是单 T 的 `CONSIGNEE_INFO_CITY`（双 T `CITTY` 只在分单表）。主单表没有货名列、
 没有件重/航路/签发日期，所以外层 7 字段（含 GOODS_NAME/GOODS_DESC）只能当只读参考。
+2026-11-14 IT 加了税号列：三主体的 `*_INFO_TAX`（36 → 39 列）——EORI 只放海关号，
+USCI/CNPJ/VAT 这些税号放同主体 `_TAX`（2026-11-14 业主定案）。
 """
 import re
 
 import codes
 
-# 三组当事人各 11 列，写法一致
+# 三组当事人各 12 列，写法一致
 _PARTY_SUFFIXES = (("COMP_NAME", "公司名"), ("COMP_ADDRESS", "地址"), ("CITY", "城市"),
                    ("COUNTRY", "国家"), ("STATE", "州省"), ("POSTAL", "邮编"),
-                   ("TEL", "电话"), ("FAX", "传真"), ("EORI", "EORI"),
+                   ("TEL", "电话"), ("FAX", "传真"), ("EORI", "EORI"), ("TAX", "税号"),
                    ("AEO", "AEO"), ("EMAIL", "邮箱"))
 
 
@@ -140,24 +142,39 @@ def _int_or_none(v):
 
 
 def _hs_only(v) -> str:
-    """HS 列只留号码：模型常把「HS CODE:8526109 HS CODE:8412210」整串抄进来（逐字抄的，
-    保真回查还查不出来），公司要的是号码本身，多个用逗号连。一个数字都没有就原样留着，
-    交给红旗报——硬猜成空等于把问题藏起来。"""
-    runs = re.findall(r"\d{4,}", str(v or ""))
+    """HS 列只留号码且**每段只保留前 6 位**（2026-11-14 业主："HS 号只用保留前 6 位即可"）：
+    模型常把「HS CODE:8526109 HS CODE:8412210」整串抄进来（分段符五花八门，逗号/空格/标签都有），
+    所以全串找 4 位以上数字段、每段只留前 6 位；一个数字都没有就原样留着，交给红旗报——
+    硬猜成空等于把问题藏起来。重复喂原样（幂等）。"""
+    runs = [r[:6] for r in re.findall(r"\d{4,}", str(v or ""))]
     return ",".join(runs) if runs else _txt(v)
+
+
+def _id_join(v) -> str:
+    """识别号列（EORI/TAX）逐段去空格转大写，**保留多号之间的 " / " 分隔符**。
+    2026-11-13 探针与实测抓到的旧毛病：replace(" ","") 会把 'A / B' 黏成 'A/B'，
+    而主单校验按空格分段，黏成一整段就报形态异常。幂等：拼好的串喂回来原样。"""
+    parts = []
+    for part in codes.split_ids(v):
+        p = re.sub(r"\s+", "", part).upper()
+        if p:
+            parts.append(p)
+    return " / ".join(parts)
 
 
 def clean_ams(ams: dict) -> dict:
     """L2 原文口径 → 可提交口径：只动格式不动内容（与分单 to_air 同一条铁律）。
 
-    只清洗调用方**给到**的列（不在主单 36 列里的键一律丢掉）：mawb2 是整表写回，
+    只清洗调用方**给到**的列（不在主单 39 列里的键一律丢掉）：mawb2 是整表写回，
     "这次没碰"必须是缺键（由 company_api 用库里的现值补齐），"人工清空"才是显式 null。
-    一视同仁地补齐 36 列会把前者误判成后者，等于用一次提交把公司库里没动的列抹成 NULL。"""
+    一视同仁地补齐 39 列会把前者误判成后者，等于用一次提交把公司库里没动的列抹成 NULL。"""
     src = ams or {}
     out: dict = {}
     for col in (c for c in MASTER_COLS if c in src):
         v = src.get(col)
-        if v is None or (isinstance(v, str) and not v.strip()):
+        if col == "SHIPPER_INFO_COUNTRY":
+            out[col] = "CN"     # 2026-11-14 业主：发货人国家固定（与分单 v1.35 同一口径）
+        elif v is None or (isinstance(v, str) and not v.strip()):
             out[col] = None
         elif col == "MAWB_NO":
             out[col] = norm_mawb_hyphen(v)
@@ -165,25 +182,29 @@ def clean_ams(ams: dict) -> dict:
             out[col] = _int_or_none(v)
         elif col == "GOODS_INFO_HSCODE":
             out[col] = _hs_only(v)
-        elif col.endswith(("_EORI", "_AEO")):
+        elif col.endswith(("_TEL", "_FAX")):
+            out[col] = codes.phone_cell(v)    # 2026-11-14 业主：电话/传真只留字母数字（与分单同一函数）
+        elif col.endswith(("_EORI", "_TAX")):
+            out[col] = _id_join(v)
+        elif col.endswith("_AEO"):
             out[col] = _txt(v).replace(" ", "").upper()
         elif col.endswith("_COUNTRY"):
             out[col] = _txt(v).upper()
         else:
             out[col] = _txt(v)
     # 2026-10-27 业主定案：主单收发货人+通知人的子列去符号（与分单同一个 codes.sym_to_space：
-    # 字母/数字/空格/中文保留，其余→空格并折叠）。两个例外：*_INFO_POSTAL——收货人邮编的
-    # 官方横杠（04546-040）保留；*_INFO_EORI——上面的分支已经去空格连写，再过一遍会把
-    # 多号之间的分隔符黏掉。空值照旧进 None，不变成空格串；整串三列是外层资料块不经手。
+    # 字母/数字/空格/中文保留，其余→空格并折叠）。三个例外：*_INFO_POSTAL——收货人邮编的
+    # 官方横杠（04546-040）保留；*_INFO_EORI / *_INFO_TAX——上面的分支已逐段去空格，
+    # 再过一遍会把多号之间的分隔符黏掉。空值照旧进 None，不变成空格串；整串三列是外层资料块不经手。
     for col in out:
         if col.startswith(("SHIPPER_", "CONSIGNEE_", "NOTIFY_")) \
-                and not col.endswith(("_INFO_POSTAL", "_INFO_EORI")) \
+                and not col.endswith(("_INFO_POSTAL", "_INFO_EORI", "_INFO_TAX")) \
                 and isinstance(out[col], str) and out[col]:
             out[col] = codes.sym_to_space(out[col])
     return out
 
 
 def submit_body(ams: dict) -> dict:
-    """提交体 = 恰好那 36 列，多一列都没有（服务端三列不发，外层资料块不发）。"""
+    """提交体 = 恰好那 39 列，多一列都没有（服务端三列不发，外层资料块不发）。"""
     src = ams or {}
     return {col: src.get(col) for col in MASTER_COLS}

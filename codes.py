@@ -21,18 +21,18 @@ TARGET_KEYS = ("MAWB_NO", "HAWB_NO", "SHIPPER_INFO", "CONSIGNEE_INFO", "ORIGIN_N
 TARGET_KEYS_OUT = TARGET_KEYS[:2] + ("SHIPPER_INFO", "CONSIGNEE_INFO") + TARGET_KEYS[4:16] + \
     tuple(p + s for p in ("SHIPPER_INFO_", "CONSIGNEE_INFO_")
           for s in ("COMP_NAME", "COMP_ADDRESS", "CITY" if p == "SHIPPER_INFO_" else "CITTY",
-                    "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "AEO", "EMAIL"))
+                    "COUNTRY", "STATE", "POSTAL", "TEL", "FAX", "EORI", "TAX", "AEO", "EMAIL"))
 
 # 票面税号标签 -> 号码。只认带标签的，绝不拿裸数字猜（18 位纯数字也可能是货值/账号）。
 # EORI 是 2026-09-26 八票逐格对台实测补的：欧票把海关号印成 `EORI IT03268900267`，
 # 标签表漏了它导致五张欧票的 TAX 反向核查全哑。
 TAX_LABEL_RE = re.compile(
     r"\b(USCI|统一社会信用代码|CNPJ|CPF|R\.?\s?F\.?\s?C\.?|GST\s*IN|GST|TAX\s*ID|TAX\s*NO"
-    r"|EORI\s*(?:NO|NR|NUMBER)?|VAT\s*(?:NO|NR|ID|NUMBER)?)\b[^0-9A-Za-z]{0,4}([A-Z]{0,3}[0-9][0-9A-Za-z./\-]{5,})",
+    r"|EORI\s*(?:NO|NR|NUMBER)?|EOI\s*(?:NO|NR|NUMBER)?|VAT\s*(?:NO|NR|ID|NUMBER)?)\b[^0-9A-Za-z]{0,4}([A-Z]{0,3}[0-9][0-9A-Za-z./\-]{5,})",
     re.I)
 
 TAX_PREFIX_RE = re.compile(r"^(?:USCI|CNPJ|CPF|RFC|GST\s*IN|GST|TAX\s*ID|TAX\s*NO|TAX|EORI\s*(?:NO|NR|NUMBER)?"
-                         r"|VAT\s*(?:NO|NR|NUMBER|ID)|VAT|统一社会信用代码)[#.:：\s]*", re.I)
+                         r"|EOI\s*(?:NO|NR|NUMBER)?|VAT\s*(?:NO|NR|NUMBER|ID)|VAT|统一社会信用代码)[#.:：\s]*", re.I)
 
 def clean_tax(v) -> str:
     """税号归一：去空白、转大写、摘掉模型连标签一起抄进来的前缀（票面 'VAT#769638661' → 号码本身）。
@@ -106,6 +106,59 @@ def merge_ids(*vals) -> str:
 def split_ids(v) -> list:
     """拆开一格里的多个号（形态检查要逐段判）。"""
     return [x.strip() for x in _ID_SPLIT.split(str(v or "").strip()) if x.strip()]
+
+
+def classify_id(part):
+    """一个号分两列（2026-11-14 业主定案）：返回 (kind, 发出值) 或 None（没数字不算号）。
+
+    EORI 列只收"两位国家字母开头的海关号"（SE5563646560/IT03268900267）与带 EORI/EOI
+    标签的号；USCI/CNPJ/CPF/RFC/GST/TAX ID/VAT 标签的号、以及裸数字（不匹配 EORI
+    形态的多半是税号）一律归 `_TAX`。谁说了算：EORI/EOI 标签优先，其次看**号码本体**
+    （摘掉标签后是否匹配 EORI 形态——欧票常把海关号印成 "VAT IT03268900267"，标签是
+    VAT、号是海关号）；都不像才是税号。发出值两列同规：标签词连写在前面、号内去标点
+    （id_cell），反复喂原样。"""
+    s = re.sub(r"\s+", " ", str(part or "").strip().upper())
+    if not s:
+        return None
+    m = TAX_PREFIX_RE.match(s)
+    head = re.sub(r"[^A-Z一-鿿]", "", m.group(0)) if m else ""
+    label = _ID_LABEL_CN.get(head, head) if m else ""
+    body = re.sub(r"[^0-9A-Z]", "", s[m.end():] if m else s)
+    if not re.search(r"\d", body):
+        return None
+    val = id_cell(s)
+    if not val:
+        return None
+    if label.upper().startswith(("EORI", "EOI")) \
+            or re.fullmatch(r"[A-Z]{2}[A-Z0-9]{6,15}", body):
+        return "eori", val
+    return "tax", val
+
+
+def split_kind_ids(v):
+    """整格按 " / " 拆段并分类，返回 (EORI 列表, 税号列表)；去重归 merge_ids。"""
+    e, t = [], []
+    for part in split_ids(v):
+        got = classify_id(part)
+        if got:
+            (e if got[0] == "eori" else t).append(got[1])
+    return e, t
+
+
+def hs6(v):
+    """HS 码发出值（2026-11-14 业主："只用保留前 6 位"）：全串找 4 位以上数字段（模型连抄/带
+    标签抄时分段符五花八门，逗号、空格、标签都有），每段只留前 6 位逗号拼回；不足 6 位原样
+    保留（由「不足 6 位」红旗兜着）。重复喂原样（幂等）。"""
+    runs = [r[:6] for r in re.findall(r"\d{4,}", str(v or ""))]
+    return ",".join(runs)
+
+
+def phone_cell(v):
+    """电话发出值（2026-11-14 业主："只用保留数字和字母，其他都不要"）：先按 / ; 分隔取
+    第一个号码（直线/手机两号不黏），再去掉一切非字母数字字符——v1.34"票面印了 + 就留着"
+    那条口径到此反转，+ 也不再保留。"""
+    first = re.split(r"\s*[/;]\s*", str(v or "").strip())[0]
+    return re.sub(r"[^0-9A-Za-z]", "", first)
 
 
 # ------- 第二遍(航空运输要求)规范化参考表: 国家两位码 / 城市 IATA 三字码 ------

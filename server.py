@@ -57,10 +57,12 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.gzip import GZipMiddleware
 
 import auth
+import autofill
 import board
 import company_api
 import config
 import desk_queue
+import eori_check
 import fieldspec
 import jobs
 import master_fields
@@ -384,11 +386,48 @@ def company_mawb(background: BackgroundTasks,
 
 @app.get("/master/{mawb}")
 def master_result(mawb: str, _: None = Depends(require_web)):
-    """主单解析记录（state / 36 列可编辑面 / 红旗与保真 / L1 原文 / 列名中文分组表）。没解析过就 404。"""
+    """主单解析记录（state / 39 列可编辑面 / 红旗与保真 / L1 原文 / 列名中文分组表）。没解析过就 404。"""
     rec = master_pipeline.public(master_pipeline.read_master(mawb))
     if rec is None:
         raise HTTPException(404, "这条主单还没有解析结果（先在审核台检索一次主单号）")
+    # EORI 官网核验旗（2026-11-14 方案 1C）：后台线程只暖缓存，读取时并进旗清单——
+    # 不回写主单记录，跟人工暂存零竞争；旗面按"模型值 + 人工改过的那几格"现值判，
+    # 缓存里的 invalid 翻案后旗也会随读取消失。
+    qc = rec.get("qc")
+    if isinstance(qc, dict):
+        face = dict(rec.get("ams") or {})
+        for k, d in (rec.get("edits") or {}).items():
+            if isinstance(d, dict) and "to" in d:
+                face[k] = d["to"]
+        old = list(qc.get("flags") or [])
+        extra = [f for f in eori_check.cached_flags(face) if f not in old]
+        if extra:
+            qc["flags"] = old + extra
+            qc["needs_review"] = True
     return rec
+
+
+class EoriCheckBody(BaseModel):
+    cells: dict = {}       # {列名: 现值}：核对区 EORI 列的当前值（主单/分单同一口）
+    stem: str = ""         # 分单票号：给了且查出 invalid，就把旗并进那票的质检记录
+    force: bool = False    # 手动重查=绕过缓存强制刷新
+
+
+@app.post("/eori/check")
+def eori_check_route(body: EoriCheckBody, user: dict = Depends(current_user)):
+    """EORI 欧盟官网核验（2026-11-14 业主定案，方案 1C）的手动入口：核对区 EORI 格的「查官网」。
+    解析后自动的那一遍在 jobs 后台线程里。返回每格每号的状态与旗面；查不通=中性：不挂旗，
+    只如实回 unreachable（VM 到欧盟不通，熔断后连请求都不发）。"""
+    cells = body.cells if isinstance(body.cells, dict) else {}
+    res = eori_check.check_cells(cells, force=bool(body.force))
+    flags = eori_check.cached_flags(cells)
+    stem = re.sub(r"[^0-9a-zA-Z_-]", "", str(body.stem or ""))
+    if stem and flags:
+        eori_check.append_qc_flags(stem, flags)
+    unreachable = sorted({n for col in res.values() for n, st in col.items() if st == "unreachable"})
+    LOG.info("EORI 官网核验 who=%s(%s) force=%s unreachable=%s",
+             user.get("name"), user.get("role"), body.force, unreachable)
+    return {"results": res, "flags": flags, "unreachable": unreachable}
 
 
 _READONLY_SUBMITTED = ("这张票已经提交发送：提交后只读，只能查看。"
@@ -580,7 +619,11 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
             raise HTTPException(400, f"主单号/分单号不能为空（补齐后才能回传公司并进索引）：{stem or tk.get('filename', '')}")
         raw, transcript = _l2_l1(stem, tk)
         acked = [str(a) for a in (tk.get("acked_flags") if isinstance(tk.get("acked_flags"), list) else [])]
+        # 主单兜底补号（方案 A）：发送值以"人写的值 + 还空着的格从主单补"为准——前端没带补入值
+        # （旧页面/没刷新）也不至于把号漏发。补入旗随后按合并后的值判：人改过的格不再催。
+        rec = autofill.merge(stem, rec)
         left = [f for f in jobs.recompute_flags(raw, rec, transcript) if f not in acked]
+        left += [f for f in autofill.flags_for(stem, rec) if f not in acked]
         if left:
             raise HTTPException(400, {"message": f"{hawb} 还有未清的红旗：逐条确认后才能回传公司",
                                       "flags": left})
@@ -619,9 +662,20 @@ def submit(body: SubmitBody, user: dict = Depends(current_user)):
     if blocked:
         names = "、".join(list(blocked.values())[:2])
         more = "" if len(blocked) <= 2 else f" 等 {len(blocked)} 条"
+        # 两种"没发"要分开说（2026-11-13 探针定案）：任务主表连行都没有的，我方提交主单
+        # 也开不出位（只能公司开单），得先让公司开；有行没发的才是"先把主单交了"。
+        no_row = []
+        for mk, mw in blocked.items():
+            if company_api.master_exists(mw)[0] == "no":
+                no_row.append(mw)
+        if no_row:
+            bad = "、".join(no_row[:2]) + ("" if len(no_row) <= 2 else f" 等 {len(no_row)} 条")
+            msg = (f"公司还没开主单 {bad}（任务主表没有这一行，只能由公司开单生成）——"
+                   "暂存本机可以，提交发送过不去")
+        else:
+            msg = f"主单 {names}{more} 还没提交发送：先把主单交了，再回来提交它名下的分单"
         raise HTTPException(400, {
-            "message": f"主单 {names}{more} 还没提交发送：先把主单交了，再回来提交它名下的分单",
-            "ack": "master_first", "mawb": next(iter(blocked.values()))})
+            "message": msg, "ack": "master_first", "mawb": next(iter(blocked.values()))})
     results, codes = [], []
     specs, done = [], []      # 台账一批一次写：先收齐回执，循环结束后统一落账
     for tk, stem, mawb, hawb, rec, acked, st, reviewed, acked_empty, skipped_empty, self_submit in passed:
@@ -682,15 +736,29 @@ class StageBody(BaseModel):
     tickets: list = []
 
 
-def _company_stage(saved: dict, user: dict) -> dict:
+def _company_stage(saved: dict, user: dict, exists_cache: dict | None = None) -> dict:
     """暂存顺手在公司那边占个位（`hawb2`，落 `SEND_STATUS=0`，可反复改、外围不取）。
 
-    两个前提缺一不可：主/分单号都在（公司按号定位那一行，缺号连行都找不到），
-    以及模式是 live（mock 下不发——回归与端到端验证都靠这条）。
-    发不成功**不回滚本机那份**：同事照样能接着复核，只是公司那边还没占上位，
+    三个前提缺一不可：主/分单号都在（公司按号定位那一行，缺号连行都找不到）、模式是 live
+    （mock 下不发——回归与端到端验证都靠这条）、以及**公司任务主表里有这条主单的行**
+    （2026-11-13 探针实测：行只能由公司开单生成，我方造不出；指过去就是公司 400）。
+    「没有行」不算失败：本机那份照样存好给同事复核，公司那边等公司开单后再暂存一次即可，
     所以把原因原样带回去让人看得见，而不是让整次暂存报错。"""
     if not (saved.get("mawb") and saved.get("hawb")):
         return {"ok": False, "skipped": "没解析出主单号或分单号，公司那边占不了位"}
+    mk = store.norm_no(saved["mawb"])
+    if exists_cache is None:
+        exists_cache = {}
+    if mk not in exists_cache:
+        exists_cache[mk] = company_api.master_exists(saved["mawb"])
+    verdict, why = exists_cache[mk]
+    if verdict == "no":
+        LOG.info("公司任务主表没有 %s 的行，暂存只存本机 stem=%s who=%s",
+                 saved["mawb"], saved["stem"], user.get("name"))
+        return {"ok": False, "skipped": "公司还没开这条主单（任务主表没有这一行，只能由公司开单生成）"
+                                       "——暂存已存本机，公司开单后再暂存一次即可占位"}
+    if verdict == "unknown":
+        LOG.info("读不到公司主单行（%s），按你说的照发 stem=%s", why, saved["stem"])
     try:
         res = company_api.stage_order({"mawb": saved["mawb"], "hawb": saved["hawb"],
                                        "stem": saved["stem"], "air": saved["air_final"]})
@@ -1350,10 +1418,13 @@ def ticket_result(stem: str, _: None = Depends(require_web)):
     led = store.ledger().get(name)
     sent = (led or {}).get("air_sent")
     now = jobs.recompute_flags(raw, sent, None) if isinstance(sent, dict) and sent else None
+    # 主单兜底补号（2026-11-14 方案 A）：台账里的补入值并进返回的 air（只填还空着的格），
+    # 原始那份盘上文件不动——重检重算的纯函数结果不被外部值污染；auto_fill 原样带回给前端。
+    air = autofill.merge(name, json.loads(air_p.read_text(encoding="utf-8")))
     return {"stem": name, "filename": qc.get("source_name") or name,
             "channel": qc.get("channel"), "elapsed": qc.get("elapsed"),
             "raw": raw,
-            "air": json.loads(air_p.read_text(encoding="utf-8")),
+            "air": air, "auto_fill": autofill.load(name),
             "qc": qc, "submitted": led,
             "flags_now": now, "flags_now_at": (led or {}).get("submitted_at") or ""}
 

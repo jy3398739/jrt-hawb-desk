@@ -289,6 +289,34 @@ def test_tickets_under_one_master_ask_the_company_once_not_once_per_ticket():
         assert len(calls) == 1, f"五张同主单的票把公司问了 {len(calls)} 遍：一次提交问一遍就够"
 
 
+def test_blocked_submit_names_the_missing_master_row_when_it_is():
+    """挡下的话要分清两种"没发"（2026-11-13 探针定案）：任务主表连行都没有的主单，
+    我方提交主单也开不出位（行只能由公司开单生成）——话必须指向公司开单，
+    别让人去找一颗点不动的「提交主单」按钮；有行没发的才是"先把主单交了"。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_sub_gate_"))
+    real = company_api.master_exists
+    try:
+        with _desk_dirs(tmp, master_sent=False):
+            company_api.master_exists = lambda m: ("no", "")
+            client = _logged_client(tmp)
+            r = client.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r.status_code == 400 and r.json()["detail"]["ack"] == "master_first", r.text
+            assert "任务主表没有这一行" in r.json()["detail"]["message"], r.json()["detail"]
+            assert "只能由公司开单生成" in r.json()["detail"]["message"]
+    finally:
+        company_api.master_exists = real
+    tmp2 = Path(tempfile.mkdtemp(prefix="hawb_sub_gate_"))
+    try:
+        with _desk_dirs(tmp2, master_sent=False):
+            company_api.master_exists = lambda m: ("yes", "")
+            client = _logged_client(tmp2)
+            r2 = client.post("/submit", json={"tickets": [_clean_ticket()]})
+            assert r2.status_code == 400 and "还没提交发送" in r2.json()["detail"]["message"], \
+                "有行没发的还是原来那句话"
+    finally:
+        company_api.master_exists = real
+
+
 def test_submit_rejects_missing_mawb_or_hawb():
     old_ledger = config.SUBMIT_LEDGER
     tmp = Path(tempfile.mkdtemp(prefix="hawb_submit_"))

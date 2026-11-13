@@ -140,14 +140,16 @@ def _alnum0(v) -> str:
 
 def _pull_tax(addr: str, tax: str, taken: set) -> tuple:
     """地址串里嵌着带标签的税号（USCI/CNPJ/VAT NO…）时摘出来单独成列。
-    只认标签，裸数字一律不动；号码已在电话/邮编等列里出现过则不再重复建列。"""
+    只认标签，裸数字一律不动；号码已在电话/邮编等列里出现过则不再重复建列。
+    落哪一列由标签决定（2026-11-14 两列拆分）：EORI/EOI 标签 → _EORI，其余税号标签 → _TAX。"""
     m = codes.TAX_LABEL_RE.search(addr or "")
     if not m:
-        return addr, tax
+        return addr, "", ""
     cleaned = re.sub(r"\s{2,}", " ", addr[:m.start()] + " " + addr[m.end():]).strip(" ,;/")
     val = codes.id_cell(m.group(0))
+    kind = "eori" if m.group(1).upper().startswith(("EORI", "EOI")) else "tax"
     # 去重按号码本体比：发出值现在带标签词，拿整串比会漏判（'CNPJ559240091129' 对不上电话那格）
-    return cleaned, tax or ("" if _alnum0(codes.clean_tax(val)) in taken else val)
+    return cleaned, ("" if _alnum0(codes.clean_tax(val)) in taken else val), kind
 
 
 def to_air(d: dict) -> dict:
@@ -163,6 +165,8 @@ def to_air(d: dict) -> dict:
         out[k] = codes.iata_place(d.get(k, ""))
     # L3 航空口径：主单号 3位-8位连写（L2 可能照抄票面带 4-4 空格）
     out["MAWB_NO"] = codes.fmt_mawb(d.get("MAWB_NO", ""))
+    # HS 码只保留前 6 位（2026-11-14 业主定案；多段逗号保留，逐段截）
+    out["GOODS_HS_CODE"] = codes.hs6(d.get("GOODS_HS_CODE", ""))
 
     for pfx in ("SHIPPER", "CONSIGNEE"):
         name = d.get(pfx + "_INFO_COMP_NAME", "")
@@ -176,22 +180,26 @@ def to_air(d: dict) -> dict:
         # 地址剥离/解析用国家全称（地址尾部两字母码已被 _fix_addr_country 换成全称）
         country_full0 = country_full(country0) or str(country0 or "")
 
-        # 识别号只有一个格子：EORI。海关号（SE5563646560）、中国 USCI、巴西 CNPJ、VAT/GST/TAX ID
-        # 全往这里并（2026-10-10 定案，`*_INFO_TAX_ID` 两列已删）。模型三种毛病都要兜住：
-        # 连着标签一起抄（"VAT#769638661"）、把号留在地址或整串里、同一主体给两个号。
-        # 同一个号不许在同一格里出现两遍——所以已知的 EORI 段也算 taken，地址里再出现只清列不重拼。
-        ids = [codes.id_cell(x) for x in codes.split_ids(eori0)]
+        # 识别号两列（2026-11-14 业主定案）：EORI 只放海关号（两位国家字母开头），USCI/CNPJ/
+        # VAT/GST/TAX ID 这些税号放同主体 `_TAX`（IT 已加列）；老票混在一格的按标签/形态拆开归位。
+        # 同一个号不许在同一格里出现两遍——所以已知的号段都算 taken，地址里再出现只清列不重拼。
+        tax0 = d.get(pfx + "_INFO_TAX", "")
+        e_ids, t_ids = codes.split_kind_ids(eori0)
+        t_ids += codes.split_kind_ids(tax0)[1]
         legacy = codes.id_cell(d.get(pfx + "_INFO_TAX_ID", ""))   # 老 raw 重算时还带着这一列
         if legacy:
-            ids.append(legacy)
+            got = codes.classify_id(legacy)
+            if got:
+                (e_ids if got[0] == "eori" else t_ids).append(got[1])
         taken = {_alnum0(codes.clean_tax(x))
-                 for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", "")) + tuple(ids)}
-        addr, pulled = _pull_tax(addr, "", taken)
+                 for x in (tel0, fax0, d.get(pfx + "_INFO_POSTAL", "")) + tuple(e_ids) + tuple(t_ids)}
+        addr, pulled, kind = _pull_tax(addr, "", taken)
         if not pulled:      # 只留在整串里的号（BJS00032108 发货人）：整串兜底，否则 L3 会把它弄丢
-            _, pulled = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
+            _, pulled, kind = _pull_tax(d.get(pfx + "_INFO", ""), "", taken)
         if pulled:
-            ids.append(pulled)
-        out[pfx + "_INFO_EORI"] = codes.merge_ids(*ids)
+            (e_ids if kind == "eori" else t_ids).append(pulled)
+        out[pfx + "_INFO_EORI"] = codes.merge_ids(*e_ids)
+        out[pfx + "_INFO_TAX"] = codes.merge_ids(*t_ids)
 
         if not (name or addr):
             continue
@@ -214,11 +222,10 @@ def to_air(d: dict) -> dict:
         street = _drop_phone_segs(street)
         country2 = country_to_iso2(country0 or pp["country"])
 
-        tel = _clean_phone(_first_phone(tel0) or pp["tel"])
-        fax = _clean_phone(_first_phone(fax0) or pp["fax"])
+        tel = codes.phone_cell(_clean_phone(_first_phone(tel0) or pp["tel"]))
+        fax = codes.phone_cell(_clean_phone(_first_phone(fax0) or pp["fax"]))
 
-        out[pfx + "_INFO_COUNTRY"] = country2
-        # 收发货人城市都留票面写法（收货人 2026-10-15、发货人 2026-10-23 业主定案）：公司那一格要的
+        out[pfx + "_INFO_COUNTRY"] = country2        # 收发货人城市都留票面写法（收货人 2026-10-15、发货人 2026-10-23 业主定案）：公司那一格要的
         # 是城市名，转成三字码等于让人在核对区把 BEIJING/CHENNAI 手动改回去。代价写明白：转码从前
         # 顺手掩盖了城市格里的脏值，以后模型抄成 "BEIJING  CN" 就发 "BEIJING  CN"，核对区靠人眼。
         # 三字码仍只管这三处：到达港 DEST_NAME 与航路 TO1/TO2/TO3；起运港按城市全名发
@@ -228,7 +235,9 @@ def to_air(d: dict) -> dict:
         out[pfx + "_INFO_TEL"] = tel
         out[pfx + "_INFO_FAX"] = fax
         if not out.get(pfx + "_INFO_EORI") and pp.get("eori"):
-            out[pfx + "_INFO_EORI"] = pp["eori"]
+            got = codes.classify_id(pp["eori"])
+            if got:
+                out[pfx + ("_INFO_EORI" if got[0] == "eori" else "_INFO_TAX")] = got[1]
         # 到这里 *_INFO 整串一个字都不动（out 是 d 的副本，L2 抄来什么就是什么）。以前这里按
         # 子字段重拼过一遍，40 份夹具实测三种破坏：同一段街道挂两遍（2_sch_1/5e696c 收货人）、
         # 邮编省名整段丢掉（5_dhl 收货人的 KA 560058）、公司名第二行被挪到地址后面
@@ -238,7 +247,7 @@ def to_air(d: dict) -> dict:
     # 2026-10-27 业主定案：收发货人的整串与子列去符号（codes.sym_to_space，字母/数字/空格/中文
     # 保留，其余→空格并折叠）。执行顺序在电话清洗、国家转码之后——电话的 + 不会残留符号。
     # 两个例外：*_INFO_POSTAL——收货人邮编的官方横杠（04546-040）保留，「优化补横杠」照旧；
-    # *_INFO_EORI——识别号格由 id_cell 保证无符号，多号之间的「 / 」是内容不是符号，
+    # *_INFO_EORI / *_INFO_TAX——识别号格由 id_cell 保证无符号，多号之间的「 / 」是内容不是符号，
     # 过一遍去符号会把两颗号黏成一颗（2026-10-27 变异与基线双双抓到）。
     # 发货人城市/邮编/国家无条件固定 BEIJING/101300/CN（2026-10-27 业主定案；票面写哪都一样，
     # L2 照抄不动、核对区可手改；主单不动）。
@@ -247,6 +256,6 @@ def to_air(d: dict) -> dict:
     out["SHIPPER_INFO_COUNTRY"] = "CN"
     for k in out:
         if k.startswith(("SHIPPER_", "CONSIGNEE_")) \
-                and not k.endswith(("_INFO_POSTAL", "_INFO_EORI")):
+                and not k.endswith(("_INFO_POSTAL", "_INFO_EORI", "_INFO_TAX")):
             out[k] = codes.sym_to_space(out[k])
     return {k: out.get(k, "") for k in codes.TARGET_KEYS_OUT}

@@ -195,7 +195,8 @@ def test_a_staged_only_master_is_also_compared_against_what_we_sent():
                                          "GOODS_INFO_HSCODE": "841290901"}, "宛平", "reviewer")
         second = {"MASTER_NO": "074-51188292",
                   "AMS_RECORD": {"MASTER_NO": "074-51188292", "GOODS_NAME": "QUARTZ GLASS",
-                                 "MAWB_NO": "074-51188292", "SLAC": 12, "GOODS_INFO_HSCODE": "841290901"}}
+                                 "MAWB_NO": "074-51188292", "SLAC": 12,
+                                 "GOODS_INFO_HSCODE": "841290"}}   # 公司读回的是我们暂存的那版（HS 只留前 6 位）
         rec = mp.run_master("074-51188292", second)
         assert sorted(rec["self_filled"]) == ["GOODS_INFO_HSCODE", "MAWB_NO", "SLAC"], rec["self_filled"]
         assert not (tmp / "master_submitted.json").exists(), "这条路径压根没提交，判据不该依赖台账"

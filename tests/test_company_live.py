@@ -210,9 +210,11 @@ def test_submit_body_carries_every_company_column_even_on_a_new_row():
 
 
 def test_tax_number_shares_the_eori_cell_and_stays_idempotent():
-    """同主体常常两个号都有（EORI=NL009076815、VAT=NL009076815B01）：两个都留，拼在一格。
+    """同主体常常两个号都有：2026-11-14 两列拆分后海关号住 EORI、税号住 TAX，各归各格都留。
+    老 air 里残留的 `*_INFO_TAX_ID` 按形态归位（NL009076815B01 是海关号形态 → EORI；
+    纯数字 USCI → TAX）。
 
-    暂存能反复写，下一次读回来的 EORI 就已经是拼好的那串——不先拆再拼，
+    暂存能反复写，下一次读回来的格就已经是拼好的那串——不先拆再拼，
     每暂存一次就多挂一段，第三次就变成 "A / B / B / B"。"""
     old = (config.COMPANY_API_MODE, config.COMPANY_API_URL, config.COMPANY_MAWB_KEY, config.COMPANY_HAWB_KEY)
     config.COMPANY_API_MODE, config.COMPANY_API_URL = "live", "http://j9.test:18080"
@@ -226,7 +228,8 @@ def test_tax_number_shares_the_eori_cell_and_stays_idempotent():
         company_api.submit_order({"mawb": "020-18134281", "hawb": "NOAIRWAW050582", "stem": "T1", "air": air})
         rec = sent[-1]["body"]["HAWB_RECORD"]
         assert rec["CONSIGNEE_INFO_EORI"] == "NL009076815 / NL009076815B01", rec["CONSIGNEE_INFO_EORI"]
-        assert rec["SHIPPER_INFO_EORI"] == "91330109785349738M", "EORI 空着时税号直接占这格"
+        assert rec["SHIPPER_INFO_TAX"] == "91330109785349738M", "USCI 形态归税号列"
+        assert not rec["SHIPPER_INFO_EORI"], "EORI 格不放税号（两列拆分口径）"
         # 第二次：公司那格已经是拼好的一串，读回来再拼一次不许变长
         # （换个字段，否则会被提交幂等锁当成连点吞掉——那是另一条用例管的事）
         restore()

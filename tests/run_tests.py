@@ -23,6 +23,10 @@ from pathlib import Path
 
 sys.stdout.reconfigure(errors="replace")  # 编码跟着控制台走（强改 UTF-8 会在 GBK 窗口里成一屏乱码），编不出的字符换 ? 继续跑
 
+# EORI 官网核验的后台线程会发真网络请求、写真缓存——回归里一律跳过（解析路径照常走，
+# 只是解析完不再自动核验；核验本身有 test_eori_check.py 用假 urlopen 单测兜着）
+os.environ.setdefault("HAWB_EORI_BG", "0")
+
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 sys.path.insert(0, str(ROOT))

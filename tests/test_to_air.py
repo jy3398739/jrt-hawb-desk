@@ -394,8 +394,10 @@ def test_party_fields_leave_the_symbols_behind():
     assert air["CONSIGNEE_INFO_POSTAL"] == "04546-040", "邮编是唯一例外：官方横杠保留"
     d["CONSIGNEE_INFO_EORI"] = "IT03268900267 / 911201117706402073"
     air = to_air.to_air(d)
-    assert air["CONSIGNEE_INFO_EORI"] == "IT03268900267 / 911201117706402073", \
+    assert air["CONSIGNEE_INFO_EORI"] == "IT03268900267", \
         f"识别号格也在例外里：多号的「 / 」分隔符是内容，不是符号——{air['CONSIGNEE_INFO_EORI']!r}"
+    assert air["CONSIGNEE_INFO_TAX"] == "911201117706402073", \
+        "2026-11-14 两列拆分：裸数字税号归 TAX，EORI 格只剩海关号"
     assert air["CONSIGNEE_INFO_TEL"] == "551133334444"
     assert d["SHIPPER_INFO"] == "BEIJING SHUNYI CO LTD, ROOM 101-3, TEL: +861065766886", \
         "L2 照抄串不许被去符号动过"

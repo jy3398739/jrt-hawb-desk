@@ -83,16 +83,31 @@ def test_l3_has_no_iata_warnings():
 # 识别号格（EORI，今天税号也住这里）的形态红旗：补码表消不掉，只能人工核票改那一格，
 # 所以它不归上一条"零告警"的闸门管。冻一张已知清单在这里：多出一格就得是有意为之，
 # 而不是某次改动把号弄坏了没人看见。
-KNOWN_BAD_ID_CELLS = {
-    "94fe2613ad9be1ca6d2a3958421348e.json": ["SHIPPER_INFO_EORI"],   # 票面 NOTICE/CN/SHP/T/USCI… 整段被塞进格子
+# 2026-11-14 两列拆分后：EORI 格里 L3 不会再留垃圾（税号形态的号都被 classify_id 挪进 TAX），
+# 已知清单随之清空；从前塞满 NOTICE 整段的那张（94fe…）垃圾段现在落在 TAX 格，由 CN 18 位
+# 那条判据接住——TAX 侧的已知清单单独钉住它，别让税号侧的旗悄悄消失。
+KNOWN_BAD_ID_CELLS = {}
+KNOWN_BAD_TAX_CELLS = {
+    "94fe2613ad9be1ca6d2a3958421348e.json": ["SHIPPER_INFO_TAX"],
 }
 
 
-def test_l3_id_cell_warnings_are_the_known_list():
+def _known_for(marker):
+    expected = KNOWN_BAD_ID_CELLS if marker == "EORI" else KNOWN_BAD_TAX_CELLS
     found = {}
     for p in sorted((FIX / "expected").glob("*.json")):
-        cols = [x.split()[0] for x in validate_air(_read(p)) if "EORI" in x]
+        # 按**旗首列名**过滤：EORI 形态旗的文案里也提 "_INFO_TAX 列"，不能拿子串混进来
+        cols = [x.split()[0] for x in validate_air(_read(p)) if x.split()[0].endswith("_" + marker)]
         if cols:
             found[p.name] = sorted(cols)
-    assert found == KNOWN_BAD_ID_CELLS, (
-        f"识别号格红旗与已知清单不一致：新增={ {k: v for k, v in found.items() if KNOWN_BAD_ID_CELLS.get(k) != v} }")
+    assert found == expected, (
+        f"识别号格红旗与已知清单不一致（{marker}）：新增={ {k: v for k, v in found.items() if expected.get(k) != v} }"
+        f" 消失={ {k: v for k, v in expected.items() if found.get(k) != v} }")
+
+
+def test_l3_id_cell_warnings_are_the_known_list():
+    _known_for("EORI")
+
+
+def test_l3_tax_cell_warnings_are_the_known_list():
+    _known_for("TAX")

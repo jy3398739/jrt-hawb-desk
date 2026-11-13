@@ -36,8 +36,9 @@ _LIST_REPR_RE = re.compile(r"^\[.*\]$", re.S)
 _COLUMN_REMAP = {"ORIGIN_NAME": "ORGIN_NAME", "CONSIGNEE_INFO_CITTY": "CONSIGNEE_INFO_CITY"}
 
 # 提交体该有哪些列（IT 2026-10-09：全部字段都要带上，没值的空着——缺键与"本来就是空"必须分得开）。
-# 服务端自己维护的三列与它没有的 HS 编码不在其内。税号列 2026-10-10 已从列面删除，
-# 老记录里残留的 `*_INFO_TAX_ID` 由 order_record 并进 EORI 格（见 codes.merge_ids）。
+# 服务端自己维护的三列与它没有的 HS 编码不在其内。2026-11-14 IT 给公司表加了三主体税号列
+# （*_INFO_TAX），列面随 fieldspec 自动带上；老记录里残留的 `*_INFO_TAX_ID` 由 order_record
+# 按形态归位（海关号进 EORI、税号进 TAX，见 codes.classify_id）。
 _HAWB_SKIP = ("SEND_STATUS", "CREATE_TIME", "GOODS_HS_CODE")
 HAWB_SUBMIT_COLS = tuple(_COLUMN_REMAP.get(k, k) for k, _lab, _g in fieldspec.DESK_FIELDS
                          if k not in _HAWB_SKIP)
@@ -391,12 +392,36 @@ def master_sent(mawb: str) -> tuple:
     return ("sent" if status >= 1 else "not_sent"), ""
 
 
+def master_exists(mawb: str) -> tuple:
+    """这条主单在公司**任务主表**里有没有行：`("yes"|"no"|"unknown", 一句话)`。
+
+    行只能由公司开单生成——2026-11-13 探针实测：我方连 mawb2 都开不了位，hawb2 占一条
+    指向不存在主单的分单会被公司 400「主单号在任务主表中不存在，不允许录入」。
+    所以「有没有行」决定的是暂存能不能去公司占位（/stage 的门），「发没发送」才是
+    /submit 那道门（master_sent）。mock 世界没有公司可问，回 yes——门跟着夹具走，
+    不在回归里凭空挡人。"""
+    m = _norm_mawb(mawb)
+    if not m:
+        return "no", "没有主单号"
+    if config.COMPANY_API_MODE != "live":
+        return "yes", ""
+    if not config.COMPANY_API_URL or not config.COMPANY_MAWB_KEY:
+        return "unknown", "live 模式缺 COMPANY_API_URL / COMPANY_MAWB_KEY"
+    try:
+        rows = _j9_post("/api/v1/j9/mawb/", {"master_no": m},
+                        config.COMPANY_MAWB_KEY)["data"] or []
+    except (CompanyApiError, CompanyNotConfigured, CompanyPreReadFailed) as e:
+        return "unknown", str(e)[:160]
+    return ("yes", "") if rows else ("no", "")
+
+
 def order_record(mawb: str, hawb: str, air: dict, existing: dict | None) -> dict:
     """拼整表写回的 `HAWB_RECORD`：公司读回来的原值打底 → 我方解析值覆盖 → 没给的列补 null 占位。
 
     先读后写是因为公司做整表更新：这一趟没带上的列会被写成 NULL，把别人手工填的值抹掉。
-    税号一律落在同主体的 EORI 格（公司列面没有税号格，IT 2026-10-09 定案）：历史 air 与老暂存里
-    还带着已删除的 `*_INFO_TAX_ID`，不并这一步就等于把核对过的号静默丢掉。"""
+    识别号按 2026-11-14 两列拆分落格：EORI 列只放海关号、税号放同主体 TAX 列；老 raw/老暂存
+    里残留的 `*_INFO_TAX_ID` 与公司读回的旧合并格一起按形态归位（codes.classify_id），
+    不归位就等于把核对过的号静默丢掉、或者塞进不该放的列。"""
     record = dict(existing) if existing else {}
     record["MAWB_NO"], record["HAWB_NO"] = mawb, hawb
     air = air or {}
@@ -406,8 +431,13 @@ def order_record(mawb: str, hawb: str, air: dict, existing: dict | None) -> dict
             continue   # 分单表没有的列（HS 编码）与服务端自己维护的列
         record[col] = v
     for pfx in ("SHIPPER", "CONSIGNEE"):
-        col = pfx + "_INFO_EORI"
-        record[col] = codes.merge_ids(record.get(col), air.get(pfx + "_INFO_TAX_ID")) or None
+        pool = codes.merge_ids(
+            record.get(pfx + "_INFO_EORI"), air.get(pfx + "_INFO_EORI"),
+            record.get(pfx + "_INFO_TAX"), air.get(pfx + "_INFO_TAX"),
+            air.get(pfx + "_INFO_TAX_ID") or None)
+        eori, tax = codes.split_kind_ids(pool)
+        record[pfx + "_INFO_EORI"] = codes.merge_ids(*eori) or None
+        record[pfx + "_INFO_TAX"] = codes.merge_ids(*tax) or None
     for col in HAWB_SUBMIT_COLS:
         record.setdefault(col, None)      # 没给值的列也要占位：缺键与"本来就是空"必须分得开
         if col in _HAWB_NUM and record[col] == "":

@@ -210,14 +210,16 @@ def test_face_value_line_sits_above_the_editable_one_on_both_chains():
 
 
 def test_optimise_button_rides_the_container_delegation_not_a_per_node_listener():
-    """颗按钮长在每次重画的新节点上：只挂一次的那条委托是它唯一的活路（2026-10-16 实测过）。"""
+    """颗按钮长在每次重画的新节点上：只挂一次的那条委托是它唯一的活路（2026-10-16 实测过）。
+    EORI 的「查官网」按钮同一条规矩：同一次重画长出来，就得走同一个委托入口。"""
     desk = web_src.desk()
     assert '"[data-acke],[data-une],[data-restore],[data-fold],[data-gack]," +\n' \
-           '                                "[data-polish]");' in desk, \
-        "分单那颗优化按钮要待在这条 closest() 名单里，和确认/还原同一个入口"
+           '                                "[data-polish],[data-eoricheck]");' in desk, \
+        "分单那颗优化/查官网按钮要待在这条 closest() 名单里，和确认/还原同一个入口"
     assert "card._polishWired" in desk and 'card.addEventListener("click"' in desk, \
         "主单表不在 #main 里，得在 #mstHawbCard 那一层挂一次自己的委托"
     assert 'e.target.closest("[data-polish]")' in desk
+    assert 'e.target.closest("[data-eoricheck]")' in desk
 
 
 def test_clicking_optimise_is_a_human_edit_with_a_rule_number_attached():

@@ -180,7 +180,7 @@ def test_master_tickets_join_the_day_ledger_with_their_own_columns():
         assert set(rows) == {"hawb", "mawb"}, "台账现在两种票都该出"
         m = rows["mawb"]
         assert m["mawb"] == "999-90273120" and m["hawb"] == "", "主单行不该凭空造一个分单号"
-        assert m["cols_total"] == 36 and m["filled"] == 1, m
+        assert m["cols_total"] == 39 and m["filled"] == 1, m
         assert m["flags"] == 1 and m["state"] == "parsed" and m["failed"] is False
         assert m["model"] == "qwen3.8-flash" and m["stem"] == ""
         assert rows["hawb"]["voided"] is None and rows["hawb"]["kind"] == "hawb"

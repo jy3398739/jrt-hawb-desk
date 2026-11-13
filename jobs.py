@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """单个分单文件的完整任务：L0 归档 → L1 转录 → L2 原文 → L3 航空 → 保真校验 → 落盘。
 批处理/监控/HTTP 共用。"""
-import datetime, time
+import datetime, os, threading, time
 from pathlib import Path
 
 import store
 import usage
+import autofill
+import company_api
+import eori_check
+import master_pipeline
 from pipeline import process_file, l1_prov
 from validator import validate_raw, validate_air
 from fidelity import verify_fidelity
@@ -47,6 +51,7 @@ def recompute_flags(raw: dict | None, air: dict, transcript: dict | None = None)
     就不该再拦（判据在 validator 那一处，端点与前端都不再各自匹配一遍旗面文案）。"""
     warns = list(validate_raw(raw, sent=air)) if raw else []
     warns += ["L3 " + w for w in validate_air(air or {})]
+    warns += eori_check.cached_flags(air or {})   # EORI 官网核验（缓存驱动，查不通安静）
     if raw and transcript:
         fid = verify_fidelity(raw, transcript)
         warns += [f"保真 {x['field']}: {x['reason']}（值={x['value']!r}）" for x in fid["failed"]]
@@ -108,4 +113,35 @@ def handle_file(path, save: bool = True, meta: dict | None = None,
             else:
                 store.save_result(path.stem, r["raw"], r["air"])
                 store.save_qc(path.stem, r["qc"])
+                if os.environ.get("HAWB_EORI_BG", "1") != "0":
+                    # EORI 官网核验（2026-11-14 业主定案方案 1C）：解析完后台查，invalid 补挂进
+                    # 质检记录。后台线程不阻塞解析返回；查不通时熔断兜着，不白等。
+                    threading.Thread(target=_post_parse_background, args=(path.stem, r["air"]),
+                                     daemon=True).start()
+                    # 主单兜底补号（2026-11-14 业主定案方案 A）：主单已在本机解析过就同步补
+                    # （毫秒级），返回给前端的 air 里带上看得见的值；主单不在本机的走后台线程
+                    # 检索+解析再补。只写台账与旗，盘上的 air 不动（L3 是 L2 的纯函数重算）。
+                    autofill.quick_fill(path.stem, r["air"], master_pipeline.read_master)
+                    r["air"] = autofill.merge(path.stem, r["air"])
     return r
+
+
+def _ensure_master(mawb: str):
+    """公司检索 + 就地解析主单（检索即解析，与 /company/mawb 同一动作）。"""
+    res = company_api.search_mawb(mawb)
+    order = (res or {}).get("mawb_order") or {}
+    if not order:
+        raise RuntimeError(f"公司那边没有 {mawb} 的主单资料")
+    return master_pipeline.ensure(mawb, order)
+
+
+def _post_parse_background(stem: str, air: dict | None):
+    try:
+        eori_check.check_cells(air or {})
+        eori_check.append_qc_flags(stem, eori_check.cached_flags(air or {}))
+    except Exception:
+        pass    # 后台核验死掉不能拖垮解析结果——旗是辅助，手动重查按钮随时能再来一次
+    try:
+        autofill.background_fill(stem, air or {}, master_pipeline.read_master, _ensure_master)
+    except Exception:
+        pass    # 补号死掉同理：提交门的主单先行门与红旗照常管着这张票

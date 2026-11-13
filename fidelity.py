@@ -13,10 +13,10 @@ LONG_FIELDS = ["SHIPPER_INFO_COMP_NAME", "SHIPPER_INFO_COMP_ADDRESS",
 SHORT_FIELDS = ["HAWB_NO", "ORIGIN_NAME", "TO1", "TO2", "TO3", "DEST_NAME",
                 "SHIPPER_INFO_CITY", "SHIPPER_INFO_COUNTRY", "SHIPPER_INFO_STATE",
                 "SHIPPER_INFO_POSTAL", "SHIPPER_INFO_TEL", "SHIPPER_INFO_FAX",
-                "SHIPPER_INFO_EORI", "SHIPPER_INFO_AEO", "SHIPPER_INFO_EMAIL",
+                "SHIPPER_INFO_EORI", "SHIPPER_INFO_TAX", "SHIPPER_INFO_AEO", "SHIPPER_INFO_EMAIL",
                 "CONSIGNEE_INFO_CITTY", "CONSIGNEE_INFO_COUNTRY", "CONSIGNEE_INFO_STATE",
                 "CONSIGNEE_INFO_POSTAL", "CONSIGNEE_INFO_TEL", "CONSIGNEE_INFO_FAX",
-                "CONSIGNEE_INFO_EORI", "CONSIGNEE_INFO_AEO", "CONSIGNEE_INFO_EMAIL"]
+                "CONSIGNEE_INFO_EORI", "CONSIGNEE_INFO_TAX", "CONSIGNEE_INFO_AEO", "CONSIGNEE_INFO_EMAIL"]
 
 _FW = {ord("，"): ",", ord("："): ":", ord("；"): ";", ord("（"): "(", ord("）"): ")",
        ord("　"): " "}
@@ -103,10 +103,11 @@ _HS_LABEL_RE = re.compile(r"\bHS\s*(?:CODES?\s*)?[:：]", re.I)
 
 
 def find_missing_tax(raw: dict, transcript: dict) -> list[tuple]:
-    """反向核查税号漏抄：票面印着带标签的税号（USCI/CNPJ/VAT NO/TAX ID…），
-    L2 三十八个字段里却一处都找不到。返回 [(标签, 号码)]。税号早先没有落点，模型按
+    """反向核查税号漏抄：票面印着带标签的税号（USCI/CNPJ/VAT NO/TAX ID/EORI…），
+    L2 四十个字段里却一处都找不到。返回 [(标签, 号码)]。税号早先没有落点，模型按
     "不是电话不是 EORI"的规则直接丢弃，正向保真（L2⊆L1）永远抓不到这种"少抄"；
-    2026-10-10 起落点就是同主体的 *_INFO_EORI，所以这里的"找得到"看的是全部字段值。"""
+    2026-11-14 两列拆分后落点按标签分家：EORI/EOI 标签查 *_INFO_EORI，其余查 *_INFO_TAX
+    ——所以这里的"找得到"看的是全部字段值。"""
     text = _norm(transcript.get("full_text") or
                  " ".join(x["text"] for x in transcript.get("lines", [])))
     captured = _alnum(" ".join(str(v) for v in raw.values() if v))
@@ -226,8 +227,8 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
                     tax: bool = True) -> dict:
     """L2 字段回查 L1 逐字转录原文（大小写敏感、逐字），并反向查票面主单号/税号是否漏抄。
     扫描件 L1 来自 VLM 转录，电子单 L1 来自 Excel 导出的 PDF 文字层——两者都是票面逐字真值。
-    short/long/hs_field/tax 是给主单侧复用时用的：主单是另一套列面（36 列、HS 叫
-    GOODS_INFO_HSCODE、压根没有税号列），默认值就是分单口径，分单调用方一个字都不用改。
+    short/long/hs_field/tax 是给主单侧复用时用的：主单是另一套列面（39 列、HS 叫
+    GOODS_INFO_HSCODE、税号列叫 *_INFO_TAX），默认值就是分单口径，分单调用方一个字都不用改。
     返回 {checked, passed, failed, sources}。"""
     lines = [x["text"] for x in transcript.get("lines", [])]
     nlines = [_norm(t) for t in lines]
@@ -273,7 +274,7 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
 
     check("MAWB_NO", "mawb")
     for f in (SHORT_FIELDS if short is None else short):
-        check(f, "ids" if f.endswith("_EORI")
+        check(f, "ids" if f.endswith(("_EORI", "_TAX"))
               else "alnum" if f.endswith(("_TEL", "_FAX", "_POSTAL")) or f == "HAWB_NO"
               else "text")
     for f in (LONG_FIELDS if long is None else long):
@@ -301,10 +302,11 @@ def verify_fidelity(raw: dict, transcript: dict, short: list | None = None,
     if tax:
         for label, val in find_missing_tax(raw, transcript):
             checked += 1
+            col = "EORI" if label.upper().startswith(("EORI", "EOI")) else "TAX"
             failed.append({"field": "TAX_ID", "value": val,
-                           "reason": f"{label} 税号漏抄：票面有 {val}，"
-                                     f"需核票填 SHIPPER_INFO_EORI 或 CONSIGNEE_INFO_EORI"
-                                     f"（识别号只有 EORI 这一格，已有号就用 / 拼在一起两个都留）"})
+                           "reason": f"{label} 号漏抄：票面有 {val}，"
+                                     f"需核票填同主体的 SHIPPER_INFO_{col} 或 CONSIGNEE_INFO_{col}"
+                                     f"（已有号就用 / 拼在一起，两个都留）"})
 
     for cand in find_missing_hs(raw, transcript, field=hs_field):
         checked += 1

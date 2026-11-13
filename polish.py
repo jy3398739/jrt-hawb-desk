@@ -13,9 +13,10 @@
   · 整串 `*_INFO`、公司名、详细地址、城市：一个字都不碰（照抄口径与"收发货人城市都留票面写法"
     是定案，见 tests/test_polish.py 里那两条越界守卫）。
 
-`to_air()` 与这里的分工（2026-10-23 对着代码重新核过）：国家转两字母码、电话取首个号码去符号、
-起运港归一成城市全名、识别号把票面标签词连在号码前面，都是 `to_air` 在提交时干的；
-`POSTAL`/`STATE` 的国别写法归这里，识别号那一格现在两边都不动（从前 to_air 摘标签、
+`to_air()` 与这里的分工（2026-10-23 对着代码重新核过，2026-11-14 两列拆分后复核）：国家转两字母码、
+电话取首个号码去符号、起运港归一成城市全名、识别号按形态分格（海关号进 EORI、税号进 TAX，
+标签词连在号码前面），都是 `to_air`/`clean_ams` 在提交时干的；
+`POSTAL`/`STATE` 的国别写法归这里，识别号格的**标签词**两边都不动（从前 to_air 摘标签、
 这里补标点，两条都被 2026-10-23 那一档定案撤掉了）。
 两边叠起来才是"将要发出去的那一版"，所以 `preview()` 先过 `to_air` 再过本模块，
 点优化写回的值 = 真正发出去的值，不会出现"点了还是发另一版"。
@@ -24,7 +25,7 @@ import re
 import unicodedata
 
 # 可优化格 = 收发货人/通知人这几列的子列。整串与货物列、航路列都不在这张表里。
-ACTIONABLE_SUFFIXES = ("POSTAL", "STATE", "COUNTRY", "TEL", "FAX", "EORI", "AEO", "EMAIL")
+ACTIONABLE_SUFFIXES = ("POSTAL", "STATE", "COUNTRY", "TEL", "FAX", "EORI", "TAX", "AEO", "EMAIL")
 _PARTY_PREFIXES = ("SHIPPER", "CONSIGNEE", "NOTIFY")
 
 # ── 不可见字符与非 ASCII 连字符（票面排版带来的那族坑） ───────────────────────────
@@ -260,15 +261,18 @@ _AIR_RULES = {
     "COUNTRY": ("AIR_COUNTRY", "按 L3 航空口径转成两字母国家码"),
     "TEL": ("AIR_TEL", "电话只取第一个号码、去括号与多余符号"),
     "FAX": ("AIR_FAX", "传真只取第一个号码、去括号与多余符号"),
-    "EORI": ("AIR_EORI", "识别号摘掉标签词、多个号用「 / 」拼进这一格"),
+    "EORI": ("AIR_EORI", "识别号按形态分格：海关号留 EORI，税号形态的挪进同主体 TAX 格（2026-11-14）"),
+    "TAX": ("AIR_TAX", "税号摘掉标签词、多个号用「 / 」拼进这一格"),
 }
 _MASTER_AIR_RULES = {
-    "COUNTRY": ("AIR_CASE", "按公司口径转大写（这一格是否收两字母码待 IT 定，不替它转）"),
-    "EORI": ("AIR_ID", "按公司口径：这一格去空格并转大写"),
+    "COUNTRY": ("AIR_CASE", "按公司口径转大写（发货人那格例外：固定 CN，见 AIR_CN）"),
+    "EORI": ("AIR_ID", "按公司口径：逐段去空格并转大写，多号用「 / 」拼"),
+    "TAX": ("AIR_ID", "按公司口径：逐段去空格并转大写，多号用「 / 」拼"),
     "AEO": ("AIR_ID", "按公司口径：这一格去空格并转大写"),
 }
 _PULL_WHY = {
-    "EORI": "这一格是空的：票面别处（地址或页底 customs 区）印着的识别号，提交时 L3 会并进这一格",
+    "EORI": "这一格是空的：票面别处印着的海关号，提交时 L3 会并进这一格",
+    "TAX": "这一格是空的：票面别处（地址或页底 customs 区）印着的税号，提交时 L3 会并进这一格",
     "TEL": "这一格是空的：整串里印着的号码，提交时 L3 取第一个填进这一格",
     "FAX": "这一格是空的：整串里印着的号码，提交时 L3 取第一个填进这一格",
 }
@@ -316,7 +320,10 @@ def preview(fields: dict, chain: str = "hawb") -> list:
         base = "" if raw is None else str(raw)
         rules, whys = [], []
         if base != cur:
-            if suf in air_rules:
+            if chain == "master" and field == "SHIPPER_INFO_COUNTRY":
+                rules, whys = ["AIR_CN"], \
+                    ["发货人国家固定 CN（2026-11-14 业主定案：票面写什么都不影响发出值）"]
+            elif suf in air_rules:
                 rid, why = _pull_rule(suf, cur, *air_rules[suf])
                 rules, whys = [rid], [why]
             else:

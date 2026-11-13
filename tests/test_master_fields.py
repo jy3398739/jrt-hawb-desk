@@ -53,7 +53,7 @@ def test_groups_order_shipper_consignee_notify_last():
 
 def test_field_table_is_the_company_master_shape():
     cols = [c for c, _lab, _grp in MASTER_FIELDS]
-    assert len(cols) == 36, f"公司主单表是 36 列，实际 {len(cols)}"
+    assert len(cols) == 39, f"公司主单表是 39 列，实际 {len(cols)}"
     assert cols.count("MAWB_NO") == 1 and cols.count("SLAC") == 1 and cols.count("GOODS_INFO_HSCODE") == 1
     assert "NOTIFY_INFO_COUNTRY" in cols, "通知人国家以接口现名为准（旧拼写多一个 E 已被 IT 改掉）"
     assert not any("NOTIFYE" in c for c in cols), "旧名一旦留在列面里，提交体就带不上公司那一列 → 整表写回会抹成 NULL"
@@ -63,11 +63,13 @@ def test_field_table_is_the_company_master_shape():
                    "GOODS_INFO", "SHIPPER_INFO", "CREATE_TIME", "SEND_STATUS", "HMY_ID"):
         assert absent not in cols, f"{absent} 不是主单可提交列（外层只读参考或服务端维护）"
     assert not any(c.endswith("_TAX_ID") for c in cols), \
-        "公司主单表没有税号列（分单表也没有）：票面 USCI/CNPJ 那类号在主单侧没有落点，不能凭空造列"
+        "旧税号列 _INFO_TAX_ID 不得复活；新税号列叫 _INFO_TAX（IT 2026-11-14）"
     for grp in ("shipper", "consignee", "notify"):
         sub = [c for c, _l, g in MASTER_FIELDS if g == grp]
-        assert len(sub) == 11, f"{grp} 组应为 11 列，实际 {len(sub)}"
+        assert len(sub) == 12, f"{grp} 组应为 12 列，实际 {len(sub)}"
         assert any(c.endswith("_COMP_NAME") for c in sub) and any(c.endswith("_EMAIL") for c in sub)
+        assert any(c.endswith("_EORI") for c in sub) and any(c.endswith("_TAX") for c in sub), \
+            "三主体各要有 EORI 与 TAX 两格（EORI 只放海关号，税号放 TAX）"
 
 
 def test_outer_reference_and_server_columns_are_declared():
@@ -116,11 +118,11 @@ def test_norm_mawb_hyphen_matches_company_hard_format():
     assert norm_mawb_hyphen("176-6240004") == "176-6240004", "位数不对的原样留着，交给红旗报，不硬凑"
 
 
-def test_submit_body_carries_exactly_the_36_columns():
+def test_submit_body_carries_exactly_the_39_columns():
     body = submit_body(clean_ams(ORDER["AMS_RECORD"]))
     assert set(body) == {c for c, _l, _g in MASTER_FIELDS}
     assert body["MAWB_NO"] == "176-62400004"
-    assert body["GOODS_INFO_HSCODE"] == "841290901"
+    assert body["GOODS_INFO_HSCODE"] == "841290", "9 位 HS 只留前 6 位（2026-11-14 业主定案）"
     assert body["NOTIFY_INFO_COMP_ADDRESS"] is None, "整表写回：没值的列就是 NULL，明写在提交体里"
     for k in AMS_SERVER_COLS:
         assert k not in body, "服务端维护列不发"
@@ -128,10 +130,12 @@ def test_submit_body_carries_exactly_the_36_columns():
 
 def test_clean_strips_hs_labels_to_digits_only():
     """真跑撞到的：模型把「HS CODE:8526109 HS CODE:8412210」整串抄进 HS 列（保真回查还过了，
-    因为它确实是原文逐字）。公司要的是号码本身，标签得摘，多个码用逗号连。"""
+    因为它确实是原文逐字）。公司要的是号码本身且**每段只留前 6 位**（2026-11-14 业主定案），
+    标签得摘，多个码用逗号连。"""
     ams = clean_ams({"GOODS_INFO_HSCODE": "HS CODE:8526109 HS CODE:8412210"})
-    assert ams["GOODS_INFO_HSCODE"] == "8526109,8412210"
-    assert clean_ams({"GOODS_INFO_HSCODE": "8526109"})["GOODS_INFO_HSCODE"] == "8526109"
+    assert ams["GOODS_INFO_HSCODE"] == "852610,841221"
+    assert clean_ams({"GOODS_INFO_HSCODE": "8526109"})["GOODS_INFO_HSCODE"] == "852610"
+    assert clean_ams({"GOODS_INFO_HSCODE": "852610"})["GOODS_INFO_HSCODE"] == "852610", "已经 6 位的原样"
     assert clean_ams({"GOODS_INFO_HSCODE": "无"})["GOODS_INFO_HSCODE"] == "无", \
         "一个数字都没有就原样留着，交给红旗报，别硬猜成空"
 
@@ -144,7 +148,7 @@ def test_limit50_list_is_the_company_400_lines():
         "这九列超 50 字符公司直接 400，红旗要提前报出来"
 
 def test_submit_body_is_the_only_master_column_surface():
-    """36 列这条规则从前有两份：master_fields.submit_body（只有测试在调）和 company_api 里的
+    """39 列这条规则从前有两份：master_fields.submit_body（只有测试在调）和 company_api 里的
     同一句字典推导。改列面时漏改一份，就是往公司整表写回时少写/多写一列。"""
     from pathlib import Path
     src = (Path(__file__).resolve().parent.parent / "company_api.py").read_text(encoding="utf-8")
@@ -204,7 +208,7 @@ def test_clean_ams_strips_symbols_from_party_fields():
     out = clean_ams(ams)
     assert out["SHIPPER_INFO_COMP_NAME"] == "METSO TIANJIN CO LTD", out["SHIPPER_INFO_COMP_NAME"]
     assert out["SHIPPER_INFO_COMP_ADDRESS"] == "NO 4 WAREHOUSE TIANJIN 300385 CHINA"
-    assert out["SHIPPER_INFO_TEL"] == "86 22 25322285", "电话里的 + 是符号，也去"
+    assert out["SHIPPER_INFO_TEL"] == "862225322285", "电话走 phone_cell：只留字母数字（2026-11-14 定案）"
     assert out["SHIPPER_INFO_POSTAL"] == "101-300", "邮编是唯一例外：官方横杠保留"
     assert out["CONSIGNEE_INFO_COMP_NAME"] == "MAADEN GOLD BASE METALS CO", "& 也是符号"
     assert out["NOTIFY_INFO_COMP_NAME"] == "MOHAMMED SALEEM SONS", "通知人一并去符号"
@@ -212,3 +216,19 @@ def test_clean_ams_strips_symbols_from_party_fields():
     out2 = clean_ams(dict(ams, SHIPPER_INFO_COMP_NAME="", CONSIGNEE_INFO_COMP_NAME=None))
     assert out2["SHIPPER_INFO_COMP_NAME"] is None and out2["CONSIGNEE_INFO_COMP_NAME"] is None, \
         "空仍进 None，不许变成空格串"
+
+
+# ── 2026-11-14 业主定案三件套：识别号两列 " / " 拼格、电话取第一个号、发货人国家固定 CN ──
+def test_clean_ams_keeps_joined_ids_first_phone_and_cn_shipper():
+    ams = clean_ams({
+        "SHIPPER_INFO_EORI": "se5563646560 / IT03268900267",
+        "SHIPPER_INFO_TAX": "USCI 911201117706402073 / VAT 300057757900003",
+        "SHIPPER_INFO_TEL": "+86 10 64391234 / 13800138000",
+        "SHIPPER_INFO_COUNTRY": "SAUDI ARABIA",
+    })
+    assert ams["SHIPPER_INFO_EORI"] == "SE5563646560 / IT03268900267", \
+        "多号之间的 \" / \" 不许被黏掉（2026-11-13 探针抓到的旧毛病）"
+    assert ams["SHIPPER_INFO_TAX"] == "USCI911201117706402073 / VAT300057757900003", \
+        "TAX 列同规：逐段去空格转大写、保留分隔符"
+    assert ams["SHIPPER_INFO_TEL"] == "861064391234", "电话只取第一个号、只留字母数字"
+    assert ams["SHIPPER_INFO_COUNTRY"] == "CN", "发货人国家固定（与分单 v1.35 同一口径），票面写什么都是 CN"

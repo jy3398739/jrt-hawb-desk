@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
-"""主单解析引擎回归：主单专用 prompt（36 列 + 主单口径 + 无图）、主单红旗、保真按主单列面回查。
+"""主单解析引擎回归：主单专用 prompt（39 列 + 主单口径 + 无图）、主单红旗、保真按主单列面回查。
 全程不打真实模型：客户端换成假的（照 test_model_switch 的写法）。"""
 import json
-import re
 from types import SimpleNamespace
 
 import codes
@@ -108,37 +107,40 @@ def test_validate_master_flags_company_400_lines():
     assert "MAWB_NO" in joined and "3位-横杠-8位" in joined
     assert any("SHIPPER_INFO_POSTAL" in w and "50" in w for w in warns), "限长 50 列要提前报，别等公司 400"
     assert any("NOTIFY_INFO_TEL" in w for w in warns), "通知人那组也要查（三组同规则，不是只查收发货人）"
-    assert any("SHIPPER_INFO_EORI" in w for w in warns), "怪值仍要报（USCI 是按 18 位形态放行的，不是什么都放行）"
+    assert any("SHIPPER_INFO_EORI" in w for w in warns), "怪值仍要报（EORI 格只收两位国家字母开头的海关号）"
     assert not any("CONSIGNEE_INFO_COUNTRY 电话" in w for w in warns)
 
 
-def test_validate_master_reports_tax_with_nowhere_to_go():
-    """主单表没有税号列：资料里印着 USCI/VAT 而列面里一份都没有时要出声。
-    2026-10-09 IT 定了落点（统一进 EORI，多个号拼一格），提示就要教人怎么填，
-    不能再停在"无处落点，交人工定夺"——那等于把一条已经定了的事挂成待办。"""
+def test_validate_master_points_uncaptured_tax_at_the_tax_column():
+    """资料里印着 USCI/VAT 而列面里一份都没有时要出声，而且要说清今天该填哪一列。
+    2026-11-14 两列拆分：税号落同主体 *_INFO_TAX、EORI 号落 _INFO_EORI——
+    提示停在"无处落点，交人工定夺"等于把一条已经定了的事挂成待办。"""
     ams = {c: None for c in MASTER_COLS}
     ams["MAWB_NO"] = "176-62400004"
     warns = validate_master(ams, build_transcript(ORDER))
-    assert any("税号" in w and ("USCI" in w or "VAT" in w) for w in warns), warns
-    assert any("EORI" in w and "/" in w for w in warns), f"要说清落点与拼法: {warns}"
+    assert any("税号" in w and "USCI" in w and "_INFO_TAX" in w for w in warns), warns
+    assert any("_INFO_TAX" in w and "/" in w for w in warns), f"要说清落点与拼法: {warns}"
+    assert any("_INFO_EORI" in w and "SA4827430" in w for w in warns), \
+        f"EORI 标签的号漏了要指向 EORI 列: {warns}"
 
 
-def test_validate_master_accepts_tax_numbers_joined_in_the_eori_column():
-    """2026-10-09 IT 定案：公司列面没有税号格，税号统一放 EORI，同主体多个号用 / 拼在一格。
-    所以 USCI 与 VAT 一起出现在 EORI 里是合规写法，两号都不该再报"无处落点"。"""
+def test_validate_master_accepts_tax_numbers_joined_in_the_tax_column():
+    """2026-11-14 两列拆分：税号住同主体 *_INFO_TAX，多个号用 " / " 拼一格、两个都留。
+    反过来，USCI 落进 EORI 格现在是错位，要报——那格只收海关号。"""
     ams = {c: None for c in MASTER_COLS}
-    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "911201117706402073 / 300057757900003"})
+    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_TAX": "911201117706402073 / 300057757900003"})
     warns = validate_master(ams, build_transcript(ORDER))
-    assert not any("SHIPPER_INFO_EORI" in w for w in warns), warns
-    assert not any("911201117706402073" in w for w in warns), f"USCI 已落到 EORI，不该再报: {warns}"
-    assert not any("300057757900003" in w and "EORI" not in w for w in warns), \
-        f"VAT 也已经在这一格里，不该再报无处落点: {warns}"
+    assert not any("SHIPPER_INFO_TAX" in w for w in warns), warns
+    assert not any("911201117706402073" in w for w in warns), f"USCI 已落到 TAX，不该再报: {warns}"
+    assert not any("300057757900003" in w for w in warns), f"VAT 也已经被接住，不该再报: {warns}"
+    bad = {c: None for c in MASTER_COLS}
+    bad.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "911201117706402073"})
+    assert any("SHIPPER_INFO_EORI" in w for w in validate_master(bad)), "纯数字税号落在 EORI 格要报错位"
 
 
 def test_validate_master_still_flags_odd_eori_values():
-    """这一格现在什么都往里放，形态检查只能退一步守"像不像号码"：
-    带标签词、成句的散文、短得不成样子的都要报。位数不再当判据——
-    列面 widened 之后 17 位与 15 位都可能是某个国家的正经税号，按位数拦会把对的挡掉。"""
+    """两列拆分后 EORI 格只收海关号，形态检查随之收紧成"像不像 EORI"：
+    纯数字（那是税号，该去 _INFO_TAX）、带标签词、成句的散文、短得不成样子的都要报。"""
     for bad in ("USCI 911201117706402073", "12345", "911201117706402073 / 123",
                 "SEE INVOICE / 911201117706402073", "税号见发票"):
         ams = {c: None for c in MASTER_COLS}
@@ -150,27 +152,27 @@ def test_cnpj_with_its_own_slash_is_not_mistaken_for_two_numbers():
     """巴西 CNPJ 印成 07.454.234/0001-10：那根斜杠是号码的一部分。
     我们的拼串分隔符必须带空格（" / "），否则一个 CNPJ 会被当成两个号拆开重拼。"""
     ams = {c: None for c in MASTER_COLS}
-    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_EORI": "07.454.234/0001-10"})
-    assert not any("SHIPPER_INFO_EORI" in w for w in validate_master(ams)), "带点的 CNPJ 是合法号码"
+    ams.update({"MAWB_NO": "176-62400004", "SHIPPER_INFO_TAX": "07.454.234/0001-10"})
+    assert not any("SHIPPER_INFO_TAX" in w for w in validate_master(ams)), "带点的 CNPJ 是合法号码"
     merged = codes.merge_ids("IT03268900267", "07.454.234/0001-10")
     assert merged == "IT03268900267 / 07.454.234/0001-10", merged
     assert codes.merge_ids(merged, "07.454.234/0001-10") == merged, \
         f"再拼一次不许把 CNPJ 拆开：{codes.merge_ids(merged, '07.454.234/0001-10')}"
 
 
-def test_master_prompt_sends_every_tax_number_into_the_party_eori_column():
+def test_master_prompt_splits_eori_and_tax_numbers_by_column():
     """口径改了，提示词必须跟着改（提示词进缓存指纹，旧解析会自动失效重跑）。
-    2026-10-09 IT 定案：所有税号统一进 EORI，同主体多个号用 / 拼一格——
-    原来那句"CNPJ/RFC/GST/VAT 不要塞进 EORI"必须消失，留着它模型会继续留空、人会继续白等红旗。"""
+    2026-11-14 两列拆分：EORI 列只收海关号，税号统一进同主体 *_INFO_TAX、多号 " / " 拼——
+    原来那句"所有税号统一进 EORI"必须消失，留着它模型会把 USCI 填进 EORI、TAX 列白留空。"""
     head = vlm_extract.MASTER_PROMPT_HEAD
     lines = head.splitlines()
-    assert any("USCI" in ln and "EORI" in ln and re.search(r"(填进|放进|写入|落到)", ln)
-               for ln in lines), f"缺一条把税号指向 EORI 的口径: {lines}"
-    assert not any("USCI" in ln and "没有落点" in ln for ln in lines), \
-        "旧口径那句（USCI 没有落点）还在，模型会继续留空"
-    assert not any("不要塞进 EORI" in ln or "除 USCI 外" in ln for ln in lines), \
-        f"那句「别的税号不许进 EORI」还在，模型会继续留空: {lines}"
-    assert any("EORI" in ln and "/" in ln for ln in lines), "要写明多个号怎么落在一格（用 / 拼）"
+    assert any("EORI" in ln and "_INFO_TAX" in ln and "税号" in ln for ln in lines), \
+        f"缺一条把税号指向 *_INFO_TAX 的口径: {lines}"
+    assert any("EORI" in ln and "海关号" in ln for ln in lines), "要写明 EORI 列只放海关号"
+    assert any("_INFO_TAX" in ln and "/" in ln for ln in lines), "要写明多个号怎么落在一格（用 / 拼）"
+    assert any("USCI" in ln and "_INFO_TAX" in ln for ln in lines), "USCI 该指到 TAX 列"
+    assert not any("税号" in ln and "统一进 EORI" in ln for ln in lines), \
+        "旧口径（税号统一进 EORI）还在，模型会把税号填错格"
 
 
 def test_validate_master_flags_hs_with_label_left():
@@ -185,12 +187,14 @@ def test_validate_master_is_quiet_on_a_clean_record():
     ams = {c: None for c in MASTER_COLS}
     ams.update({"MAWB_NO": "176-62400004", "SLAC": 10,
                 "SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_TEL": "+86 22 25322285",
+                "SHIPPER_INFO_TAX": "911201117706402073",
                 "CONSIGNEE_INFO_COUNTRY": "SA", "CONSIGNEE_INFO_EORI": "SA4827430",
                 "NOTIFY_INFO_COUNTRY": "SA"})
     assert validate_master(ams) == [], "干净记录不该有旗（否则复核的人会忽略真旗）"
-    # 同一份值配上带 USCI/VAT 的资料文本，就该只剩"税号无处落点"这两条
+    # 同一份值配上带 USCI/VAT 的资料文本：USCI 已被 TAX 格接住、EORI 号已被 EORI 格接住，
+    # 只剩那个 VAT 没人管——就该只剩这一条，并说清落点
     only_tax = validate_master(ams, build_transcript(ORDER))
-    assert len(only_tax) == 2 and all("税号" in w for w in only_tax), only_tax
+    assert len(only_tax) == 1 and "税号" in only_tax[0] and "_INFO_TAX" in only_tax[0], only_tax
 
 
 def test_fidelity_can_check_the_master_column_face():
@@ -224,7 +228,7 @@ def test_master_fidelity_does_not_flag_a_normalized_hs():
 
 
 def test_regrouping_does_not_change_what_the_model_must_output():
-    """分组只是给人看的排版；模型那份列清单必须还是 36 列一个不少（含通知人）。"""
+    """分组只是给人看的排版；模型那份列清单必须还是 39 列一个不少（含通知人）。"""
     cols = [c for c, _l, _g in MASTER_FIELDS]
-    assert len(cols) == 36
+    assert len(cols) == 39
     assert any(c.startswith("NOTIFY") for c in cols) and "NOTIFY_INFO_COUNTRY" in cols

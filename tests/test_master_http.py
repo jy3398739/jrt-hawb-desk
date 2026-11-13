@@ -151,7 +151,7 @@ def test_search_in_mock_mode_reports_master_without_network():
 
 
 def test_master_result_carries_the_labeled_field_table():
-    """36 列的列名/中文名/分组只有一份真源（master_fields），前端照着渲染——不再抄第二份。"""
+    """39 列的列名/中文名/分组只有一份真源（master_fields），前端照着渲染——不再抄第二份。"""
     tmp = Path(tempfile.mkdtemp(prefix="hawb_mhttp_"))
     old = _isolate(tmp)
     try:
@@ -162,7 +162,8 @@ def test_master_result_carries_the_labeled_field_table():
             c.get("/company/mawb", params={"mawb": "176-62400004"})
             j = c.get("/master/176-62400004").json()
             cols = [f[0] for f in j["fields"]]
-            assert len(cols) == 36 and "NOTIFY_INFO_COUNTRY" in cols and "CONSIGNEE_INFO_CITY" in cols
+            assert len(cols) == 39 and "NOTIFY_INFO_COUNTRY" in cols and "CONSIGNEE_INFO_CITY" in cols
+            assert any(c.endswith("_INFO_TAX") for c in cols), "三主体的税号列要跟着 IT 的新表出来"
             assert all(len(f) == 3 for f in j["fields"]), "每列都要带中文名与分组，前端才有段落标题"
         finally:
             undo()
@@ -307,13 +308,16 @@ def test_master_stage_parks_a_copy_at_the_company_but_never_sends():
     try:
         rv = _acct("马殿齐", "reviewer", "rv-123456")
         assert rv.get("/company/mawb", params={"mawb": "176-62400004"}).status_code == 200
-        body = {"mawb": "176-62400004", "ams": dict(AMS, GOODS_INFO_HSCODE="8412909080"),
+        # 人工值与模型值前 6 位不同才还算是真改动（2026-11-14 起 HS 每段只留前 6 位，
+        # 只在 7 位以后有差别的输入清洗后与模型那份相等，不再算编辑）
+        body = {"mawb": "176-62400004", "ams": dict(AMS, GOODS_INFO_HSCODE="99999980"),
                 "acked_flags": []}
         r = rv.post("/master/stage", json=body)
         assert r.status_code == 200, r.text
         rec = json.loads((config.MASTER_DIR / "17662400004.json").read_text(encoding="utf-8"))
-        assert rec["ams_final"]["GOODS_INFO_HSCODE"] == "8412909080", rec.get("ams_final")
-        assert rec["ams_model"]["GOODS_INFO_HSCODE"] == "841290901", "模型那版被人工值盖掉了"
+        assert rec["ams_final"]["GOODS_INFO_HSCODE"] == "999999", rec.get("ams_final")
+        assert rec["ams_model"]["GOODS_INFO_HSCODE"] == "841290", \
+            "模型那版也走清洗（HS 只留前 6 位），人工值盖在上面"
         assert list(rec["events"][0]["edits"]) == ["GOODS_INFO_HSCODE"], rec["events"]
         assert list(rec["edits"]) == ["GOODS_INFO_HSCODE"], \
             "顶层那份逐字段差异是给前端合并用的：没有它，前端只能自己比，45.0 与 45 会被算成改动"

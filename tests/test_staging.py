@@ -151,6 +151,36 @@ def test_stage_parks_a_copy_at_the_company_without_sending():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_stage_skips_the_company_when_the_master_row_is_missing():
+    """公司任务主表里没有这条主单的行时（2026-11-13 探针实测：行只能由公司开单生成，
+    指过去的占位会被公司 400「主单号在任务主表中不存在」），门在客户端：
+    本机这份照存，公司那一发跳过并把原因说清；读不到（unknown）则放行带提示。"""
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_stage_"))
+    old = _env(tmp)
+    old_mode = config.COMPANY_API_MODE
+    config.COMPANY_API_MODE = "live"
+    calls, real = [], (company_api.stage_order, company_api.master_exists)
+    try:
+        client = _client_as(tmp, "马殿齐", "reviewer")
+        company_api.stage_order = lambda p: (calls.append(p), {"mode": "live", "accepted": True})[1]
+        company_api.master_exists = lambda m: ("no", "")
+        r = client.post("/stage", json={"tickets": [_ticket()]})
+        assert r.status_code == 200, r.text[:200]
+        assert calls == [], "公司还没开主单，占位这一发必须跳过"
+        assert "任务主表没有这一行" in r.json()["staged"][0]["company"]["skipped"], r.json()
+        assert (config.STAGED_DIR / f"{STEM}.json").is_file(), "本机这份照存，同事照样能复核"
+        # 读不到（unknown）＝放行带提示：照发公司，不在回归里凭空挡人
+        company_api.master_exists = lambda m: ("unknown", "接口超时")
+        r2 = client.post("/stage", json={"tickets": [_ticket()]})
+        assert len(calls) == 1, "读不到主单行不该挡暂存（放行）"
+        assert r2.json()["staged"][0]["company"]["ok"] is True
+    finally:
+        (company_api.stage_order, company_api.master_exists) = real
+        config.COMPANY_API_MODE = old_mode
+        _undo(old)
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_a_company_locked_row_says_so_instead_of_failing():
     """公司那一行已经离开状态 0（1 已提交发送 / 2 外围已发送成功）时，暂存不是"失败"，
     是**这条已经不该再改了**：本机这份照存、同事照看，回执要把它说成状态而不是错误。

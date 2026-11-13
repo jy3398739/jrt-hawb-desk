@@ -46,16 +46,19 @@ def l2(**over):
     return d
 
 
-def test_field_contract_is_38_and_has_no_tax_column():
-    """字段清单只有一个真值源：后端契约、prompt 要抽的字段、前端表格行三处必须同集合，
-    而且 `*_INFO_TAX_ID` 这一家三口都得消失——留一处就有一处还在往空列里写。"""
-    assert len(codes.TARGET_KEYS_OUT) == 38 and len(set(codes.TARGET_KEYS_OUT)) == 38
+def test_field_contract_is_40_with_tax_columns():
+    """字段清单只有一个真值源：后端契约、prompt 要抽的字段、前端表格行三处必须同集合。
+    2026-11-14 IT 加回税号列（新名 `*_INFO_TAX`，36→39 主单 / 38→40 分单）：EORI 只放海关号，
+    USCI/CNPJ/VAT 这类税号放同主体 `_TAX`；旧名 `*_INFO_TAX_ID` 这一家三口仍不得复活。"""
+    assert len(codes.TARGET_KEYS_OUT) == 40 and len(set(codes.TARGET_KEYS_OUT)) == 40
     assert set(codes.TARGET_KEYS_OUT) == set(vlm_fields()), \
         "prompt 的字段清单与后端契约不一致，模型抽出来的键会对不上列"
     assert set(codes.TARGET_KEYS_OUT) == set(desk_keys()), \
         "审核台字段行与后端契约不一致，制单员看不到就是没审核"
-    assert not [k for k in codes.TARGET_KEYS_OUT if k.endswith("_TAX_ID")], "税号列没删干净"
-    assert not [k for k in fieldspec.desk_keys() if k.endswith("_TAX_ID")], "fieldspec 里还剩税号列"
+    assert not [k for k in codes.TARGET_KEYS_OUT if k.endswith("_TAX_ID")], "旧税号列没删干净"
+    assert not [k for k in fieldspec.desk_keys() if k.endswith("_TAX_ID")], "fieldspec 里还剩旧税号列"
+    for pfx in ("SHIPPER_INFO_", "CONSIGNEE_INFO_"):
+        assert pfx + "TAX" in codes.TARGET_KEYS_OUT, "新税号列缺失"
     assert "GOODS_HS_CODE" in codes.TARGET_KEYS_OUT, "HS 码这列不在这次改动里"
 
 
@@ -67,9 +70,9 @@ def test_prompt_sends_tax_into_the_eori_cell():
     assert "EORI" in blob and "USCI" in blob and "CNPJ" in blob, "税号标签表还在，但要落到 EORI 上"
 
 
-def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
-    """模型把 USCI/CNPJ 留在地址里：L3 摘干净地址，号进同主体的 EORI 格。
-    2026-10-23 业主定案：票面那个标签词跟着号一起走，连写在前面（`USCI9112…`）。"""
+def test_l3_folds_a_tax_pulled_out_of_the_address_into_tax():
+    """模型把 USCI/CNPJ 留在地址里：L3 摘干净地址，号进同主体的 TAX 格（2026-11-14 两列拆分，
+    EORI 只放海关号）。发出格式不变：标签词跟着号一起走，连写在前面（`USCI9112…`）。"""
     l2d = l2(MAWB_NO="999-30825351", HAWB_NO="TSN10359645",
              SHIPPER_INFO_COMP_NAME="PARKER HANNIFIN HYDRAULICS (TIANJIN) CO LTD",
              SHIPPER_INFO_COMP_ADDRESS="NO 21 HONGYUAN ROAD, TIANJIN 300385 CN, "
@@ -78,7 +81,8 @@ def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
              SHIPPER_INFO_POSTAL="300385", SHIPPER_INFO_TEL="+862258388999 USCI: " + USCI)
     l3 = to_air.to_air(l2d)
     assert l3["SHIPPER_INFO_TEL"] == "862258388999", l3["SHIPPER_INFO_TEL"]
-    assert l3["SHIPPER_INFO_EORI"] == "USCI" + USCI, "税号要落在 EORI 格，不是消失"
+    assert l3["SHIPPER_INFO_TAX"] == "USCI" + USCI, "税号要落在 TAX 格，不是消失"
+    assert l3["SHIPPER_INFO_EORI"] == "", "EORI 格只认海关号，不放税号"
     assert l3["SHIPPER_INFO_CITY"] == "BEIJING", "发货人城市无条件固定（2026-10-27 定案）"
     assert USCI not in l3["SHIPPER_INFO_COMP_ADDRESS"], l3["SHIPPER_INFO_COMP_ADDRESS"]
     # 这份 L2 没给整串，出口就得是空的——以前这里是"重拼后的串里不许再挂着没归位的号"，
@@ -86,9 +90,9 @@ def test_l3_folds_a_tax_pulled_out_of_the_address_into_eori():
     assert l3["SHIPPER_INFO"] == "", l3["SHIPPER_INFO"]
 
 
-def test_l3_keeps_both_the_eori_and_the_tax_number_in_one_cell():
-    """欧票常见一格两个号：海关 EORI + 本土 VAT/USCI。两个都要留，用 ' / ' 拼在一格，
-    顺序是 EORI 在前（那是公司那边这一列的本名）。"""
+def test_l3_keeps_the_eori_cell_clean_when_the_same_number_is_in_the_address():
+    """欧票常见一格两个号：海关 EORI + 本土 VAT/USCI。两个都要留——2026-11-14 起两列拆开：
+    EORI 号留 EORI 格，税号进 TAX 格。同一格内同一个号不许写两遍（地址里再出现只清列）。"""
     l2d = l2(HAWB_NO="BJS00032109",
              CONSIGNEE_INFO_COMP_NAME="CALZONI HYDRAULICS ITALY SRL",
              CONSIGNEE_INFO_COMP_ADDRESS="VIA CASTELDEBOLE 10, 40069 IT",
@@ -100,6 +104,7 @@ def test_l3_keeps_both_the_eori_and_the_tax_number_in_one_cell():
     l2d["CONSIGNEE_INFO_COMP_ADDRESS"] = "VIA CASTELDEBOLE 10, VAT IT03268900267, 40069 IT"
     l3 = to_air.to_air(l2d)
     assert l3["CONSIGNEE_INFO_EORI"] == "IT03268900267", "同一个号不该在同一格里写两遍"
+    assert l3["CONSIGNEE_INFO_TAX"] == "", "VAT 标签但号码本体是海关号：归 EORI 不归 TAX"
 
 
 def test_the_label_stays_out_of_the_comparators_and_in_front_of_the_number():
@@ -132,26 +137,30 @@ def test_the_label_stays_out_of_the_comparators_and_in_front_of_the_number():
 
 
 def test_l3_files_the_label_the_model_copied_into_the_cell():
-    """票面把 'VAT#769638661' 整格印出来，模型连着标签抄进 `_EORI`：标签词留着，冒号井号去掉。"""
+    """票面把 'VAT#769638661' 整格印出来，模型连着标签抄进 `_EORI`：标签词留着，冒号井号去掉。
+    2026-11-14 两列拆分：号码本体不带两位国家码（9 位纯数字 VAT）→ 落 TAX 格，EORI 留空。"""
     l2d = l2(HAWB_NO="TAO-7268550",
              CONSIGNEE_INFO_COMP_NAME="BIG METAL LTD",
              CONSIGNEE_INFO_COMP_ADDRESS="OCCUPATIONAL ROAD 1, LONDON SE17 3BE GB",
              CONSIGNEE_INFO_CITTY="LONDON", CONSIGNEE_INFO_COUNTRY="GB",
              CONSIGNEE_INFO_EORI="VAT#769638661")
-    assert to_air.to_air(l2d)["CONSIGNEE_INFO_EORI"] == "VAT769638661"
+    out = to_air.to_air(l2d)
+    assert out["CONSIGNEE_INFO_EORI"] == ""
+    assert out["CONSIGNEE_INFO_TAX"] == "VAT769638661"
 
 
 def test_the_same_number_in_two_label_spellings_is_still_one_number():
-    """EORI 格里模型写 'VAT#769638661'，页底 customs 区那格印 'VAT NO. 769638661'：同一个号、
+    """税号格里模型写 'VAT#769638661'，页底 customs 区那格印 'VAT NO. 769638661'：同一个号、
     两种标签写法。去重必须按**号码本体**比——按整串比会拼成 'VAT769638661 / VATNO769638661'，
     公司那边看着像两个号。这一条是变异测试逼出来的：发出值带标签之后，老的去重比法就漏了。"""
     l2d = l2(HAWB_NO="TAO-7268551",
              CONSIGNEE_INFO_COMP_NAME="BIG METAL LTD",
              CONSIGNEE_INFO_COMP_ADDRESS="OCCUPATIONAL ROAD 1, VAT NO. 769638661, LONDON SE17 3BE GB",
              CONSIGNEE_INFO_CITTY="LONDON", CONSIGNEE_INFO_COUNTRY="GB",
-             CONSIGNEE_INFO_EORI="VAT#769638661")
+             CONSIGNEE_INFO_TAX="VAT#769638661")
     air = to_air.to_air(l2d)
-    assert air["CONSIGNEE_INFO_EORI"] == "VAT769638661", air["CONSIGNEE_INFO_EORI"]
+    assert air["CONSIGNEE_INFO_TAX"] == "VAT769638661", air["CONSIGNEE_INFO_TAX"]
+    assert air["CONSIGNEE_INFO_EORI"] == ""
 
 
 def _desk_checks(k, l2, l3):
@@ -194,31 +203,32 @@ def test_the_desk_inline_hints_follow_the_new_caliber():
 
 
 def test_a_label_in_the_id_cell_is_no_longer_a_red_flag():
-    """从前「混进了标签」要报旗，因为 L3 会替人把它摘掉；现在标签就是要发的内容，
-    留着那条等于每张带 CNPJ 的票白挨一旗。"""
-    air = l2(CONSIGNEE_INFO_EORI="CNPJ00280273000137", CONSIGNEE_INFO_COUNTRY="BR")
-    assert not [w for w in validator.validate_air(air) if "混进了标签" in w], \
+    """标签就是要发的内容：CNPJ 连标签落在 TAX 格不该挨旗（「混进了标签」那条 v1.17.2 就撤了）。
+    2026-11-14 两列拆分后这号住 TAX 列——落 EORI 格才是错位（另一条用例管）。"""
+    air = l2(CONSIGNEE_INFO_TAX="CNPJ00280273000137", CONSIGNEE_INFO_COUNTRY="BR")
+    assert not [w for w in validator.validate_air(air) if "CONSIGNEE_INFO_TAX" in w], \
         validator.validate_air(air)
 
 
 def test_the_digit_count_checks_ignore_the_label_letters():
     """位数与「过短」都按号码本体判：USCI 那四个字母不是位数的组成部分，
-    不然 `USCI911201117706402073` 会被报成 22 位，而电话吞了税号那条也会跟着失灵。"""
-    ok = l2(SHIPPER_INFO_EORI="USCI" + USCI, SHIPPER_INFO_COUNTRY="CN")
+    不然 `USCI911201117706402073` 会被报成 22 位，而电话吞了税号那条也会跟着失灵。
+    2026-11-14 两列拆分：这些判据住在 TAX 列（EORI 列只放海关号，不再管位数）。"""
+    ok = l2(SHIPPER_INFO_TAX="USCI" + USCI, SHIPPER_INFO_COUNTRY="CN")
     assert not [w for w in validator.validate_air(ok) if "应为 18 位" in w], validator.validate_air(ok)
-    cut = l2(SHIPPER_INFO_EORI="USCI91120111770640207", SHIPPER_INFO_COUNTRY="CN")
+    cut = l2(SHIPPER_INFO_TAX="USCI91120111770640207", SHIPPER_INFO_COUNTRY="CN")
     assert any("应为 18 位" in w for w in validator.validate_air(cut)), "17 位还得报"
-    tiny = l2(SHIPPER_INFO_EORI="VAT12345", SHIPPER_INFO_COUNTRY="GB")
+    tiny = l2(SHIPPER_INFO_TAX="VAT12345", SHIPPER_INFO_COUNTRY="GB")
     assert any("过短" in w for w in validator.validate_air(tiny)), "本体过短还得报"
     dup = l2(CONSIGNEE_INFO_TEL="+559240091129", CONSIGNEE_INFO_COUNTRY="BR",
-             CONSIGNEE_INFO_EORI="CNPJ559240091129")
+             CONSIGNEE_INFO_TAX="CNPJ559240091129")
     assert any("与电话同值" in w for w in validator.validate_air(dup)), "带标签也要认出那是电话"
 
 
 def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
     """票面把 USCI 只印在整串那一格（地址、电话都干净，BJS00032108 发货人即如此）时，
-    L3 要从整串里把号认出来、归进 EORI——但整串本身一个字不动：那号码就是票面那一格印的，
-    照抄串里留着它是对的，公司要的是 EORI 那一格另外也得有它。"""
+    L3 要从整串里把号认出来——2026-11-14 起归进 TAX 格（EORI 只放海关号）；
+    整串本身一个字不动：那号码就是票面那一格印的。"""
     l2d = l2(MAWB_NO="999-30825351", HAWB_NO="BJS00032108",
              SHIPPER_INFO="BEIJING SHUNYI CO LTD, ROOM 101 BEIJING CN, "
                           "TEL: +861065766886 USCI:91110105562078969J",
@@ -227,23 +237,25 @@ def test_l3_falls_back_to_the_whole_string_for_a_lone_tax_number():
              SHIPPER_INFO_CITY="BEIJING", SHIPPER_INFO_COUNTRY="CN",
              SHIPPER_INFO_TEL="+861065766886")
     l3 = to_air.to_air(l2d)
-    assert l3["SHIPPER_INFO_EORI"] == "USCI91110105562078969J", l3["SHIPPER_INFO_EORI"]
+    assert l3["SHIPPER_INFO_TAX"] == "USCI91110105562078969J", l3["SHIPPER_INFO_TAX"]
+    assert l3["SHIPPER_INFO_EORI"] == ""
     assert l3["SHIPPER_INFO_TEL"] == "861065766886", l3["SHIPPER_INFO_TEL"]
     assert l3["SHIPPER_INFO"] == codes.sym_to_space(l2d["SHIPPER_INFO"]), \
         f"整串发出值 = L2 照抄串去符号（2026-10-27 定案）：{l3['SHIPPER_INFO']!r}"
     assert "," in l2d["SHIPPER_INFO"], "L2 照抄层一个字不许动"
 
 
-def test_l3_moves_a_legacy_tax_column_into_eori():
+def test_l3_moves_a_legacy_tax_column_into_tax_and_keeps_the_eori():
     """归档里的老 L2 还带着已删除的 `*_INFO_TAX_ID`（39 列那几年解析出来的票）：
-    `--recheck` 重算 L3 时必须把它并进 EORI——不并就等于把当年核对过的号静默丢掉，
-    而重跑一遍模型又是一次额度。出口由 to_air 末尾按列面重建，那列空壳不会跟着出去。"""
+    `--recheck` 重算 L3 时必须把号保住——2026-11-14 起按形态归位：EORI 形态留 EORI 格，
+    裸数字税号进 TAX 格。不并就等于把当年核对过的号静默丢掉，重跑模型又是一次额度。"""
     l2d = l2(HAWB_NO="OLD1001",
              SHIPPER_INFO_EORI="SE5563646560", SHIPPER_INFO_TAX_ID=USCI,
              CONSIGNEE_INFO_TAX_ID="00280273000218")
     l3 = to_air.to_air(l2d)
-    assert l3["SHIPPER_INFO_EORI"] == "SE5563646560 / " + USCI, l3["SHIPPER_INFO_EORI"]
-    assert l3["CONSIGNEE_INFO_EORI"] == "00280273000218", l3["CONSIGNEE_INFO_EORI"]
+    assert l3["SHIPPER_INFO_EORI"] == "SE5563646560", l3["SHIPPER_INFO_EORI"]
+    assert l3["SHIPPER_INFO_TAX"] == USCI, l3["SHIPPER_INFO_TAX"]
+    assert l3["CONSIGNEE_INFO_TAX"] == "00280273000218", l3["CONSIGNEE_INFO_TAX"]
 
 
 def test_merge_ids_is_idempotent_and_splits_on_spaced_slash_only():
@@ -257,17 +269,20 @@ def test_merge_ids_is_idempotent_and_splits_on_spaced_slash_only():
     assert codes.merge_ids("", None, "  ") == ""
 
 
-def test_missing_tax_flag_points_at_the_eori_cell():
-    """反向漏号红旗（票面有、字段里没有）还得响，而且要说清现在该填哪一列。"""
+def test_missing_tax_flag_points_at_the_tax_column():
+    """反向漏号红旗（票面有、字段里没有）还得响，而且要说清现在该填哪一列。
+    2026-11-14 两列拆分：USCI/VAT 这类税号指 *_INFO_TAX；号落在任何一格都算接住。"""
     c = json.loads((FIX / "draft_hawb_no_tsn10359645.json").read_text(encoding="utf-8"))
     assert find_missing_tax(c["raw"], c["transcript"]) == [("USCI", USCI)]
     fid = verify_fidelity(c["raw"], c["transcript"])
     hits = [x for x in fid["failed"] if x["field"] == "TAX_ID"]
     assert len(hits) == 1 and USCI in hits[0]["reason"], fid["failed"]
-    assert "SHIPPER_INFO_EORI" in hits[0]["reason"] and "CONSIGNEE_INFO_EORI" in hits[0]["reason"], \
+    assert "SHIPPER_INFO_TAX" in hits[0]["reason"] and "CONSIGNEE_INFO_TAX" in hits[0]["reason"], \
         "红旗得指向今天真正那一列，否则复核的人按图去找一个已经不存在的格子"
+    assert find_missing_tax(dict(c["raw"], SHIPPER_INFO_TAX=USCI), c["transcript"]) == [], \
+        "号落进 TAX 就该闭嘴"
     assert find_missing_tax(dict(c["raw"], SHIPPER_INFO_EORI=USCI), c["transcript"]) == [], \
-        "号落进 EORI 就该闭嘴"
+        "号落在任何一格都算接住（找得到看的是全部字段值）"
 
 
 def test_missing_tax_still_catches_eu_eori_labels():
@@ -278,6 +293,10 @@ def test_missing_tax_still_catches_eu_eori_labels():
         "full_text": ""}
     assert find_missing_tax({}, tr) == [("EORI", "IT03268900267")]
     assert find_missing_tax({"CONSIGNEE_INFO_EORI": "IT03268900267"}, tr) == []
+    fid = verify_fidelity({}, tr)
+    eorihits = [x for x in fid["failed"] if x["field"] == "TAX_ID"]
+    assert eorihits and "_INFO_EORI" in eorihits[0]["reason"], \
+        "EORI 标签的漏号要指向 EORI 列（不是 TAX）：需核票填同主体的 SHIPPER_INFO_EORI…"
     tr3 = {"lines": [{"text": "FORMERVANGEN 5 EORI NO DK28490704"}], "full_text": ""}
     glued = {"CONSIGNEE_INFO_COMP_ADDRESS": "FORMERVANGEN 5 EORI NO DK28490704"}
     assert find_missing_tax(glued, tr3) == [], "号还黏在我方地址行里=已捕获，不重复报"
@@ -308,37 +327,67 @@ def test_fidelity_checks_each_number_in_a_joined_eori_cell():
     assert [x for x in bad["failed"] if x["field"] == "CONSIGNEE_INFO_EORI"], "编出来的号要照样抓出来"
 
 
-def test_validator_reads_tax_shape_out_of_the_eori_cell():
-    """EORI 格现在一格装多个号：形态检查要按 ' / ' 拆开逐段判，
-    截断的 USCI、串进电话栏的号、短到不像号的都得照样报出来。
-    2026-10-23 起「混进了标签」那条撤了——标签词现在是要发的内容，不是毛病。"""
+def test_eori_column_holds_only_eori_shaped_numbers():
+    """2026-11-14 两列拆分：EORI 格只收两位国家字母开头的海关号——裸数字税号、带税号标签的
+    号落在这一格都是错位，要报并指路 _INFO_TAX。L3 已按形态自动分流（classify_id），
+    这条拦的是模型没跟上、人工改错格、老暂存票重验。判形按摘掉标签后的号码本体。"""
     def w(air):
-        return [x for x in validator.validate_air(air) if "EORI" in x]
-    ok = {"SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_EORI": USCI, "SHIPPER_INFO_TEL": "+862258388999"}
-    assert not w(ok), "18 位 USCI 是合法形态，别乱报：" + str(w(ok))
-    assert w(dict(ok, SHIPPER_INFO_EORI="911201117706402")), "被截断的 USCI 必须报"
-    assert w(dict(ok, SHIPPER_INFO_EORI=USCI, SHIPPER_INFO_TEL=USCI)), "税号串进电话栏要报出来"
-    br = {"CONSIGNEE_INFO_COUNTRY": "BR", "CONSIGNEE_INFO_EORI": "00.280.273/0001-37"}
-    assert not w(br), "CNPJ 带点斜横线是号码本身，不该按长度误判：" + str(w(br))
-    assert w(dict(ok, SHIPPER_INFO_EORI="ABC123")), "短到不像号的要报"
-    assert w({"CONSIGNEE_INFO_COUNTRY": "BR", "CONSIGNEE_INFO_EORI": "1234567"}), \
-        "过短税号只在 CN 分支判长度等于没判"
-    both = {"SHIPPER_INFO_COUNTRY": "IT", "SHIPPER_INFO_EORI": "IT13055460961 / " + USCI}
-    assert not w(both), "两个号拼一格都得认：" + str(w(both))
-    glued = {"CONSIGNEE_INFO_COUNTRY": "GB", "CONSIGNEE_INFO_EORI": "VAT769638661"}
-    assert not w(glued), "标签词连在号码前面是新口径，不该报：" + str(w(glued))
+        return [x for x in validator.validate_air(air) if "_INFO_EORI" in x]
+    ok = {"SHIPPER_INFO_EORI": "IT13055460961 / SE5563646560",
+          "CONSIGNEE_INFO_EORI": "EORIIT03268900267"}
+    assert not w(ok), "两个 EORI 拼一格、带 EORI 标签的连写都算合法：" + str(w(ok))
+    assert w(dict(ok, SHIPPER_INFO_EORI=USCI)), "纯数字 USCI 落 EORI 格要报错位"
+    assert w(dict(ok, SHIPPER_INFO_EORI="00.280.273/0001-37")), "CNPJ 落 EORI 格要报错位"
+    assert w(dict(ok, SHIPPER_INFO_EORI="VAT769638661")), "VAT 号落 EORI 格要报错位（该去 TAX）"
+    assert w(dict(ok, SHIPPER_INFO_EORI="12345")), "短到不像号的要报"
+    assert w(dict(ok, SHIPPER_INFO_EORI="SEE INVOICE")), "散文要报"
+    assert all("_INFO_TAX" in x for x in w(dict(ok, SHIPPER_INFO_EORI=USCI))), \
+        "错位旗要教人往哪儿挪"
+
+
+def test_validator_judges_cn18_on_the_tax_column():
+    """2026-11-14 两列拆分：18 位 USCI 判据跟着号码搬进 _TAX 列（EORI 列只放海关号，
+    不再管位数）。截断的 USCI 落在 TAX 格要报，落在 EORI 格则由形态检查报错位。"""
+    def w(air):
+        return [x for x in validator.validate_air(air) if "_TAX" in x]
+    ok = {"SHIPPER_INFO_COUNTRY": "CN", "SHIPPER_INFO_TAX": USCI}
+    assert not w(ok), "18 位 USCI 住在 TAX 格是正座：" + str(w(ok))
+    assert w(dict(ok, SHIPPER_INFO_TAX="911201117706402")), "被截断的 USCI 在 TAX 格要报 18 位"
+    assert not w({"SHIPPER_INFO_COUNTRY": "SA", "SHIPPER_INFO_TAX": "300057757900003"}), \
+        "CN 18 位判据只对 CN 判，别国税号长短不一"
+
+
+def test_hs_keeps_first_six_digits_and_phone_keeps_alnum_only():
+    """2026-11-14 业主两条口径落到分单链：HS 每段只留前 6 位（模型连抄/带标签抄，
+    分段符五花八门——逗号、空格、标签都认）；电话/传真只留字母数字、多号只取第一个
+    （与主单同一个 codes.phone_cell，统一的是引擎）。"""
+    assert codes.hs6("HS CODE:8526109 HS CODE:8412210") == "852610,841221"
+    assert codes.hs6("84129090,85171200") == "841290,851712"
+    assert codes.hs6("852610") == "852610"
+    assert codes.hs6("852610,841221") == "852610,841221", "已经 6 位的重复喂原样"
+    assert codes.hs6("无") == ""
+    l2d = l2(MAWB_NO="999-30825351", HAWB_NO="HS6TEST",
+             GOODS_HS_CODE="HS CODE:8526109 HS CODE:8412210",
+             SHIPPER_INFO_COMP_NAME="TEST CO", SHIPPER_INFO_COMP_ADDRESS="ROOM 1 BEIJING CN",
+             SHIPPER_INFO_TEL="+86 10 64391234 / 13800138000")
+    l3 = to_air.to_air(l2d)
+    assert l3["GOODS_HS_CODE"] == "852610,841221", l3["GOODS_HS_CODE"]
+    assert l3["SHIPPER_INFO_TEL"] == "861064391234", l3["SHIPPER_INFO_TEL"]
 
 
 def test_legacy_air_records_lose_nothing_on_submit():
-    """历史 air 里还留着 `*_INFO_TAX_ID`（老票、老暂存）：提交时照样并进 EORI，
-    不保留这一步就等于把已经核对过的号静默丢掉。"""
+    """历史 air 里还留着 `*_INFO_TAX_ID`（老票、老暂存）：提交时按形态归位——
+    2026-11-14 两列拆分后海关号进 EORI、裸数字税号进 TAX（公司列面已有税号格）。
+    不归位就等于把已经核对过的号静默丢掉。"""
     air = {"MAWB_NO": "999-90273120", "HAWB_NO": "OLD001",
            "SHIPPER_INFO_EORI": "IT13055460961", "SHIPPER_INFO_TAX_ID": USCI,
            "CONSIGNEE_INFO_TAX_ID": "00.280.273/0001-10", "CONSIGNEE_INFO_EORI": ""}
     rec = company_api.order_record("999-90273120", "OLD001", air, None)
-    assert rec.get("SHIPPER_INFO_EORI") == "IT13055460961 / " + USCI, rec.get("SHIPPER_INFO_EORI")
-    assert rec.get("CONSIGNEE_INFO_EORI") == "00.280.273/0001-10", rec.get("CONSIGNEE_INFO_EORI")
-    assert not [k for k in rec if k.endswith("_TAX_ID")], "税号列不该出现在提交体里（公司列面没有）"
+    assert rec.get("SHIPPER_INFO_EORI") == "IT13055460961", rec.get("SHIPPER_INFO_EORI")
+    assert rec.get("SHIPPER_INFO_TAX") == USCI, rec.get("SHIPPER_INFO_TAX")
+    assert rec.get("CONSIGNEE_INFO_TAX") == "00280273000110", rec.get("CONSIGNEE_INFO_TAX")
+    assert not rec.get("CONSIGNEE_INFO_EORI"), "裸数字 CNPJ 不进 EORI 格"
+    assert not [k for k in rec if k.endswith("_TAX_ID")], "税号老列不该出现在提交体里"
 
 
 def test_desk_js_moves_its_tax_logic_onto_the_eori_cell():
