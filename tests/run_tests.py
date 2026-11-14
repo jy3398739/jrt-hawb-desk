@@ -27,6 +27,10 @@ sys.stdout.reconfigure(errors="replace")  # 编码跟着控制台走（强改 UT
 # 只是解析完不再自动核验；核验本身有 test_eori_check.py 用假 urlopen 单测兜着）
 os.environ.setdefault("HAWB_EORI_BG", "0")
 
+# 第二只眼互核的后台线程会调真模型（一次 60-180 秒、烧额度）——回归里一律关掉；
+# 互核本身有 test_second_eye.py 单测兜着（线程/冲突/落盘全部桩替）
+os.environ.setdefault("SECOND_EYE", "0")
+
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 sys.path.insert(0, str(ROOT))

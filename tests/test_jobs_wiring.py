@@ -148,3 +148,67 @@ def test_converted_pdf_is_kept_so_the_desk_can_show_the_ticket():
     _, nosave = _run(case["raw"], case["transcript"], save=False,
                      src="/tmp/hawb_xlsx_pdf/某分单 TAO1234567.pdf")
     assert not [c for c in nosave if c[0] == "PREVIEW"], "没勾落盘留档就一个字节都别写"
+
+def test_handle_file_starts_second_eye_after_parse():
+    """解析成功落盘后要把第二只眼线程发起：票、主链 air、转录、页图、src 一样不能少——
+    少一样第二只眼就只能自己重新买（渲染/转录都是钱）。"""
+    seen = []
+    fs = _FakeStore()
+    real_store, real_ms, real_pf = jobs.store, jobs.second_eye.maybe_start, jobs.process_file
+
+    def fake_ms(*a):
+        seen.append(a)
+
+    def fake_pf(path, do_transcript=True, reuse=None, bag=None):
+        bag["transcript"] = case["transcript"]
+        bag["urls"] = ["data:u1", "data:u2"]
+        return {"raw": case["raw"], "air": to_air.to_air(case["raw"]),
+                "channel": "vlm", "transcript": case["transcript"], "src": "转出的.pdf",
+                "model": "qwen3.8-flash", "model_choice": "qwen38-flash-bailian",
+                "timings": {}}
+
+    case = json.loads(FIX.read_text(encoding="utf-8"))
+    jobs.store, jobs.second_eye.maybe_start, jobs.process_file = fs, fake_ms, fake_pf
+    try:
+        r = jobs.handle_file(Path("某分单 TAO1234567.pdf"), save=True)
+    finally:
+        jobs.store, jobs.second_eye.maybe_start, jobs.process_file = real_store, real_ms, real_pf
+    assert r["error"] == "", r["error"]
+    assert len(seen) == 1, seen
+    stem, air, tr, urls, src = seen[0]
+    assert stem == "某分单 TAO1234567" and tr == case["transcript"]
+    assert urls == ["data:u1", "data:u2"] and src == "转出的.pdf"
+
+
+def test_handle_file_skips_second_eye_when_parse_failed_or_not_saved():
+    """失败的票与不落盘的调用（HTTP 同步路）都不发起第二只眼：没结果可核、也未必有页图。"""
+    started = []
+    fs = _FakeStore()
+    real_store, real_ms, real_pf = jobs.store, jobs.second_eye.maybe_start, jobs.process_file
+
+    def fake_ms(*a):
+        started.append(a)
+
+    def boom(path, do_transcript=True, reuse=None, bag=None):
+        raise RuntimeError("解析炸了")
+
+    jobs.store, jobs.second_eye.maybe_start, jobs.process_file = fs, fake_ms, boom
+    try:
+        r = jobs.handle_file(Path("某分单 TAO1234567.pdf"), save=True)
+    finally:
+        jobs.store, jobs.process_file = real_store, real_pf
+    assert r["error"] and not started, "解析失败不该发起第二只眼"
+
+    case = json.loads(FIX.read_text(encoding="utf-8"))
+
+    def fake_pf(path, do_transcript=True, reuse=None, bag=None):
+        return {"raw": case["raw"], "air": to_air.to_air(case["raw"]), "channel": "vlm",
+                "transcript": case["transcript"], "model": "m", "model_choice": "c",
+                "timings": {}}
+
+    jobs.store, jobs.process_file = fs, fake_pf
+    try:
+        jobs.handle_file(Path("某分单 TAO1234567.pdf"), save=False)
+    finally:
+        jobs.store, jobs.second_eye.maybe_start, jobs.process_file = real_store, real_ms, real_pf
+    assert len(started) == 0, "save=False（同步路）也不发起"

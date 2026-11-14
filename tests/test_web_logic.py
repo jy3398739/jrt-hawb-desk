@@ -503,3 +503,26 @@ def test_draft_trim_keeps_the_newest_and_leaves_the_input_alone():
     assert sorted(d) == ["NEW1", "NEW2", "NOS", "OLD1"], f"传进去那份被改了：{sorted(d)}"
     assert web_src.logic("L.draftTrim(d, 9)", d=d) == d, "没超额就原样一份"
     assert web_src.logic("L.draftTrim(d, 0)", d=d) == {}, "keep=0 就是全丢，别硬留"
+
+
+def test_second_eye_flags_hide_once_ticket_left_staging():
+    """互核旗是"再看一眼"的提示：票还在核对/暂存档里就显示（两道人核都看得见），
+    离开暂存档（已提交公司）就不再挂现值旗——已交出去的不许再催。别的旗不受影响。"""
+    f = "互核 MAWB_NO：主链 'A'，第二只眼为空"
+    assert _eval("L.secondEyeVisible(f, locked)", f=f, locked=False) is True
+    assert _eval("L.secondEyeVisible(f, locked)", f=f, locked=True) is False
+    assert _eval("L.secondEyeVisible(f, locked)", f="MAWB_NO 缺失", locked=True) is True
+
+
+def test_se_status_line_two_states():
+    """互核状态行（旁路定案）：解析上屏未回=「互核中…」；qc 落了=「已回：无冲突/N 条冲突」；
+    没跑成也算"已回"。都不是就不显示（老票/开关关）。"""
+    se_ok = {"status": "ok", "surfaced": []}
+    se_hit = {"status": "ok", "surfaced": [{"col": "MAWB_NO"}]}
+    assert _eval("L.seStatus(undefined, true)") == "pending", "没回且在跑：亮互核中"
+    assert _eval("L.seStatus(undefined, false)") is None, "没回也没在跑：不显示"
+    assert _eval("L.seStatus(s, false)", s=se_ok) == "clean"
+    assert _eval("L.seStatus(s, false)", s=se_hit) == "conflicts"
+    assert _eval("L.seStatus(s, false)", s={"status": "empty"}) == "failed"
+    assert _eval("L.seStatus(s, false)", s={"status": "error"}) == "failed"
+    assert _eval("L.seStatus(s, true)", s=se_ok) == "clean", "回了就是回了，pending 标记不该盖住结论"

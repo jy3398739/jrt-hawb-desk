@@ -14,7 +14,7 @@ import atomic
 # 1.x = 现役形态（票面 PDF/图片 → L1 转录 → L2 提取 → 审核台核对 → 回传公司 j9 AMS）。
 # FORM 是"形态"标记，不是版本：V2（对接真实网页制单）已于 2026-09-29 删除，
 # 万一再出现两台并存的形态，靠它分辨，别把它塞进版本号里。
-APP_VERSION = "1.39.1"
+APP_VERSION = "1.40.0"
 FORM = "V1"
 
 ENV_FILE = Path(__file__).with_name(".env")
@@ -127,6 +127,24 @@ MODEL_THINKING = os.getenv("MODEL_THINKING", "").strip()
 # 继承了的话一拨分单开关主单会跟着动，正是这次要拆掉的事。
 MASTER_MODEL_THINKING = os.getenv("MASTER_MODEL_THINKING", "").strip()
 
+# 第二只眼（2026-11-14 定案）：主链解析成功后后台用同模型**强制开思考**重读一遍，号码类冲突挂
+# 「互核」旗、不拦暂存与提交。灰度期全票跑（实测 ~0.03 元/票公司侧，思考 token 是大头）；
+# =0 全局关闭（隔离台 E2E 与回归也用它关）。
+SECOND_EYE = os.getenv("SECOND_EYE", "1").strip()
+
+
+def set_second_eye(value) -> str:
+    """运行时切第二只眼互核总开关（POST /second_eye，仅管理员）：本进程立即生效 + 写回 .env。
+    关=之后的票彻底不跑（含扫描件）；对已在跑的票不中断（跑完照常落 qc）。
+    只认 1/0，没有"跟随预设"那档——互核要么跑要么不跑。"""
+    global SECOND_EYE
+    v = str(value if value is not None else "").strip()
+    if v not in ("0", "1"):
+        raise ValueError(f"第二只眼开关只能是 1（开）或 0（关），收到 {value!r}")
+    SECOND_EYE = v
+    persist_model_choice(SECOND_EYE, "SECOND_EYE")
+    return v
+
 
 def thinking(preset: dict | None = None, mode: str | None = None) -> dict:
     """某条链当前思考档位 = {supported, param, on, mode}。mode 缺省用分单那条全局键。
@@ -214,6 +232,12 @@ def extra_body_for(preset: dict, mode: str | None = None) -> dict:
     if th["supported"]:
         eb[th["param"]] = th["on"]
     return eb
+
+
+def extra_body_for_current(mode: str | None = None) -> dict:
+    """当前生效渠道在指定思考档下该发的 extra_body（对外公共名：跨模块要用就走这里，
+    别伸手进 _active_preset）。mode 缺省=分单链当前档。"""
+    return extra_body_for(_active_preset(), mode)
 
 
 def model_extra_body() -> dict:

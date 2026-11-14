@@ -63,7 +63,7 @@ const LS = {draft:"hawb.review.drafts", masterDrafts:"hawb.review.masterDrafts",
             view:"hawb.review.view"};
 const $ = s => document.querySelector(s);
 const nowTxt = () => new Date().toISOString().slice(0,19).replace("T"," ");
-const S = {tickets:[], sel:null, running:false};
+const S = {tickets:[], sel:null, running:false, seOn:"1"};
 /* 分段核对流的界面态：不属于任何一张票，也不落盘。
    FOLD = 折了哪几段（折不折是看板的偏好，换票不该重来）；
    DESK.onlyTodo = 只看待核对；DESK.armed = 提交那颗按钮武装了没有。 */
@@ -219,6 +219,59 @@ function flagsByField(qc){
   }
   return {map, rest};
 }
+function seOn(){
+  /* 互核总开关（管理员设置面板）：关=之后的票不跑，核对页不出现任何互核字样。 */
+  return String(S.seOn === undefined ? "1" : S.seOn) !== "0";
+}
+
+function updateSeStatus(t){
+  /* 状态行：pending/clean/conflicts/failed 四种字样，文案全在这里（测试扫得到）。 */
+  const el = $("#seStatus");
+  if (!el) return;
+  const se = (t.qc || {}).second_eye;
+  const n = (se && se.surfaced || []).length;
+  const s = L.seStatus(se, t.sePending);
+  el.textContent = s === "pending" ? "互核中…"
+    : s === "clean" ? "已回：无冲突"
+    : s === "conflicts" ? `已回：${n} 条冲突`
+    : s === "failed" ? "已回：没跑成" : "";
+}
+
+function pollSecondEye(t){
+  /* 「互核中…」不是死的：借轮询机制取回结论——qc 一落 second_eye，整块重渲染，
+     旗和按钮自然出现；5 分钟没回就收摊（结果迟早会写进 qc，F5 一样看得到）。 */
+  if (!t.sePending || (t.qc || {}).second_eye) return;
+  poller(async () => {
+    const r = await fetch(BASE + "/ticket/" + encodeURIComponent(t.stem), {cache: "no-store"});
+    if (!r.ok) return false;
+    const j = await r.json().catch(() => ({}));
+    if (j && j.qc) t.qc = j.qc;
+    updateSeStatus(t);
+    if ((t.qc || {}).second_eye){ t.sePending = false; render(); return true; }
+    return false;
+  }, {every: 3000, cap: 15000, maxMs: 5 * 60 * 1000,
+      giveUp: () => { t.sePending = false; updateSeStatus(t); }});
+}
+
+function renderSecondEye(t){
+  /* 互核弹层：状态一行 + surfaced 冲突表 + 留痕说明。只读，不改任何值。 */
+  const se = (t.qc || {}).second_eye || {};
+  const head = {ok: "已互核", empty: "第二只眼没跑成（整票空，重试一次后仍空）",
+                error: "第二只眼没跑成"}[se.status] || "没有互核记录";
+  const rows = (se.surfaced || []).map(c =>
+    `<tr><td>${esc(c.col)}</td><td>${esc(c.main || "（空）")}</td>` +
+    `<td>${esc(c.second || "（空）")}</td>` +
+    `<td>${c.kind === "count" ? "两边都可能错，以票面为准" : ""}</td></tr>`).join("");
+  $("#seBox").innerHTML =
+    `<p class="se-meta">${esc(head)}${se.at ? " · " + esc(se.at) : ""}` +
+    `${se.model ? " · " + esc(se.model) : ""}${se.thinking ? " · 思考开" : ""}` +
+    `${se.err ? " · " + esc(se.err) : ""}</p>` +
+    (rows ? `<table class="se-table"><thead><tr><th>列</th><th>主链值</th><th>第二只眼值</th><th>备注</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="se-meta">号码类没有冲突。</p>`) +
+    ((se.all_diffs || []).length
+      ? `<p class="se-note">另有 ${se.all_diffs.length} 处整串/格式类差异只留痕不顶人（明细在 qc.second_eye.all_diffs）。</p>` : "") +
+    `<p class="se-note">互核只提示、不改值、不拦暂存与提交；这张票离开暂存档后，字段上的互核旗不再显示。</p>`;
+}
+
 function flagNote(f){
   if (f.startsWith("保真")) return "保真未命中票面转录：" + f.slice(3).trim();
   return f;
@@ -243,7 +296,11 @@ function effectiveFlags(t){  /* 「已清」只认两种：人点过确认（ack
      不接住就永远只看见"还有未清的红旗"这句没有指名的话。 */
   const filled = awbFilled(t), ack = t.ackF || [];
   const seen = {}, out = [];
-  (((t.qc && t.qc.flags) || []).concat(t.srvFlags || [])).forEach(f => {
+  /* 互核旗在进循环前就滤掉（不走提前退出——那道守卫只认提交门共享的两条规则）：
+     互核旗本来就不参与提交门（recompute_flags 不产出它），只在票还活着时提示人看。 */
+  const flagSrc = (((t.qc && t.qc.flags) || []).concat(t.srvFlags || []))
+    .filter(f => L.secondEyeVisible(f, t.locked));
+  flagSrc.forEach(f => {
     if (seen[f] || ack.includes(f)) return;
     if (isMissingAwbFlag(f)){
       const okM = !f.includes("MAWB_NO") || filled.MAWB_NO;
@@ -1003,6 +1060,8 @@ async function loadModels(){
                                          : '<option value="">（服务端旧进程，重启后可见）</option>';
     thinkOpts($("#thinkSel"), r.thinking, "分单");
     thinkOpts($("#thinkSelM"), r.master ? r.master.thinking : null, "主单");
+    S.seOn = r.second_eye === "0" ? "0" : "1";
+    $("#seSel").value = S.seOn;
   }catch(e){
     $("#modelSel").innerHTML = '<option value="">（服务端旧进程，重启后再试）</option>';
     $("#modelSelM").innerHTML = $("#modelSel").innerHTML;
@@ -1074,6 +1133,25 @@ $("#modelSel").addEventListener("change", e => switchModel(e.target, "hawb"));
 $("#modelSelM").addEventListener("change", e => switchModel(e.target, "master"));
 $("#thinkSel").addEventListener("change", e => setThinking(e.target, "hawb"));
 $("#thinkSelM").addEventListener("change", e => setThinking(e.target, "master"));
+$("#seSel").addEventListener("change", e => setSe(e.target));
+async function setSe(sel){
+  const v = sel.value;
+  sel.disabled = true;
+  try{
+    const r = await fetch(BASE + "/second_eye", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({value: v})});
+    const j = await r.json().catch(() => ({detail:"返回不是 JSON（HTTP " + r.status + "）"}));
+    if (!r.ok || !j.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    S.seOn = v;
+    toast("第二只眼互核已" + (v === "0"
+      ? "关闭：之后的票不再互核（正在跑的照常落账）" : "开启：之后的票解析完后台互核"), "ok");
+    render();
+  }catch(err){
+    toast("切换第二只眼互核失败：" + err.message, "bad");
+  }finally{
+    loadModels();      // 以服务端实际值为准重画（失败了要退回原选项）
+  }
+}
 async function extract(t){
   const fd = new FormData();
   fd.append("file", t.file, t.filename);
@@ -1127,7 +1205,8 @@ async function runQueue(){
       Object.assign(t, {state:"done", stem:j.stem, channel:j.channel, elapsed:j.elapsed,
                         qc:j.qc, raw:j.raw || {}, air:j.air || {}, airE:{}, ackF:[], ackE:[],
                         todoBase:null, ll:j.transcript || null,
-                        polish:{}, polishW:{}, polishDone:false});   // 新的一份票面：可优化的格子重扫
+                        polish:{}, polishW:{}, polishDone:false,   // 新的一份票面：可优化的格子重扫
+                        sePending: !!j.se_pending});
       if (S.sel === t.filename) S.sel = t.stem;
       saveDraft(t);
       hintLocate();          // 第一次解析成功时提一次「点字段名能定位」，之后不再啰嗦
@@ -2099,12 +2178,16 @@ function renderMain(){
       ${drawSubmitBtn(t, ef, todo.n)}
       <button class="btn" id="expOne">导出本票 JSON</button>
       <button class="btn" id="expAll">导出全部已解析</button>
+      ${(seOn() && ((t.qc && t.qc.second_eye) || t.sePending)) ? `<span class="se-status" id="seStatus"></span>` : ""}
+      ${(seOn() && t.qc && t.qc.second_eye) ? `<button class="btn" id="seBtn" type="button" title="第二只眼互核：主链解析完后台用同模型强制开思考重读一遍。这里看完整清单——互核只提示、不改值、不拦暂存与提交">互核清单${(t.qc.second_eye.surfaced || []).length ? `（${t.qc.second_eye.surfaced.length}）` : ""}</button>` : ""}
       <span class="sp"></span>
       <button class="btn sm" id="prevOne" type="button" title="上一张票">‹ 上一票</button>
       <button class="btn sm" id="nextOne" type="button" title="下一张票">下一票 ›</button>
       <button class="btn gh" id="dropOne">从列表移除</button>
     </div>`;
   wireMain(t);
+  updateSeStatus(t);
+  pollSecondEye(t);
   measureChrome();
   growAll($("#main").querySelectorAll("textarea"));
   $("#barFill").style.width = pr.pct + "%";    // 宽度只能在这儿写：模板里不许出现内联样式（守卫盯着）
@@ -2308,6 +2391,8 @@ function wireMain(t){
   $("#stage").addEventListener("click", () => stageTicket(t));
   $("#submit").addEventListener("click", () => submitClick(t));
   $("#expOne").addEventListener("click", () => exportTickets([t], (t.stem || t.filename) + ".审核结果.json"));
+  const seBtn = $("#seBtn");
+  if (seBtn) seBtn.addEventListener("click", () => { openGate("seWin"); renderSecondEye(t); });
   $("#expAll").addEventListener("click", () => exportTickets(
     S.tickets.filter(x => x.state === "done"), "分单审核_" + new Date().toISOString().slice(0, 10) + ".json"));
   $("#prevOne").addEventListener("click", () => stepTicket(-1));
@@ -2557,7 +2642,7 @@ $("#pwWarn").addEventListener("click", () => $("#btnAcct").click());   // 话说
    焦点还给打开它的按钮，否则下一次 Tab 要从页面顶上重走一遍。
    登录遮罩 #gate 不在内：真正的门在服务端（未登录什么接口都调不动），但"Esc 一掀就露出页面"
    看着像门禁失效，这个错觉不给。 */
-const GATE_BACK = {setWin: "#btnSet", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct",
+const GATE_BACK = {setWin: "#btnSet", seWin: "#seBtn", statsWin: "#btnStats", purgeWin: "#btnPurge", acct: "#btnAcct",
                    chlogWin: "#btnChlog", boardWin: "#btnBoard"};
 function closeTopGate(){
   const open = [...document.querySelectorAll(".gate:not(#gate)")].filter(g => !g.hidden);
@@ -4255,6 +4340,7 @@ $("#viewDay").addEventListener("click", () => setView("day"));
 // 统计是一张盖在整页之上的窗口：打开时现算，改日期/分组也仍是现算（窗口里不留第二套算术）
 $("#btnStats").addEventListener("click", () => { openGate("statsWin"); loadStats(); });
 $("#statsClose").addEventListener("click", () => { $("#statsWin").hidden = true; });
+$("#seClose").addEventListener("click", () => { $("#seWin").hidden = true; });
 $("#stGo").addEventListener("click", loadStats);
 $("#stCsv").addEventListener("click", () => { window.location = BASE + "/stats/export" + statsQS(); });
 ["stFrom", "stTo", "stGroup"].forEach(id => $("#" + id).addEventListener("change", loadStats));

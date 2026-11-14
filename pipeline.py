@@ -67,6 +67,8 @@ def process_file(path, do_transcript: bool = True, reuse: dict | None = None,
     timings, t0 = {}, time.perf_counter()
     urls = render_pages(src)
     timings["render"] = round(time.perf_counter() - t0, 2)
+    if bag is not None:
+        bag["urls"] = urls          # 第二只眼复用同一份页图：渲染只付一次钱
     t0 = time.perf_counter()
     if reuse is not None:
         tr = reuse                       # 复用的转录照旧走完 L2/L3：只省掉一次 L1 调用

@@ -86,6 +86,18 @@
   </div>
 </div>
 
+<!-- 互核（第二只眼，2026-11-14 定案）：主链解析完后台用同模型强制开思考重读一遍，
+     号码类冲突以「互核」旗挂字段。这个窗口只放完整清单与状态，主页不加东西；
+     互核只提示不改值、不拦暂存与提交；票离开暂存档后字段上的互核旗不再显示。 -->
+<div class="gate" id="seWin" hidden>
+  <div class="card statsbox">
+    <div class="t">互核（第二只眼）<span class="sp"></span>
+      <button class="btn sm gh" id="seClose" type="button">关闭</button>
+    </div>
+    <div class="statsbody" id="seBox"></div>
+  </div>
+</div>
+
 <!-- 数据清理：一张票散在十几个地方（原件、L1/L2/L3、红旗、预览、暂存、台账、幂等锁、页图缓存、
      库里的行），所以删除要一份覆盖全部落点的计划，而这个计划只能由服务端算。
      v1.15.0 起进名单的判据是「最后一次被碰之后安静躺满 N 天」，不再看作废过没有——
@@ -147,6 +159,8 @@
           分单思考<select id="thinkSel"><option value="">（连接中…）</option></select></label>
         <label class="f" id="fThinkM" title="主单链的思考模式，与分单各管各的（2026-10-19 拆开）。只对声明了该参数的渠道生效，渠道不支持时下拉置灰；跟随即主单预设自己的默认档。开=主单解析更肯想但更慢更贵，主单是纯文本任务，通常不需要">
           主单思考<select id="thinkSelM"><option value="">（连接中…）</option></select></label>
+        <label class="f" id="fSe" title="第二只眼互核：主链解析完后台用同模型强制开思考重读一遍，号码类冲突挂「互核」旗（实测约 0.03 元/票公司侧）。关=之后的票彻底不跑（含扫描件）；对正在跑的票不中断，跑完照常落账。默认开（灰度一周）">
+          互核<select id="seSel"><option value="1" selected>开</option><option value="0">关</option></select></label>
         <p class="hint hintp flush">四条都当场生效，写回服务端 <b>.env</b>：重启后与批处理沿用同一份。两条链的思考档各管各的，拨一条不会带动另一条。</p>
       </section>
       <section class="setsec">

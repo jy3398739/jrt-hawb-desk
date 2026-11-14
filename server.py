@@ -322,6 +322,11 @@ class ModelChoice(BaseModel):
     chain: str = "hawb"      # hawb = 分单链（默认）；master = 主单链
 
 
+class SecondEyeChoice(BaseModel):
+    # None 而不是 "0"：漏发字段不能被读成"帮你关掉"
+    value: str | None = None
+
+
 class ThinkingChoice(BaseModel):
     # None 而不是 ""："" 是合法档位（跟随预设），漏发字段不能被读成"帮你改回跟随预设"
     thinking: str | None = None
@@ -971,6 +976,7 @@ def models():
     mb = config.master_model_bundle()
     return {"current": config.VLM_MODEL_CHOICE, "effective": config.VLM_MODEL,
             "vision": config.MODEL_VISION, "thinking": config.thinking(),
+            "second_eye": config.SECOND_EYE,
             "master": {"choice": mb["choice"], "model": mb["model"], "vision": mb["vision"],
                        "label": mb.get("label") or "", "key_configured": config.master_api_key_configured(),
                        "thinking": mb["thinking"]},
@@ -1006,6 +1012,24 @@ def switch_model(body: ModelChoice, _: None = Depends(require_admin)):
     except OSError as e:
         raise HTTPException(500, f"模型已在本进程切换，但写 .env 失败（重启后仍是旧模型）：{e}")
     return {"ok": True, "chain": "hawb", **info}
+
+
+@app.post("/second_eye")
+def switch_second_eye(body: SecondEyeChoice, request: Request, _: None = Depends(require_admin)):
+    """第二只眼互核总开关（2026-11-14 旁路定案）：1 开 / 0 关，本进程立即生效并写回 .env。
+    关=之后的票彻底不跑（含扫描件）；对已在跑的票不中断（跑完照常落 qc）。
+    与思考档同一道门、同一套持久化——它改变"解析后多做什么"，只有管理员配动。"""
+    if body.value is None:
+        raise HTTPException(400, '要带 value 字段："1" 开 / "0" 关')
+    try:
+        v = config.set_second_eye(body.value)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except OSError as e:
+        raise HTTPException(500, f"第二只眼开关已在本进程切换，但写 .env 失败（重启后仍是旧值）：{e}")
+    u = auth.session_user(request) or {}
+    LOG.info("第二只眼互核 who=%s value=%s", u.get("name"), v)
+    return {"ok": True, "second_eye": v}
 
 
 @app.post("/model/thinking")
@@ -1068,7 +1092,8 @@ def _parse_ticket(tmp_dir: Path, path: Path, filename: str, who: str, role: str)
              len((r["qc"] or {}).get("flags") or []))
     return {"ok": True, "filename": filename, "stem": r["stem"], "channel": r["channel"],
             "elapsed": r["elapsed"], "qc": r["qc"], "raw": r["raw"], "air": r["air"],
-            "transcript": r["transcript"]}
+            "transcript": r["transcript"],
+            "se_pending": bool(r.get("se_pending"))}
 
 
 @app.post("/extract")

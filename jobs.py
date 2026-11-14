@@ -10,6 +10,7 @@ import autofill
 import company_api
 import eori_check
 import master_pipeline
+import second_eye
 from pipeline import process_file, l1_prov
 from validator import validate_raw, validate_air
 from fidelity import verify_fidelity
@@ -86,6 +87,7 @@ def handle_file(path, save: bool = True, meta: dict | None = None,
             res["raw"], res["air"], res["channel"], res["transcript"])
         r["model"], r["model_choice"] = res.get("model") or "", res.get("model_choice") or ""
         r["timings"] = res.get("timings") or {}
+        r["src"] = res.get("src")
         src = res.get("src")
         if save and src and Path(src) != path:
             store.save_preview(path.stem, src)      # 电子单转出的 PDF：审核台回看票面靠它
@@ -123,6 +125,12 @@ def handle_file(path, save: bool = True, meta: dict | None = None,
                     # 检索+解析再补。只写台账与旗，盘上的 air 不动（L3 是 L2 的纯函数重算）。
                     autofill.quick_fill(path.stem, r["air"], master_pipeline.read_master)
                     r["air"] = autofill.merge(path.stem, r["air"])
+                # 第二只眼（2026-11-14 定案）：后台同模型强制开思考重读一遍，号码类冲突挂
+                # 「互核」旗。迟到不丢——暂存后才回来也让录入员环节看得到；不拦任何闸门。
+                # se_pending 给前端亮「互核中…」：/job 的 result 整包透传，这里写进 r 就够。
+                r["se_pending"] = bool(second_eye.maybe_start(path.stem, r["air"],
+                                                              r.get("transcript"),
+                                                              r.get("urls"), r.get("src")))
     return r
 
 

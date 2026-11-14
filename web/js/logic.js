@@ -671,6 +671,20 @@ const L = {
      另一格看着像没问题；顶部那排 chip 撤掉之后没有那一格了，所以两行都得亮。
      一条列名都不点的旗（空表）不进这里：它说的是整张票，落在列表末尾那一格「整张票」上，
      照样能确认——挂到猜出来的一列上，人会去核一个本来没问题的列。 */
+  seStatus(se, pending){
+    /* 互核状态行（旁路定案）：一行小字两态——解析上屏未回「互核中…」、qc 落了「已回：…」。
+       不是进度条：单次模型调用没有百分比。返回 null = 老票/开关关，不显示。 */
+    if (se && se.status === "ok") return (se.surfaced || []).length ? "conflicts" : "clean";
+    if (se && (se.status === "empty" || se.status === "error")) return "failed";
+    return pending ? "pending" : null;
+  },
+
+  secondEyeVisible(f, locked){
+    /* 互核旗是"再看一眼"的提示：票离开暂存档（提交公司）就不再挂现值旗——已交出去的不许再催。
+       其它旗不吃这个开关：缺号/保真那些旗在已提交票上照旧按各自的口径处理。 */
+    return !(locked && String(f || "").indexOf("互核") === 0);
+  },
+
   flagKeys(f, keys){
     const body = String(f || "").replace(/^(?:L3|保真)\s+/, "");
     const id = ch => /[0-9A-Za-z_]/.test(ch || "");

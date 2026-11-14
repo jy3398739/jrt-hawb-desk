@@ -241,7 +241,8 @@ def img_to_data_urls(path) -> list[str]:
         return [_encode(img)]
 
 
-def extract_one(path, transcript: dict | None = None, urls: list | None = None) -> dict:
+def extract_one(path, transcript: dict | None = None, urls: list | None = None,
+                 extra_body: dict | None = None) -> dict:
     """L2 提取单张图片/PDF，返回 全字段 dict（保真原文口径）。
     传入 L1 转录结果时，转录文本随 prompt 下发，强制字段值逐字来自转录。
     当前模型无视觉（config.MODEL_VISION=False）时不下发票面图片、只吃转录文本——
@@ -266,4 +267,4 @@ def extract_one(path, transcript: dict | None = None, urls: list | None = None) 
         pages = img_to_data_urls(path) if urls is None else urls
     else:
         pages = []          # 就算调用方递了页图也不下发：那条口径不属于"省一次渲染"
-    return _chat_json(prompt, pages, FIELDS, path.name)
+    return _chat_json(prompt, pages, FIELDS, path.name, extra_body=extra_body)
