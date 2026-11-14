@@ -6,12 +6,19 @@
 ② 查出 invalid 挂红旗（列名打头，自动挂到那一列），走人工确认软闸门——确认过就能交；
 ③ 查不通（超时/页面认不出）只算"这台机器到不了欧盟"，中性提示，**不挂旗**。
 
-事实底账（2026-11-13 探针实测）：
-- 官网就是 GET 一个 URL 即 API：eori_validation.jsp?Screen=0&EoriNumb=<号>&Expand=false&Lang=en；
-- 有效号回页含 "Valid EORI number"，无效号含 "is not valid"，单次 6-10 秒 → 必须后台 + 缓存；
-- VM 与本机到 ec.europa.eu 网络不通（超时），公司那台通 → ③ 正是为这台兜的；
-- GB 前缀的号是英国 HMRC 发的（脱欧后不在欧盟 EOS 里），官网查它必回 invalid——
-  真号会吃假旗，所以跳过不查。
+事实底账（2026-11-14 公司那台 Qoder 升级回报 + 本机真页对照实锤，**修正 v1.39.0 的两处错**）：
+- **结论不在表单页里**：`eori_validation.jsp?Screen=0` 只是表单页——查询号在页里出现 24 处全是
+  JS 胶水/语言链接/输入框回填，唯一像结论的 "is not valid" 三处全在 **JS 注释**里（"//The day is
+  not valid"）。真结论是页面再发的 AJAX：**`eori_detail.jsp?Lang=en&EoriNumb=<号>`**，那份干净得
+  1:1——合法号恰 1 处 "is valid"（并带回持有人资料）、假号恰 1 处 "is not valid"。v1.39.0 打的是
+  表单页还拿 "is not valid" 判无效 ⇒ **可达机器上每个号都会被判无效**（本机隔离台验收当晚两次
+  "无效"全是假阳性：SE5563646560 其实是瑞典 K G Fridman AB 的有效号）。三份真页面留成夹具
+  `tests/fixtures/eori/`（valid/valid_it/invalid + 表单陷阱页），回归拿真的跑。
+- 证书：默认上下文（Windows 根库不全的机器只有 20+ 条）可能 `CERTIFICATE_VERIFY_FAILED`。
+  回退链：默认 → certifi（若装了）→ `EORI_CAFILE` 环境变量 → Git for Windows 自带的 CA bundle
+  （公司那台实测可用）。**每一档都是真验证，绝不关校验**；全失败仍回 unreachable（中性档）。
+- 单次 1-2 秒（detail 端点比表单页快）→ 仍后台 + 缓存；GB 前缀的号是英国 HMRC 发的（脱欧后
+  不在欧盟 EOS 里），官网查它必回 invalid——真号会吃假旗，所以跳过不查。
 
 缓存 output/eori_cache.json：valid/invalid 留 30 天，unreachable 只留 1 小时
 （网络恢复自动重查）；手动重查绕过缓存强制刷新并覆盖缓存。
@@ -20,9 +27,11 @@ import datetime
 import json
 import os
 import re
+import ssl
 import threading
 import urllib.parse
 import urllib.request
+import urllib.error
 from pathlib import Path
 
 import atomic
@@ -30,7 +39,8 @@ import codes
 import config
 import store
 
-EORI_URL = "https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp"
+DETAIL_URL = "https://ec.europa.eu/taxation_customs/dds2/eos/eori_detail.jsp"
+_UA = {"User-Agent": "Mozilla/5.0 (JRT-hawb-desk)"}
 SKIP_PREFIX = ("GB",)
 VALID_DAYS = 30
 UNREACHABLE_HOURS = 1
@@ -94,29 +104,70 @@ def _status_of(rec) -> str | None:
     return None
 
 
+def _ca_candidates() -> list:
+    """CA 来源候选链：默认上下文先来，然后 certifi（若装了）、EORI_CAFILE 环境变量、
+    Git for Windows 自带的 CA bundle（Windows 根库不全的机器靠它，公司那台实测可用）。"""
+    out = [None]
+    try:
+        import certifi
+        out.append(certifi.where())
+    except Exception:
+        pass
+    for p in (os.getenv("EORI_CAFILE", ""),
+              r"C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt",
+              r"C:\Program Files\Git\usr\etc\ssl\certs\ca-bundle.crt",
+              r"C:\Program Files (x86)\Git\mingw64\etc\ssl\certs\ca-bundle.crt"):
+        if p and p not in out and os.path.isfile(p):
+            out.append(p)
+    return out
+
+
+def _fetch(url: str, timeout: float) -> str:
+    """按 CA 候选链逐个真验证地试：默认上下文先来；**只有**证书链失败才换下一个来源
+    （超时/DNS 这类换了也没用，直接抛）。链尾也不关校验——修不好就老实回中性档。"""
+    last: Exception | None = None
+    for ca in _ca_candidates():
+        try:
+            ctx = ssl.create_default_context(cafile=ca)
+            req = urllib.request.Request(url, headers=_UA)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                return resp.read().decode("utf-8", "replace")
+        except urllib.error.URLError as e:
+            reason = getattr(e, "reason", None)
+            if isinstance(reason, ssl.SSLCertVerificationError) \
+                    or "CERTIFICATE_VERIFY_FAILED" in str(reason or e):
+                last = e
+                continue          # 证书链失败：换下一个 CA 来源重试
+            raise
+    raise last if last else RuntimeError("no CA source could verify")
+
+
 def check_one(num: str, timeout: float = 15.0) -> str:
     """查一个号 → "valid" / "invalid" / "unreachable"（页面回不来或认不出结论都不判死）。
+    打的是**结论端点** `eori_detail.jsp`（表单页 eori_validation.jsp 里没有结论，
+    只有 JS 注释——v1.39.0 拿它数子串把有效号全判成无效，见模块头）。判据在 detail
+    端点是 1:1 干净的：恰一处 "is valid" 或恰一处 "is not valid"。
     熔断期间不发网络请求，直接回 unreachable。"""
     with _LOCK:
         cache = _load()
         now = datetime.datetime.now()
         if _breaker_active(cache, now):
             return "unreachable"
-    url = f"{EORI_URL}?Screen=0&EoriNumb={urllib.parse.quote(num)}&Expand=false&Lang=en"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (JRT-hawb-desk)"})
+    url = f"{DETAIL_URL}?Lang=en&EoriNumb={urllib.parse.quote(num)}"
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            body = resp.read().decode("utf-8", "replace").lower()
+        body = _fetch(url, timeout).lower()
     except Exception:
         _note_unreachable()
         return "unreachable"
-    if "is not valid" in body:
+    # 判据=**完整结论句**（detail 端点的原句 "This EORI number is (not) valid."），
+    # 不拿裸子串——表单页的 JS 注释里就有 "The day is not valid"，裸子串会把陷阱页判死。
+    if "this eori number is not valid" in body:
         _note_ok()
         return "invalid"
-    if "valid eori number" in body or "is valid" in body:
+    if "this eori number is valid" in body:
         _note_ok()
         return "valid"
-    return "unreachable"
+    return "unreachable"    # 页面回来了但认不出结论：当查不到，不判死
 
 
 def _note_ok():

@@ -1,0 +1,1664 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+
+
+
+
+
+
+
+
+
+
+
+<script type="text/javascript"><!--
+var keepParam;
+var months = new Array();
+var dateParameterName;
+var fieldContents;
+
+months[0] = "January";
+months[1] = "February";
+months[2] = "March";
+months[3] = "April";
+months[4] = "May";
+months[5] = "June";
+months[6] = "July";
+months[7] = "August";
+months[8] = "September";
+months[9] = "October";
+months[10] = "November";
+months[11] = "December";
+
+function keyUp(e)
+{
+	validateBeforeQuit();
+}
+
+function validateBeforeQuit()
+{
+  var date = validateInputDate();
+  if(date==null)
+    return false;
+  return true;
+}
+
+function enterKey(e)
+{
+  var keynum
+  var keychar
+  var numcheck
+
+  var enterId = (e.target || e.srcElement).id;
+  
+  if (enterId == "input_day" || enterId == "input_month" || enterId == "input_year")
+  {
+    if(window.event) <!--  IE -->
+    {
+      keynum = e.keyCode
+    } 
+    else if (e.which) <!--  Netscape/Firefox/Opera -->
+    {
+      keynum = e.which
+    }
+    if (keynum==13)
+    {
+        if(!validateBeforeQuit())
+          return;
+        var link = new url(window.location.href);
+        var row;
+        for(row in fieldContents){
+           link.setParameter(fieldContents[row][0],fieldContents[row][1]);
+        }
+        var inputDay = document.getElementById("input_day");
+        var inputMonth = document.getElementById("input_month");
+        var inputYear = document.getElementById("input_year");  
+        var day = inputDay.value;
+        var month = inputMonth.value;
+        var year = inputYear.value;
+        var date = year+""+month+""+day;
+        link.setParameter(dateParameterName,date);
+        window.location.href = link.currentUrl;
+    }
+  }  
+  
+}
+
+function inputFocus(element)
+{
+	var date = validateInputDate();
+  if(date!=null)
+    reload(date.getTime(), dateParameterName, fieldContents);
+  element.select(); 
+}
+
+function validateInputDate()
+{
+  var valid = true;
+	var inputDay = document.getElementById("input_day");
+  var inputMonth = document.getElementById("input_month");
+  var inputYear = document.getElementById("input_year");  
+  var day = inputDay.value;
+  var month = inputMonth.value;
+  var year = inputYear.value;
+
+  //check if the fields are numeric or not
+  var valid = true;
+  if(!isNumeric(day))
+  {
+    inputDay.style.color = "red";
+    valid = false;
+  }
+  if(!isNumeric(month))
+  {
+    inputMonth.style.color = "red";
+    valid = false;
+  }  
+  
+  if(!validateYear(year))
+  {
+    inputYear.style.color = "red";
+    valid = false;
+  }   
+  if(!valid)
+    return null;
+  
+  //validate all the date
+  var date = isValidDate(year, month, day); 
+  if(date!=null)
+  {
+	  inputDay.style.color = "black";
+	  inputMonth.style.color = "black";
+	  inputYear.style.color = "black";
+	  return date;
+  }
+
+  if(isValidDate(year, month, 1)!=null) //The day is not valid
+  {
+    inputDay.style.color = "red";
+  }
+  else
+  if(isValidDate(year, 1, 1)!=null) //The month is not valid
+  {
+    inputMonth.style.color = "red";
+  }
+  else
+  if(isValidDate(2000, 1, 1)!=null) //The year is not valid
+  {
+    inputYear.style.color = "red";
+  }
+
+  return null;
+}
+
+function validateYear(text)
+{
+	if(!isNumeric(text))
+		return false;
+
+	if(text.length !=4)
+		return false;
+
+	return true;
+}
+
+function isNumeric(text)
+{
+   var validChars = "0123456789";
+   var char;
+ 
+   for (i = 0; i < text.length; i++) 
+   { 
+	   char = text.charAt(i); 
+	   if (validChars.indexOf(char) == -1) 
+	   {
+	     return false;
+	   }
+   }
+   return true;
+}
+
+function reload(timeInMilliseconds, dateParameterName, keepParams)
+{ 
+  this.dateParameterName = dateParameterName;
+  this.fieldContents = keepParams;
+ 
+  loadYear(document.getElementById("year"), document.getElementById("input_year"), timeInMilliseconds)
+  loadMonth(document.getElementById("month"), document.getElementById("input_day"), document.getElementById("input_month"), timeInMilliseconds);
+  loadDays(timeInMilliseconds);
+}
+
+function loadMonth(element, inputZoneDay, inputZoneMonth, timeInMilliseconds)
+{
+  var currentDate = new Date(timeInMilliseconds);
+  
+  clearElement(element);
+
+  if (currentDate.getMonth() > 0)
+  {
+    var month = new Date(timeInMilliseconds);
+    month.setMonth(month.getMonth()-1);
+    var href = document.createElement("a");
+    href.setAttribute("href", "javascript:reload("+month.getTime()+", dateParameterName, fieldContents);");
+    href.setAttribute("onclick", "reload("+month.getTime()+", dateParameterName, fieldContents);");
+    href.appendChild(document.createTextNode("<<"));
+    element.appendChild(href);
+    element.appendChild(document.createTextNode(" "));
+  }
+
+  element.appendChild(document.createTextNode(months[currentDate.getMonth()]));
+
+  var m = ""+(currentDate.getMonth()+1);
+  if(m.length == 1)
+	  m = "0"+m;  
+  var d = ""+(currentDate.getDate());
+  if(d.length == 1)
+    d = "0"+d;  
+  inputZoneMonth.value = m;
+  inputZoneDay.value = d;
+
+  if (currentDate.getMonth() < 11)
+  {
+    element.appendChild(document.createTextNode(" "));
+    var month = new Date(timeInMilliseconds);
+    month.setMonth(month.getMonth()+1);
+    var href = document.createElement("a");
+    href.setAttribute("href", "javascript:reload("+month.getTime()+", dateParameterName, fieldContents);");
+    href.setAttribute("onclick", "reload("+month.getTime()+", dateParameterName, fieldContents);");
+    href.appendChild(document.createTextNode(">>"));
+    element.appendChild(href);
+  }
+}
+
+function loadYear(element, inputZone, timeInMilliseconds)
+{
+  var currentDate = new Date(timeInMilliseconds);
+
+  clearElement(element);
+
+  {
+    var year = new Date(timeInMilliseconds);
+    year.setFullYear(year.getFullYear()-1);
+    var href = document.createElement("a");
+    href.setAttribute("href", "javascript:reload("+year.getTime()+", dateParameterName, fieldContents);");
+    href.setAttribute("onclick", "reload("+year.getTime()+", dateParameterName, fieldContents);");
+
+    href.appendChild(document.createTextNode("<<"));
+    element.appendChild(href);
+    element.appendChild(document.createTextNode(" "));
+  }
+
+  element.appendChild(document.createTextNode(""+currentDate.getFullYear()));
+  inputZone.value = currentDate.getFullYear();
+  {
+    element.appendChild(document.createTextNode(" "));
+    var year = new Date(timeInMilliseconds);
+    year.setFullYear(year.getFullYear()+1);
+    var href = document.createElement("a");
+    href.setAttribute("href", "javascript:reload("+year.getTime()+", dateParameterName, fieldContents);");
+    href.setAttribute("onclick", "reload("+year.getTime()+", dateParameterName, fieldContents);");
+    href.appendChild(document.createTextNode(">>"));
+    element.appendChild(href);
+  }
+}
+
+function loadDays(timeInMilliseconds)
+{
+ 
+  var firstOfMonth = new Date(timeInMilliseconds);
+  firstOfMonth.setDate(1);
+  var week = 0;
+  var month = firstOfMonth.getMonth();
+
+  for (var i = 0; i < 6; i++)
+    for (var j = 0; j < 7; j++)
+      clearElement(document.getElementById("day"+i+""+j));
+
+  for (; firstOfMonth.getDay() < 7 && firstOfMonth.getMonth() == month; firstOfMonth.setDate(firstOfMonth.getDate()+1))
+  {
+    var day = document.getElementById("day"+week+""+firstOfMonth.getDay());
+    var href = document.createElement("a");
+    var date = 
+      firstOfMonth.getFullYear()+
+      (firstOfMonth.getMonth()+1 < 10 ? "0"+(firstOfMonth.getMonth()+1) : ""+(firstOfMonth.getMonth()+1))+
+      (firstOfMonth.getDate() < 10 ? "0"+firstOfMonth.getDate() : ""+firstOfMonth.getDate());
+    
+    var link = new url(window.location.href);
+    link.setParameter(dateParameterName,date);
+	for(row in fieldContents){
+	   link.setParameter(fieldContents[row][0],fieldContents[row][1]);
+	}
+   
+    href.setAttribute("href", link.currentUrl);
+    href.appendChild(document.createTextNode(firstOfMonth.getDate()));
+    day.appendChild(href);
+
+    if (firstOfMonth.getDay() == 0)
+      week++;
+  }
+}
+
+
+function today()
+{
+  var todayDate = new Date();
+
+  reload(todayDate.getTime(), dateParameterName, fieldContents);
+  
+  inputFocus(document.getElementById("input_year"));
+}
+
+function clearElement(element)
+{
+  while (element != null && element.hasChildNodes())
+    element.removeChild(element.lastChild);
+}
+
+--></script>
+
+    
+    
+    
+    
+
+
+
+
+
+
+
+    <html>
+    <head>
+        <!-- Defect# CUSTD00024725 fix -include html page which contains meta tag information -->
+        <!-- Defect# CUSTD00024725 fix -START-->
+<meta name="application" content="DDS2-EO"/>
+<meta name="version" content="3.10.0.1"/>
+<!-- IPG Rule requires the following 7 metatags in all application pages. Additional metatags e.g. version and application can be added if required by the application. -->
+<meta http-equiv="Content-Language" content="en">
+<meta name="description" content="DDS2-EO Application page">
+<meta name="reference" content="DDS2-EO Reference">
+<meta name="creator" content="DG-TAXUD">
+<meta name="classification" content="DDS2-EO">
+<meta name="keywords" content="DDS2-EO, EOS, DDS2">
+<meta name="date" content="">
+<!-- Defect# CUSTD00024725 fix -END-->
+
+        <link rel="icon" href="https://ec.europa.eu/taxation_customs/dds2/eos/europa/favicon.ico" type="image/x-icon">
+        <title>EORI number validation</title>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/country_combo/country_combo_sa_en.js'></script>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/exportdate/exportdate_2026111401.js'></script>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/overlay.js'></script>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/util.js'></script>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/buttons.js'></script>
+        <script type="text/javascript" src='https://ec.europa.eu/taxation_customs/dds2/eos/iframes/iframes.js'></script>
+        <script type="text/javascript"><!--
+
+        function buildExportDate(screen) {
+            var aeoExportDate;
+            var client = getClient();
+            client.open("GET", "exportdate/exportdate_2026111401.js", false);
+            client.send(null);
+            eval(client.responseText);
+            document.getElementById("divExportDate").innerHTML = aeoExportDate;
+        }
+
+
+        ////////////////////////////////////////////////////
+        window.onload = function () {
+            //force the call, cause not working onload
+            buttonEndings();
+            buildExportDate(0);
+            autoSubmit(false);
+            setCursorFocus();
+        }
+
+
+        NumChars = "0123456789";
+        var refrnce;
+        OtherChars = "-";
+        AllChars = NumChars + OtherChars;
+
+        function autoSubmit(submitted, isNextClicked, isPreviousClicked, forcedOffset) {
+            if (submitted != true) return;
+            var pane = document.getElementById("overlayPanel");
+            var link = new url("eori_detail.jsp");
+            link.setParameter("Lang", 'en');
+            link.setParameter("EoriNumb", 'SE00000000000');
+            showPanel(link.currentUrl, setValue, null, "error_code");
+
+        }
+
+
+        function setCursorFocus(screen) {
+            var eoriValidFocus = document.getElementById("EoriNumb");
+            if (eoriValidFocus == null)
+                return;
+            eoriValidFocus.focus();
+        }
+
+        /**
+         * Callback function for the overlay panel
+         */
+        function setValue(value) {
+            setInvisible(document.getElementById("overlayPanel"));
+        }
+
+        /**
+         * Function called when overlay window is called
+         */
+        function beforeOverlay() {
+        }
+
+        /**
+         * Function called when overlay window is return (after setValue)
+         */
+        function afterOverlay() {
+        }
+
+        function setVisible(el) {
+            if (el == null) return;
+            var style = el.style.cssText;
+            style = style.replace(/display:\s*none/i, "display: block");
+            el.style.cssText = style;
+        }
+
+        function setInvisible(el) {
+            if (el == null) return;
+            var style = el.style.cssText;
+            style = style.replace(/display:\s*block/i, "display: none");
+            el.style.cssText = style;
+        }
+
+        function isVisible(el) {
+            if (el == null) return false;
+            var style = el.style.cssText;
+            if (style == null) return false;
+            return !/display:\s*none/i.test(style);
+        }
+
+        function buttonClick() {
+            if (!validateSearchParameters(document.eori_valid_form)) {
+                setInvisible(document.getElementById("overlayPanel"));
+                return false;
+            }
+            var link = new url(window.location.href);
+            document.eori_valid_form.action = link.currentUrl;
+            document.eori_valid_form.submit();
+        }
+
+        function submitQuery(e) {
+            var keynum
+            var keychar
+            var numcheck
+
+            if (window.event) // IE
+            {
+                keynum = e.keyCode
+            } else if (e.which) // Netscape/Firefox/Opera
+            {
+                keynum = e.which
+            }
+
+            if (keynum == 13) {
+                buttonClick();
+            }
+        }
+
+
+        /**
+         * This function validates the input parameters in order to display the error messages at the page load level
+         **/
+        function validateSearchParameters(form) {
+            var upperChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            var errorMessages = {
+                no_number: "No EORI number entered!",
+                no_spaces: "No spaces allowed!",
+                wrong_format: "An EORI number must start with two uppercase letters (the ISO code of the country that granted the number) followed by maximum 15 alphanumeric characters"
+            };
+
+            var errorMessageArea = document.getElementById("error-message-container");
+            var errorMessageDesc = document.getElementById("error-message-desc");
+            var eoriInput = document.getElementById("EoriNumb");
+
+            var elementsHTML = new Array(errorMessageArea, errorMessageDesc, eoriInput);
+
+            hideErrorMessage(elementsHTML);
+            // hideErrorMessage("error_no_number_entered");
+            var eori = form.EoriNumb.value;
+            if (eori == "") {
+                showErrorMessage(errorMessages.no_number, elementsHTML);
+                return false;
+            }
+            if (eori.indexOf(" ") > 0) {
+                showErrorMessage(errorMessages.no_spaces, elementsHTML);
+                return false;
+            }
+            if (eori.length < 3 || eori.length > 17
+                || upperChars.indexOf(eori.charAt(0)) == -1
+                || upperChars.indexOf(eori.charAt(1)) == -1
+            ) {
+                showErrorMessage(errorMessages.wrong_format, elementsHTML);
+                return false;
+            }
+
+            return true;
+        }
+
+        function hideErrorMessage(elements) {
+            elements[0].style.display = 'none';
+            elements[1].innerText = "";
+            elements[2].style.borderColor = 'none';
+
+        }
+
+        function showErrorMessage(message, elements) {
+            elements[0].style.display = 'inline-flex';
+            elements[1].innerText = message;
+            elements[2].style.borderColor = 'red';
+
+        }
+
+
+        --></script>
+    </head>
+    <!--Update for QTM 132 NVI changes: CUSTD00027340 -->
+    <body onclick="closeEosOverlayPanels(event);" style="background-color: #FFFFFF;" class="yui-skin-sam" onunload="">
+    <!-- Changes for QTM 132 defect id: CUSTD00032683 DDS2-EOS translation issue : STARTS -->
+    
+    
+    
+        
+        
+        
+        <!-- Changes for QTM 132 defect id: CUSTD00032683 DDS2-EOS translation issue : ENDS -->
+        
+        
+        
+        
+        <div>
+            
+            
+
+
+
+
+<!-- QTM 132 NVI changes: CUSTD00027340-look and feel and style for this JSP has been changed for DDS2-EOS-NVI(New Visual Identity) changes -->
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+
+
+
+
+
+    
+    
+    
+    
+
+
+
+
+<!--banner -->
+
+
+
+<!-- Defect#CUSTD00032674 fix changes - START-->
+
+
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width,initial-scale=1" name="viewport"/>
+    <meta content="IE=edge" http-equiv="X-UA-Compatible"/>
+    <link type="text/css" rel="stylesheet" href="https://ec.europa.eu/taxation_customs/dds2/eos/europa/dds2-eo.css">
+    <script>var contextPath = "/taxation_customs/dds2/eos";</script>
+    <!-- QTM 110 defect id:CUSTD00030813 change starts -->
+    <script type="text/javascript">
+        <!--
+        function buildImage(lang) {
+            if (lang == '00' || lang == '01') {
+                lang = 'en';
+            }
+            if (lang.match(/[a-zA-Z]/)) {
+                lang = lang.toLowerCase();
+            }
+            var selectString = "<img alt='European Commission logo' id='ec-banner-flag' src='";
+            selectString += contextPath + '/europa/images/logos/logo_' + lang + ".gif' />";
+            document.write(selectString);
+        }
+
+        function buildBannerImage(lang) {
+            if (lang == '00' || lang == '01') {
+                lang = 'en';
+            }
+            var bannerString = "<span class='ec-title-" + lang + "' id='ec-banner-image-title'></span>";
+            document.write(bannerString);
+        }
+
+        -->
+    </script>
+    <!-- QTM 110 defect id:CUSTD00030813 change ends -->
+
+    
+    <link type="text/css" rel="stylesheet" href="https://ec.europa.eu/taxation_customs/dds2/eos/europa/ecl/css/ecl-ec-preset-website.css" media="screen">
+    <link type="text/css" rel="stylesheet" href="https://ec.europa.eu/taxation_customs/dds2/eos/europa/ecl/css/ecl-ec-preset-website-print.css" media="print">
+    <script type="text/javascript" src="https://ec.europa.eu/taxation_customs/dds2/eos/europa/ecl/scripts/ecl-ec-preset-website.js"></script>
+
+
+    
+        <script type="text/javascript" src="//europa.eu/webtools/load.js"></script>
+        <script type="application/json">
+            {
+                "utility": "piwik",
+                "siteID": 335,
+                "sitePath": [
+                    "ec.europa.eu\/taxation_customs"
+                ],
+                "is404": false,
+                "siteSection": "dds2"
+            }
+        </script>
+        <script type="text/javascript" src="https://ec.europa.eu/wel/cookie-consent/consent.js"></script>
+
+    
+
+
+
+
+
+    <script type="text/javascript">
+        function getClient()
+        {
+            var xmlhttp=null;
+            try
+            {
+                xmlhttp = new XMLHttpRequest();
+            }
+            catch (e)
+            {}
+            if (xmlhttp != null)
+                return xmlhttp;
+            try {
+                xmlhttp = new ActiveXObject("Msxml2.XMLHTTP");
+            }
+            catch (e)
+            {}
+            if (xmlhttp != null)
+                return xmlhttp;
+            try {
+                xmlhttp = new ActiveXObject("Microsoft.XMLHTTP");
+            }
+            catch (E) {}
+            return xmlhttp;
+        }
+        window.addEventListener('DOMContentLoaded',function(){
+            var client = getClient();
+            client.open("GET", "/taxation_customs/dds2/eos/special_message.html",  false);
+            client.send(null);
+            document.getElementById('message-container').innerHTML = client.responseText;
+        });
+
+    </script>
+
+
+
+    <script type="text/javascript">
+        function closeButton() {
+            document.getElementsByClassName("page-header")[0].removeChild(document.getElementById("message-container"));
+        }
+
+        function closeInformationPanel() {
+            document.getElementsByClassName("page-header")[0].removeChild(document.getElementById("information-panel"));
+        }
+
+        function showOverlay() {
+            document.getElementById("language-selector-overlay").style.display = 'block';
+        }
+
+        function closeOverlay() {
+            document.getElementById("language-selector-overlay").style.display = 'none';
+        }
+        function toggleMenu(){
+            var menuList = document.getElementById("nav-menu-expandable-root");
+            if(menuList.style.display === "block"){
+                menuList.setAttribute("style","display:none");
+            }
+            else{
+                menuList.setAttribute("style","display:block");
+            }
+        }
+        function toggleTiles(elem){
+            setTimeout(function(){
+                elem.firstElementChild.firstElementChild.classList.toggle('tiles-focus');
+            },200);
+        }
+        // Implementation of startsWith fo IE
+        if (!String.prototype.startsWith) {
+            String.prototype.startsWith = function(searchString, position){
+                position = position || 0;
+                return this.substr(position, searchString.length) === searchString;
+            };
+        }
+    </script>
+
+
+
+</head>
+<body>
+
+
+
+
+
+
+
+
+
+
+    
+    <div>
+        <header data-ecl-auto-init="SiteHeaderHarmonised"
+                class="ecl-site-header-harmonised--group1 ecl-site-header-harmonised" data-ecl-has-menu="true">
+            <div class="ecl-container">
+                <h2 class="ecl-u-sr-only">ECL site switcher</h2>
+                <ul id="ecl-site-switcher" class="ecl-site-switcher__list ecl-container">
+                    <li class=" ecl-site-switcher__option"><a href="https://ec.europa.eu/commission/index"
+                                                              class="ecl-site-switcher__link ecl-link">Commission and
+                        its priorities</a></li>
+                    <li class="ecl-site-switcher__option ecl-site-switcher__option--is-selected"><a
+                            href="https://ec.europa.eu/info/index" class="ecl-site-switcher__link ecl-link">Policies,
+                        information and services</a></li>
+                </ul>
+            </div>
+            <div class="ecl-site-header-harmonised__container ecl-container">
+                <div class="ecl-site-header-harmonised__top">
+                    <a class="ecl-link ecl-link--standalone ecl-site-header-harmonised__logo-link"
+                       href="https://ec.europa.eu" aria-label="European Commission">
+                        <img alt="European Commission logo" title="European Commission"
+                             class="ecl-site-header-harmonised__logo-image"
+                             src="https://ec.europa.eu/taxation_customs/dds2/eos/europa/ecl/images/logo/logo--en.svg"
+                             style="flex-grow: 1;"/>
+                    </a>
+                    <div class="ecl-site-header-harmonised__action">
+                        <a class="ecl-link ecl-link--standalone ecl-site-header-harmonised__language-selector"
+                           href="javascript:void(0)" data-ecl-language-selector="true"
+                           aria-controls="language-list-overlay" aria-expanded="false" onclick="showOverlay()">
+                        <span class="ecl-site-header-harmonised__language-icon">
+                            <svg focusable="false" aria-hidden="true"
+                                 class="ecl-site-header-harmonised__icon ecl-icon ecl-icon--s" width="0.625" height="0.625" viewBox="0 0 0.625 0.625">
+                                <symbol viewBox="0 0 24 24" id="general--language" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M18.191 1H5.81A4.812 4.812 0 001 5.818v8.338a4.812 4.812 0 004.809 4.818h.746V23l8.41-4.026h3.226c2.636 0 4.809-2.156 4.809-4.818V5.818C23 3.156 20.827 1 18.191 1z"/>
+                            </symbol>
+                                <use xlink:href="#general--language"></use>
+
+                            </svg>
+                            <span class="ecl-site-header-harmonised__language-code">en</span>
+                        </span>
+                            English
+                        </a>
+                    </div>
+                        
+                    <div class="ecl-site-header-harmonised__search-container" id="header-search">
+                        <a class="ecl-link ecl-link--standalone ecl-site-header-harmonised__search-toggle"
+                           href="/example" data-ecl-search-toggle="true" aria-controls="search-form-id"
+                           aria-expanded="false">
+                            <svg focusable="false" aria-hidden="true" class="ecl-icon ecl-icon--s">
+                                <symbol viewBox="0 0 24 24" id="general--search" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M22.457 20.018L17.67 15.46l-.065-.063a8.322 8.322 0 001.493-4.746C19.097 5.864 15.034 2 10.048 2 5.063 2 1 5.843 1 10.63c0 4.789 4.063 8.653 9.048 8.653a9.284 9.284 0 004.964-1.428l.065.063 4.766 4.578a1.946 1.946 0 002.613 0c.725-.672.725-1.785 0-2.478h.001zM10.05 16.28c-3.272 0-5.908-2.52-5.908-5.65 0-3.128 2.636-5.648 5.908-5.648 3.25 0 5.908 2.52 5.908 5.649S13.3 16.28 10.05 16.28z"/>
+                                </symbol>
+                                <use xlink:href="#general--search"></use>
+
+                            </svg>
+                            Search
+                        </a>
+                        <form action="https://ec.europa.eu/search" id="search-form-id" data-ecl-search-form="true"
+                              class="ecl-site-header-harmonised__search ecl-search-form" role="search">
+                            <input type="hidden" name="query_source" value="TAXUD">
+                            <div class="ecl-form-group">
+                                <label class="ecl-search-form__label ecl-form-label"
+                                       for="search-input-id">Search</label>
+                                <input type="search" id="search-input-id"
+                                       class="ecl-search-form__text-input ecl-text-input" name="QueryText" value=""/>
+                            </div>
+                            <button aria-label="Search" type="submit"
+                                    class="ecl-search-form__button ecl-button ecl-button--search" style="line-height: 1;">
+                            <span class="ecl-button__container"><span class="ecl-button__label" data-ecl-label="true">Search</span>
+                                <svg focusable="false" aria-hidden="true" data-ecl-icon="true"
+                                     class="ecl-button__icon ecl-button__icon--after ecl-icon ecl-icon--xs">
+                                    <symbol viewBox="0 0 24 24" id="general--search" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M22.457 20.018L17.67 15.46l-.065-.063a8.322 8.322 0 001.493-4.746C19.097 5.864 15.034 2 10.048 2 5.063 2 1 5.843 1 10.63c0 4.789 4.063 8.653 9.048 8.653a9.284 9.284 0 004.964-1.428l.065.063 4.766 4.578a1.946 1.946 0 002.613 0c.725-.672.725-1.785 0-2.478h.001zM10.05 16.28c-3.272 0-5.908-2.52-5.908-5.65 0-3.128 2.636-5.648 5.908-5.648 3.25 0 5.908 2.52 5.908 5.649S13.3 16.28 10.05 16.28z"/>
+                                </symbol>
+                                <use xlink:href="#general--search"></use>
+
+                                </svg>
+                            </span>
+                            </button>
+                            <input type="hidden" name="swlang" value="en">
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+                
+            <nav data-ecl-auto-init="Menu" class="ecl-menu--group1 ecl-menu" aria-expanded="false" data-ecl-menu="true">
+                <div class="ecl-menu__overlay" data-ecl-menu-overlay="true"></div>
+                <div class="ecl-container ecl-menu__container">
+                    <a class="ecl-link ecl-link--standalone ecl-menu__open" href="" data-ecl-menu-open="true">
+                        <svg focusable="false" aria-hidden="true" class="ecl-icon ecl-icon--s">
+                            <symbol viewBox="0 0 24 24" id="general--hamburger" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M0 19.2h24v2.402H0zm0-8.4h24v2.4H0zm0-8.402h24v2.403H0zm0 0"/>
+                            </symbol>
+                            <use xlink:href="#general--hamburger"></use>
+
+                        </svg>
+                        Menu
+                    </a>
+                    <div class="ecl-menu__site-name">Taxation and Customs Union</div>
+                    <section class="ecl-menu__inner" data-ecl-menu-inner="true">
+                        <header class="ecl-menu__inner-header">
+                            <button data-ecl-menu-close="true" type="submit"
+                                    class="ecl-menu__close ecl-button ecl-button--text" style="cursor:pointer">
+                            <span class="ecl-menu__close-container ecl-button__container">
+                                <svg focusable="false" aria-hidden="true" data-ecl-icon="true"
+                                     class="ecl-button__icon ecl-button__icon--before ecl-icon ecl-icon--s">
+                                    <symbol viewBox="0 0 24 24" id="ui--close-filled" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M15.242 16.588l-3.253-3.252-3.23 3.23-1.347-1.345 3.231-3.232-3.21-3.21L8.78 7.433l3.21 3.21 3.232-3.231 1.346 1.346-3.231 3.231 3.252 3.253-1.346 1.346zM12 1C5.925 1 1 5.925 1 12s4.925 11 11 11 11-4.925 11-11S18.075 1 12 1z"/>
+                                    </symbol>
+                                    <use xlink:href="#ui--close-filled"></use>
+
+                                </svg>
+                                <span class="ecl-button__label" data-ecl-label="true">Close</span>
+                            </span>
+                            </button>
+                            <div class="ecl-menu__title">Menu</div>
+                            <button data-ecl-menu-back="true" type="submit"
+                                    class="ecl-menu__back ecl-button ecl-button--text">
+                            <span class="ecl-button__container">
+                                <svg focusable="false" aria-hidden="true" data-ecl-icon="true"
+                                     class="ecl-button__icon ecl-button__icon--before ecl-icon ecl-icon--s ecl-icon--rotate-270">
+                                    <symbol viewBox="0 0 24 24" id="ui--corner-arrow" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M20.623 19.5L12 9.83 3.377 19.5 1 16.835 12 4.5l11 12.335z"/>
+                                    </symbol>
+                                    <use xlink:href="ui--corner-arrow"></use>
+
+                                </svg>
+                                <span class="ecl-button__label" data-ecl-label="true">Back</span>
+                            </span>
+                            </button>
+                        </header>
+                        <ul class="ecl-menu__list">
+                            <li class="ecl-menu__item" data-ecl-menu-item="true"><a
+                                    href="https://ec.europa.eu/taxation_customs/dds2/eos/help/index.jsp"
+                                    class="ecl-menu__link" data-ecl-menu-link="true">Help</a></li>
+                            <li class="ecl-menu__item" data-ecl-menu-item="true"><a
+                                    href="https://ec.europa.eu/taxation_customs/dds2/eos/news/newstar.jsp"
+                                    class="ecl-menu__link" data-ecl-menu-link="true">What's new?</a></li>
+                            <li class="ecl-menu__item" data-ecl-menu-item="true"><a
+                                    href="http://ec.europa.eu/taxation_customs/general-information-customs/customs-security/authorised-economic-operator-aeo_en"
+                                    class="ecl-menu__link" data-ecl-menu-link="true">Information</a></li>
+                            <li class="ecl-menu__item" data-ecl-menu-item="true"><a
+                                    href="https://ec.europa.eu/taxation_customs/dds2/eos/faq/faqeos.jsp"
+                                    class="ecl-menu__link" data-ecl-menu-link="true">FAQ</a></li>
+                            <li class="ecl-menu__item" data-ecl-menu-item="true"><a
+                                    href="mailto:TAXUD-DDS-eCUSTOMS@ec.europa.eu"
+                                    class="ecl-menu__link" data-ecl-menu-link="true">Mail Box</a></li>
+                        </ul>
+                    </section>
+                </div>
+            </nav>
+                
+            <div id="language-list-overlay" hidden="" class="ecl-language-list ecl-language-list--overlay"
+                 aria-labelledby="ecl-language-list__title" role="dialog" data-ecl-language-list-overlay="true">
+                <div class="ecl-language-list__container ecl-container">
+                    <div class="ecl-row">
+                        <div class="ecl-language-list__close ecl-col-12 ecl-col-lg-8 ecl-offset-lg-2">
+                            <button data-ecl-language-list-close="true" type="submit"
+                                    class="ecl-language-list__close-button ecl-button ecl-button--ghost"
+                                    onclick="closeOverlay()" style="cursor:pointer;">
+                            <span class="ecl-button__container"><span class="ecl-button__label" data-ecl-label="true">Close</span>
+                                <svg focusable="false" aria-hidden="true" data-ecl-icon="true"
+                                     class="ecl-button__icon ecl-button__icon--after ecl-icon ecl-icon--s">
+                                    <symbol viewBox="0 0 24 24" id="ui--close" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M16.538 15.205L13.32 11.99l3.199-3.194-1.332-1.332-3.2 3.193L8.812 7.48 7.48 8.812l3.177 3.177-3.195 3.199 1.334 1.333 3.193-3.2 3.217 3.217 1.333-1.333zm5.594-7.49a10.886 10.886 0 00-2.355-3.492 10.882 10.882 0 00-3.492-2.355A10.906 10.906 0 0012 1c-1.488 0-2.93.293-4.286.868a10.958 10.958 0 00-3.492 2.355 10.888 10.888 0 00-2.355 3.492A10.925 10.925 0 001 12a10.958 10.958 0 003.222 7.778 10.9 10.9 0 003.492 2.355C9.07 22.707 10.512 23 12 23a10.964 10.964 0 007.777-3.222 10.912 10.912 0 002.355-3.492A10.94 10.94 0 0023 12c0-1.487-.294-2.93-.868-4.285zM21.702 12a9.642 9.642 0 01-2.844 6.858A9.619 9.619 0 0112 21.703a9.635 9.635 0 01-6.859-2.844A9.617 9.617 0 012.298 12a9.619 9.619 0 012.843-6.859A9.615 9.615 0 0112 2.298a9.619 9.619 0 016.858 2.843A9.623 9.623 0 0121.703 12z"/>
+                                    </symbol>
+                                    <use xlink:href="#ui--close"></use>
+
+                                </svg>
+                            </span>
+                            </button>
+                        </div>
+                        <div class="ecl-language-list__title ecl-col-12 ecl-col-lg-8 ecl-offset-lg-2"
+                             id="ecl-language-list__title">Select your language
+                        </div>
+                    </div>
+                    <div class="ecl-row ecl-language-list__eu">
+                        <div class="ecl-language-list__column ecl-col-12 ecl-col-lg-4 ecl-offset-lg-2">
+                            <ul class="ecl-language-list__list">
+
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="bg"
+                                       hrefLang="bg" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=bg&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Bulgarian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="cs"
+                                       hrefLang="cs" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=cs&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Czech</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="da"
+                                       hrefLang="da" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=da&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Danish</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="de"
+                                       hrefLang="de" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=de&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">German</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="et"
+                                       hrefLang="et" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=et&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Estonian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="el"
+                                       hrefLang="el" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=el&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Greek</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+                                <li class="ecl-language-list__item ecl-language-list__item--is-active ">
+                                    <a lang="en"
+                                       hrefLang="en" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=en&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone ecl-link--icon ecl-link--icon-after"><span
+                                            class="ecl-link__label">English</span>
+                                        <svg class="ecl-link__icon ecl-icon ecl-icon--xs" width="24" height="24"
+                                             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                            <path d="M18.333 4L9 13.465 4.778 9.183l-3.111 3.155L9 20 21.667 7.155z"/>
+                                        </svg>
+                                    </a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="es"
+                                       hrefLang="es" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=es&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Spanish</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="fr"
+                                       hrefLang="fr" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=fr&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">French</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="hr"
+                                       hrefLang="hr" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=hr&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Croatian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="it"
+                                       hrefLang="it" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=it&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Italian</span></a>
+                                </li>
+                                
+                            </ul>
+                        </div>
+                        <div class="ecl-language-list__column ecl-col-12 ecl-col-lg-4">
+                            <ul class="ecl-language-list__list">
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="lv"
+                                       hrefLang="lv" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=lv&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Latvian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="lt"
+                                       hrefLang="lt" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=lt&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Lithuanian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="hu"
+                                       hrefLang="hu" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=hu&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Hungarian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="nl"
+                                       hrefLang="nl" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=nl&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Dutch</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="pl"
+                                       hrefLang="pl" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=pl&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Polish</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="pt"
+                                       hrefLang="pt" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=pt&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Portuguese</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="ro"
+                                       hrefLang="ro" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=ro&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Romanian</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="sk"
+                                       hrefLang="sk" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=sk&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Slovak</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="sl"
+                                       hrefLang="sl" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=sl&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Slovene</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="fi"
+                                       hrefLang="fi" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=fi&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Finnish</span></a>
+                                </li>
+                                
+                                
+                                    
+                                    
+                                    
+                                    
+                                    
+                                    
+                                
+                                
+
+                                <li class="ecl-language-list__item ">
+                                    <a lang="sv"
+                                       hrefLang="sv" rel="alternate"
+                                       href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_validation.jsp?Screen=0&EoriNumb=SE00000000000&Expand=false&Lang=sv&parentfolder=.%2f"
+                                       class="ecl-language-list__link ecl-link ecl-link--standalone"><span
+                                            class="ecl-link__label">Swedish</span></a>
+                                </li>
+                                
+
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </header>
+    </div>
+
+
+
+
+
+
+</body>
+
+
+</html>
+
+        </div>
+        <!--Update for QTM 132 NVI changes: CUSTD00027340 -->
+        <main>
+            <a id="top-page" name="top-page"></a>
+            <div class="ecl-container" id="outer-container">
+                <div>
+                    <div class="ecl-page-header-harmonised page-header">
+                        <nav data-ecl-auto-init="BreadcrumbHarmonised"
+                             class="ecl-page-header-harmonised__breadcrumb ecl-breadcrumb-harmonised"
+                             aria-label="You are here:" data-ecl-breadcrumb-harmonised="true">
+                            <ol class="ecl-breadcrumb-harmonised__container">
+                                    
+                                <li class="ecl-breadcrumb-harmonised__segment" data-ecl-breadcrumb-harmonised-item="static"
+                                    aria-hidden="false">
+                                    <a href="http://ec.europa.eu/index_en.htm"
+                                       class="ecl-breadcrumb-harmonised__link ecl-link ecl-link--standalone">
+                                        European Commission
+                                    </a>
+                                    <svg focusable="false" aria-hidden="true" role="presentation"
+                                         class="ecl-breadcrumb-harmonised__icon ecl-icon ecl-icon--2xs ecl-icon--rotate-90">
+                                        <symbol viewBox="0 0 24 24" id="ui--corner-arrow" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M20.623 19.5L12 9.83 3.377 19.5 1 16.835 12 4.5l11 12.335z"/>
+                                        </symbol>
+                                        <use xlink:href="#ui--corner-arrow"></use>
+                                    </svg>
+                                </li>
+                                    
+                                <li class="ecl-breadcrumb-harmonised__segment" data-ecl-breadcrumb-harmonised-item="static"
+                                    aria-hidden="false">
+                                    <a href="https://ec.europa.eu/taxation_customs/index_en"
+                                       class="ecl-breadcrumb-harmonised__link ecl-link ecl-link--standalone">
+                                        Taxation and Customs Union
+                                    </a>
+                                    <svg focusable="false" aria-hidden="true" role="presentation"
+                                         class="ecl-breadcrumb-harmonised__icon ecl-icon ecl-icon--2xs ecl-icon--rotate-90">
+                                        <symbol viewBox="0 0 24 24" id="ui--corner-arrow" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M20.623 19.5L12 9.83 3.377 19.5 1 16.835 12 4.5l11 12.335z"/>
+                                        </symbol>
+                                        <use xlink:href="#ui--corner-arrow"></use>
+                                    </svg>
+                                </li>
+                                    
+                                <li class="ecl-breadcrumb-harmonised__segment"
+                                    data-ecl-breadcrumb-harmonised-item="expandable" aria-hidden="true">
+                                    <a href="http://ec.europa.eu/taxation_customs/online-services_en"
+                                       class="ecl-breadcrumb-harmonised__link ecl-link ecl-link--standalone">
+                                        Databases
+                                    </a>
+                                    <svg focusable="false" aria-hidden="true" role="presentation"
+                                         class="ecl-breadcrumb-harmonised__icon ecl-icon ecl-icon--2xs ecl-icon--rotate-90">
+                                        <symbol viewBox="0 0 24 24" id="ui--corner-arrow" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M20.623 19.5L12 9.83 3.377 19.5 1 16.835 12 4.5l11 12.335z"/>
+                                        </symbol>
+                                        <use xlink:href="#ui--corner-arrow"></use>
+                                    </svg>
+                                </li>
+                                    
+                                <li class="ecl-breadcrumb-harmonised__segment" data-ecl-breadcrumb-harmonised-item="static"
+                                    aria-hidden="false">
+                                    <a href="https://ec.europa.eu/taxation_customs/dds2/eos/eori_home.jsp?Lang=en"
+                                       class="ecl-breadcrumb-harmonised__link ecl-link ecl-link--standalone">
+                                        EORI
+                                    </a>
+                                </li>
+                                    
+                                
+                                <li class="ecl-breadcrumb-harmonised__segment" data-ecl-breadcrumb-harmonised-item="static"
+                                    aria-hidden="false">
+                                    <svg focusable="false" aria-hidden="true" role="presentation"
+                                         class="ecl-breadcrumb-harmonised__icon ecl-icon ecl-icon--2xs ecl-icon--rotate-90">
+                                        <symbol viewBox="0 0 24 24" id="ui--corner-arrow" xmlns="http://www.w3.org/2000/svg">
+                                            <path d="M20.623 19.5L12 9.83 3.377 19.5 1 16.835 12 4.5l11 12.335z"/>
+                                        </symbol>
+                                        <use xlink:href="#ui--corner-arrow"></use>
+                                    </svg>
+                                </li>
+                                <li class="ecl-breadcrumb-harmonised__segment ecl-breadcrumb-harmonised__current-page"
+                                    aria-current="page" data-ecl-breadcrumb-harmonised-item="static" aria-hidden="false">
+                                    EORI number validation
+                                </li>
+                                
+                            </ol>
+                        </nav>
+                            
+                        <div class="ecl-container" id="message-container"></div>
+                        <div class="ecl-container" id="information-panel">
+                            <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+
+
+
+<html>
+<head></head>
+<body>
+
+
+
+
+    <div role="alert" class="ecl-message" data-ecl-message="true" style="padding-top: 0.2rem;padding-bottom: 0.2rem;">
+        <div class="ecl-message__content" style="margin-top:0.1rem;">
+            <p class="ecl-message__description" style="max-width: 100ch;padding-left: 0.5rem;line-height: 1.4rem">
+                Economic Operator Identification and Registration Information Panel
+            </p>
+        </div>
+        <div>
+            <button onclick="closeInformationPanel()" data-ecl-message-close="true" type="button"
+                    class="ecl-message__close ecl-button ecl-button--ghost"
+                    style="padding: 0;margin: 0;margin-right: 0.4rem;top: 0.1rem">
+                <span class="ecl-button__container">
+                <span class="ecl-button__label" data-ecl-label="true">Close</span>
+                <svg focusable="false" aria-hidden="true" data-ecl-icon="true"
+                     class="ecl-button__icon ecl-button__icon--after ecl-icon ecl-icon--s"
+                     width="24" height="24"
+                     xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                    <path d="M16.538 15.205L13.32 11.99l3.199-3.194-1.332-1.332-3.2 3.193L8.812 7.48 7.48 8.812l3.177 3.177-3.195 3.199 1.334 1.333 3.193-3.2 3.217 3.217 1.333-1.333zm5.594-7.49a10.886 10.886 0 0 0-2.355-3.492 10.882 10.882 0 0 0-3.492-2.355A10.906 10.906 0 0 0 12 1c-1.488 0-2.93.293-4.286.868a10.958 10.958 0 0 0-3.492 2.355 10.888 10.888 0 0 0-2.355 3.492A10.925 10.925 0 0 0 1 12a10.958 10.958 0 0 0 3.222 7.778 10.9 10.9 0 0 0 3.492 2.355C9.07 22.707 10.512 23 12 23a10.964 10.964 0 0 0 7.777-3.222 10.912 10.912 0 0 0 2.355-3.492A10.94 10.94 0 0 0 23 12c0-1.487-.294-2.93-.868-4.285zM21.702 12a9.642 9.642 0 0 1-2.844 6.858A9.619 9.619 0 0 1 12 21.703a9.635 9.635 0 0 1-6.859-2.844A9.617 9.617 0 0 1 2.298 12a9.619 9.619 0 0 1 2.843-6.859A9.615 9.615 0 0 1 12 2.298a9.619 9.619 0 0 1 6.858 2.843A9.623 9.623 0 0 1 21.703 12z"/>
+                </svg>
+                </span>
+            </button>
+        </div>
+    </div>
+</body>
+                        </div>
+                        <h1 class="ecl-page-header-harmonised__title meta-title">EORI number validation</h1>
+                        <p><span>Last import date :</span><span id="divExportDate"
+                                                                                                    class="title"></span>
+                        </p>
+                    </div>
+                </div>
+                    
+                <div id="eo-form-container" style="margin-bottom: 3rem;">
+                    <div id="eo-form-title">
+                        <h2 style="margin: 0px">Retrieve EORI number validation</h2>
+                    </div>
+                    <div class="eo-form-content">
+                        <p class="ecl-u-type-paragraph eo-form-desc">You can launch a validation request by entering the EORI number and clicking 'Validate'</p>
+
+                        <div class="ecl-form-group">
+                            <form name="eori_valid_form" method="get" onsubmit="return buttonClick();"
+                                  style="width: 100%">
+                                <input type="hidden" name="Lang" value='en'/>
+                                <div class="eo-form-inner-content">
+                                    <label title="Enter valid EORI number."
+                                           id="eori-val-label" class="ecl-form-label eori-form-label"
+                                           for="EoriNumb">EORI number</label>
+                                    <input type="text"
+                                           placeholder="Enter valid EORI number."
+                                           class="ecl-text-input eori-form-input" id="EoriNumb" name="EoriNumb"
+                                           value="SE00000000000"
+                                           onkeypress="if(event.keyCode==13){return buttonClick();}"/>
+                                    <button type="submit" style="vertical-align: middle;"
+                                            class="ecl-button ecl-button--primary eori-val-btn"
+                                            title="Click to check the validity of input EORI number."
+                                            value="Validate"
+                                            onclick="buttonClick();">
+                        <span class="ecl-button__container">
+                            <span class="ecl-button__label" data-ecl-label="true">Validate</span>
+                        </span>
+                                    </button>
+                                    <input type="hidden" name="Expand" value="true"/>
+
+
+                                </div>
+
+                            </form>
+                            <div role="alert" id="error-message-container" class="ecl-message" data-ecl-message="true"
+                                 style="display: none; padding-top:0.2rem;padding-bottom: 0.2rem;">
+                            <span id="message-icon">
+                                <svg class="ecl-message__icon ecl-icon ecl-icon--s" width="20" height="20"
+                                     xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30" style="fill: red;">
+                                    <path d="M13.576 12.206l2.466 2.467a.331.331 0 0 1 0 .48l-.89.89a.331.331 0 0 1-.48 0l-2.467-2.466a.331.331 0 0 0-.48 0L9.26 16.043a.331.331 0 0 1-.48 0l-.89-.89a.331.331 0 0 1 0-.48l2.466-2.467a.331.331 0 0 0 0-.48L7.888 9.26a.331.331 0 0 1 0-.48l.891-.89a.331.331 0 0 1 .48 0l2.466 2.466a.331.331 0 0 0 .48 0l2.467-2.467a.331.331 0 0 1 .48 0l.89.89a.331.331 0 0 1 0 .48l-2.466 2.467c-.138.206-.138.343 0 .48zM16.933.005h-9.94L0 7.067v9.94L7.062 24h9.94l6.993-7.062V7.067L16.933.005z"/>
+                                </svg>
+                            </span>
+                                <div class="ecl-message__content" style="display: inline-block;vertical-align: middle;">
+                                    <p id="error-message-desc" class="ecl-message__description"
+                                       style="display: inline;"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                    
+                <div id="overlayPanel" class="" style="display:none; width: 100%;"></div>
+                <div class="eo-top-btn-area"><a class="ecl-link ecl-link--standalone" href="#top-page">Top</a></div>
+
+            </div>
+
+        </main>
+    
+
+    
+
+        
+        <footer class="ecl-footer-harmonised ecl-footer-harmonised--group1">
+    <div class="ecl-container ecl-footer-harmonised__container">
+        <section class="ecl-footer-harmonised__section ecl-footer-harmonised__section1">
+            <a href="https://ec.europa.eu/taxation_customs/home_en"
+               class="ecl-footer-harmonised__title ecl-link ecl-link--standalone" aria-label="Link to example">Taxation
+                and Custom Union</a>
+        </section>
+        <div class="ecl-footer-harmonised__section2">
+            <section class="ecl-footer-harmonised__section">
+                <div class="ecl-footer-harmonised__title ecl-footer-harmonised__title--separator">Contact us</div>
+                <ul class="ecl-footer-harmonised__list">
+                    <li class="ecl-footer-harmonised__list-item"><a
+                            href="https://ec.europa.eu/taxation_customs/contacts_en"
+                            class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                            aria-label="Link to Contact information of the DG">Contact information of the DG</a></li>
+                </ul>
+            </section>
+            <section class="ecl-footer-harmonised__section">
+                <div class="ecl-footer-harmonised__title ecl-footer-harmonised__title--separator">Follow us on</div>
+                <ul class="ecl-footer-harmonised__list ecl-footer-harmonised__list--inline">
+                    <li class="ecl-footer-harmonised__list-item"><a href="https://www.facebook.com/EuropeanCommission"
+                                                                    class="ecl-footer-harmonised__link ecl-link ecl-link--standalone ecl-link--icon ecl-link--icon-before"
+                                                                    aria-label="Link to Facebook">
+                        <svg focusable="false" aria-hidden="true" class="ecl-link__icon ecl-icon ecl-icon--xs">
+                            <symbol viewBox="0 0 24 24" id="branded--facebook" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.099 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047v-2.66c0-3.025 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971h-1.513c-1.491 0-1.956.931-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.099 24 12.073"/>
+                            </symbol>
+                            <use xlink:href="#branded--facebook"></use>
+                        </svg>&nbsp;<span class="ecl-link__label">Facebook</span></a></li>
+                    <li class="ecl-footer-harmonised__list-item"><a href="https://twitter.com/EU_Taxud"
+                                                                    class="ecl-footer-harmonised__link ecl-link ecl-link--standalone ecl-link--icon ecl-link--icon-before"
+                                                                    aria-label="Link to Twitter">
+                        <svg focusable="false" aria-hidden="true" class="ecl-link__icon ecl-icon ecl-icon--xs">
+                            <symbol viewBox="0 0 24 24" id="branded--twitter" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M20.592 8.031C20.592 14.068 16.104 21 7.896 21 5.269 21 2.86 20.217 1 18.876h.985c2.08 0 3.94-.783 5.582-2.013a4.415 4.415 0 01-4.268-3.13c.437.112.656.112.875.112.438 0 .766 0 1.204-.112-2.08-.447-3.612-2.236-3.612-4.472.657.223 1.314.559 2.08.559-1.314-.783-2.08-2.236-2.08-3.801 0-.895.22-1.677.657-2.348 2.189 2.907 5.582 4.695 9.303 4.92-.11-.448-.11-.672-.11-1.007 0-2.46 2.08-4.584 4.488-4.584 1.423 0 2.627.559 3.394 1.453.985-.111 1.97-.559 2.845-1.006-.219 1.006-.985 2.013-1.97 2.46.876-.112 1.751-.447 2.627-.783-.766.783-1.532 1.565-2.408 2.236v.671z"/>
+                            </symbol>
+                            <use xlink:href="#branded--twitter"></use>
+                        </svg>&nbsp;<span class="ecl-link__label">Twitter</span></a></li>
+                    <li class="ecl-footer-harmonised__list-item"><a href="https://www.youtube.com/EUTaxud"
+                                                                    class="ecl-footer-harmonised__link ecl-link ecl-link--standalone ecl-link--icon ecl-link--icon-before"
+                                                                    aria-label="Link to Linkedin">
+                        <svg focusable="false" aria-hidden="true" class="ecl-link__icon ecl-icon ecl-icon--xs">
+                            <symbol viewBox="0 0 24 24" id="branded--youtube" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9.729 15.32l-.001-7.191 5.944 3.608-5.943 3.582zM22.78 6.882s-.215-1.763-.874-2.54c-.837-1.02-1.775-1.024-2.205-1.084C16.623 3 12.005 3 12.005 3h-.01S7.377 3 4.3 3.259c-.43.06-1.368.065-2.205 1.084-.66.777-.874 2.54-.874 2.54S1 8.954 1 11.025v1.942c0 2.07.22 4.142.22 4.142s.215 1.763.874 2.54c.837 1.02 1.936.987 2.426 1.094C6.28 20.939 12 21 12 21s4.623-.008 7.701-.267c.43-.06 1.368-.065 2.205-1.084.66-.777.874-2.54.874-2.54s.22-2.071.22-4.142v-1.942c0-2.07-.22-4.142-.22-4.142z"/>
+                            </symbol>
+                            <use xlink:href="#branded--youtube"></use>
+                        </svg>&nbsp;<span class="ecl-link__label">YouTube</span></a></li>
+                </ul>
+            </section>
+        </div>
+        <div class="ecl-footer-harmonised__section3">
+            <section class="ecl-footer-harmonised__section">
+                <div class="ecl-footer-harmonised__title ecl-footer-harmonised__title--separator">About us</div>
+                <ul class="ecl-footer-harmonised__list">
+                    <li class="ecl-footer-harmonised__list-item">
+                        <a href="/https://ec.europa.eu/taxation_customs/newsletters_en"
+                           class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                           aria-label="Link to Information about the DG">Newsletter</a>
+                    </li>
+                    <li class="ecl-footer-harmonised__list-item">
+                        <a href="https://ec.europa.eu/taxation_customs/contacts_en"
+                           class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                           aria-label="Link to Information about the DG">Contact</a>
+                    </li>
+                </ul>
+            </section>
+
+        </div>
+        <section class="ecl-footer-harmonised__section ecl-footer-harmonised__section6">
+            <div class="ecl-footer-harmonised__content">European Union</div>
+            <ul class="ecl-footer-harmonised__list ecl-footer-harmonised__list--condensed">
+                <li class="ecl-footer-harmonised__list-item"><a
+                        href="https://europa.eu/european-union/about-eu/institutions-bodies"
+                        class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                        aria-label="Link to Class name 1">EU institutions</a></li>
+                <li class="ecl-footer-harmonised__list-item"><a href="https://europa.eu/european-union/index"
+                                                                class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                                                                aria-label="Link to Class name 2">European Union</a>
+                </li>
+            </ul>
+        </section>
+        <section class="ecl-footer-harmonised__section ecl-footer-harmonised__section7"><a
+                href="https://ec.europa.eu/info/index_en"
+                class="ecl-footer-harmonised__title ecl-link ecl-link--standalone">European Commission</a></section>
+        <section class="ecl-footer-harmonised__section ecl-footer-harmonised__section8">
+            <ul class="ecl-footer-harmonised__list">
+                <li class="ecl-footer-harmonised__list-item">
+                    <a href="https://ec.europa.eu/info/contact"
+                       class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                       aria-label="Link to Contact the European Commission">Contact the European Commission</a>
+                </li>
+                <li class="ecl-footer-harmonised__list-item">
+                    <a href="http://ec.europa.eu/dgs/communication/services/journalist/social-media_en.htm"
+                       class="ecl-footer-harmonised__link ecl-link ecl-link--standalone ecl-link--icon ecl-link--icon-after"
+                       aria-label="Link to Follow the European Commission">
+                        <span class="ecl-link__label">Follow the European Commission on social media</span>&nbsp;
+                        <svg focusable="false" aria-hidden="true" class="ecl-link__icon ecl-icon ecl-icon--xs">
+                            <symbol viewBox="0 0 24 24" id="ui--external" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M1 1l8.25.046v2.71H3.796V20.29H20.25v-5.465H23V23H1V1zm11.468 0H23v10.494l-3.944-3.93-5.892 5.87-2.599-2.588 5.847-5.824L12.468 1z"/>
+                            </symbol>
+                            <use xlink:href="#ui--external"></use>
+                        </svg>
+                    </a>
+                </li>
+                <li class="ecl-footer-harmonised__list-item">
+                    <a href="https://ec.europa.eu/commission/index"
+                       class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                       aria-label="Link to Contact the European Commission">Commission and its priorities</a>
+                </li>
+                <li class="ecl-footer-harmonised__list-item">
+                    <a href="https://ec.europa.eu/info/index"
+                       class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                       aria-label="Link to Resources for partners">Policies,
+                        Information and services</a>
+                </li>
+            </ul>
+        </section>
+        <section class="ecl-footer-harmonised__section ecl-footer-harmonised__section9">
+            <ul class="ecl-footer-harmonised__list">
+                <li class="ecl-footer-harmonised__list-item"><a
+                        href="https://ec.europa.eu/info/about-commissions-new-web-presence"
+                        class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                        aria-label="Link to Language policy">About the Commission's new web presence</a></li>
+                <li class="ecl-footer-harmonised__list-item"><a href="http://ec.europa.eu/info/resources-partners"
+                                                                class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                                                                aria-label="Link to Cookies">Resources for partners</a>
+                </li>
+                <li class="ecl-footer-harmonised__list-item"><a href="https://ec.europa.eu/info/cookies"
+                                                                class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                                                                aria-label="Link to Privacy policy">Cookies</a></li>
+                <li class="ecl-footer-harmonised__list-item"><a href="https://ec.europa.eu/info/legal-notice"
+                                                                class="ecl-footer-harmonised__link ecl-link ecl-link--standalone"
+                                                                aria-label="Link to Legal notice">Legal notice</a></li>
+            </ul>
+        </section>
+    </div>
+    <script>
+        ECL.autoInit();
+    </script>
+</footer>
+
+
+
+
+    
+
+    </body>
+    </html>
+
+

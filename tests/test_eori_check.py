@@ -44,16 +44,34 @@ class _Resp:
         return False
 
 
-def _fake_urlopen(pages):
-    """pages: {号: 正文}；不在表里的号抛异常=网络不通。"""
-    def fake(req, timeout=None):
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "eori"
+# 真页面（2026-11-14 实抓）：结论端点 eori_detail.jsp 1:1 干净；表单页没有结论、
+# 只有 JS 注释陷阱（3 处 "is not valid"，v1.39.0 打错端点就是栽在这上面）
+PAGES = {
+    "SE5563646560": FIXTURES.joinpath("valid.html").read_text(encoding="utf-8"),
+    "IT03268900267": FIXTURES.joinpath("valid_it.html").read_text(encoding="utf-8"),
+    "SE00000000000": FIXTURES.joinpath("invalid.html").read_text(encoding="utf-8"),
+}
+
+
+def _fake_urlopen(pages=None):
+    """按查询号回真夹具（pages 可覆盖个别号）；不在表里的号抛异常=网络不通。
+    记下每一次被请求的 URL，供"只许打结论端点"那条契约断言。"""
+    requested = []
+
+    def fake(req, timeout=None, context=None):
         url = req.full_url if hasattr(req, "full_url") else str(req)
+        requested.append(url)
         num = url.split("EoriNumb=")[-1].split("&")[0]
-        if num not in pages:
+        body = pages.get(num) if pages else None
+        if body is None:
+            body = PAGES.get(num)
+        if body is None:
             raise OSError("network unreachable")
-        return _Resp(pages[num])
+        return _Resp(body)
+
     eori_check.urllib.request.urlopen = fake
-    return fake
+    return requested
 
 
 def test_numbers_picks_eori_shaped_only_and_skips_gb_and_tax():
@@ -68,16 +86,53 @@ def test_numbers_picks_eori_shaped_only_and_skips_gb_and_tax():
     assert "SE5563646560" not in got.get("SHIPPER_INFO_EORI", []), "TAX 列不查"
 
 
+def test_check_one_hits_the_verdict_endpoint_not_the_form_page():
+    """v1.39.0 的错就是打错端点：表单页 eori_validation.jsp 里**没有结论**，唯一像结论的
+    "is not valid" 三处全是 JS 注释（"//The day is not valid"）——拿它判无效，可达机器上
+    每个号都会被判无效（当晚 SE5563646560 这个瑞典有效号就被判了"无效"）。这条钉死：
+    只许打 eori_detail.jsp，真夹具必须判出真结论。"""
+    old = eori_check.urllib.request.urlopen
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_eori_"))
+    try:
+        _setup(tmp)
+        requested = _fake_urlopen()
+        assert eori_check.check_one("SE5563646560") == "valid", "真页面：瑞典有效号要判 valid"
+        assert eori_check.check_one("IT03268900267") == "valid"
+        assert eori_check.check_one("SE00000000000") == "invalid", "真页面：假号要判 invalid"
+        assert requested and all("eori_detail.jsp" in u for u in requested), requested
+        assert not any("eori_validation.jsp" in u for u in requested), \
+            "表单页是陷阱页（JS 注释里有 is not valid），一个字节都不许再打它"
+    finally:
+        eori_check.urllib.request.urlopen = old
+        _teardown()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_the_form_page_trap_body_can_not_produce_a_verdict():
+    """就算有人把端点改回去，让真表单页进到判词里也要现出原形：判词对表单页正文
+    必须**认不出结论**（表单页里 "is not valid" 是 JS 注释不是结论），回 unreachable
+    ——宁可中性，不可把有效号判死。"""
+    old = eori_check.urllib.request.urlopen
+    tmp = Path(tempfile.mkdtemp(prefix="hawb_eori_"))
+    trap = FIXTURES.joinpath("form_page_trap.html").read_text(encoding="utf-8")
+    try:
+        _setup(tmp)
+        _fake_urlopen(pages={"SE5563646560": trap})   # 伪造"端点回成表单页"
+        assert eori_check.check_one("SE5563646560") == "unreachable", \
+            "表单页正文不许判出 valid/invalid——判词只认结论区"
+    finally:
+        eori_check.urllib.request.urlopen = old
+        _teardown()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_check_one_reads_the_page_verdict():
     old = eori_check.urllib.request.urlopen
     tmp = Path(tempfile.mkdtemp(prefix="hawb_eori_"))
-    ok = "The EORI number IT03268900267 is a Valid EORI number. Details follow."
     try:
         _setup(tmp)   # check_one 会把结论写进缓存（含熔断计数）：不指开就污染真 output/
-        _fake_urlopen({"IT03268900267": ok, "SE0000000000": "is not valid. Please check.",
-                       "NL0000000000": "<html>something else entirely</html>"})
-        assert eori_check.check_one("IT03268900267") == "valid"
-        assert eori_check.check_one("SE0000000000") == "invalid"
+        junk = "<html>something else entirely</html>"
+        _fake_urlopen({"NL0000000000": junk})
         assert eori_check.check_one("NL0000000000") == "unreachable", "页面认不出结论不算 invalid"
         assert eori_check.check_one("FI0000000000") == "unreachable", "连不上不算 invalid"
     finally:
@@ -117,20 +172,22 @@ def test_check_cells_uses_cache_until_forced():
         _setup(tmp)
         hour_ago = (D_NOW - datetime.timedelta(hours=1)).isoformat(timespec="seconds")
         eori_check._CACHE.update({"IT03268900267": {"status": "valid", "checked_at": hour_ago}})
-        _fake_urlopen({"SE5563646560": "Valid EORI number here."})
+        # 未覆盖的号回真夹具（SE5563646560 真页=valid）
+        _fake_urlopen()
         d = {"SHIPPER_INFO_EORI": "IT03268900267 / SE5563646560"}
         res = eori_check.check_cells(d)
         assert res["SHIPPER_INFO_EORI"] == {"IT03268900267": "valid", "SE5563646560": "valid"}, res
         assert (tmp / "eori_cache.json").exists(), "查过的号要进缓存"
 
         # force=True：绕过缓存、结果覆盖缓存，invalid 翻案成 valid 后旗就安静
-        _fake_urlopen({"IT03268900267": "is a Valid EORI number."})
+        # （IT 的真夹具正文本来就是 valid——拿真页面做"翻案"，不用编造文本）
+        _fake_urlopen(pages={})
         res2 = eori_check.check_cells(d, force=True)
         assert res2["SHIPPER_INFO_EORI"]["IT03268900267"] == "valid"
         assert not eori_check.cached_flags({"SHIPPER_INFO_EORI": "IT03268900267"})
 
-        # 翻回 invalid 后手动重查要立刻挂旗
-        _fake_urlopen({"IT03268900267": "is not valid."})
+        # 翻回 invalid 后手动重查要立刻挂旗（用假号的真夹具正文）
+        _fake_urlopen(pages={"IT03268900267": PAGES["SE00000000000"]})
         eori_check.check_cells({"SHIPPER_INFO_EORI": "IT03268900267"}, force=True)
         assert eori_check.cached_flags({"SHIPPER_INFO_EORI": "IT03268900267"})
     finally:
