@@ -15,7 +15,7 @@
   "无效"全是假阳性：SE5563646560 其实是瑞典 K G Fridman AB 的有效号）。三份真页面留成夹具
   `tests/fixtures/eori/`（valid/valid_it/invalid + 表单陷阱页），回归拿真的跑。
 - 证书：默认上下文（Windows 根库不全的机器只有 20+ 条）可能 `CERTIFICATE_VERIFY_FAILED`。
-  回退链：默认 → certifi（若装了）→ `EORI_CAFILE` 环境变量 → Git for Windows 自带的 CA bundle
+  回退链：默认 → `EORI_CAFILE` 环境变量 → Git for Windows 自带的 CA bundle
   （公司那台实测可用）。**每一档都是真验证，绝不关校验**；全失败仍回 unreachable（中性档）。
 - 单次 1-2 秒（detail 端点比表单页快）→ 仍后台 + 缓存；GB 前缀的号是英国 HMRC 发的（脱欧后
   不在欧盟 EOS 里），官网查它必回 invalid——真号会吃假旗，所以跳过不查。
@@ -105,14 +105,10 @@ def _status_of(rec) -> str | None:
 
 
 def _ca_candidates() -> list:
-    """CA 来源候选链：默认上下文先来，然后 certifi（若装了）、EORI_CAFILE 环境变量、
-    Git for Windows 自带的 CA bundle（Windows 根库不全的机器靠它，公司那台实测可用）。"""
+    """CA 来源候选链：默认上下文先来；失败后试 `EORI_CAFILE` 环境变量指的文件、再试
+    Git for Windows 自带的 CA bundle（Windows 根库不全的机器靠它，公司那台实测可用）。
+    刻意不引第三方包：锁测试要求代码 import 的包必须在锁里，certifi 没装就不许假装有。"""
     out = [None]
-    try:
-        import certifi
-        out.append(certifi.where())
-    except Exception:
-        pass
     for p in (os.getenv("EORI_CAFILE", ""),
               r"C:\Program Files\Git\mingw64\etc\ssl\certs\ca-bundle.crt",
               r"C:\Program Files\Git\usr\etc\ssl\certs\ca-bundle.crt",
